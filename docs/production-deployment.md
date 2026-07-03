@@ -22,6 +22,18 @@ Use MySQL on cPanel production and keep SQLite for local development/testing onl
 
 Do not copy the local SQLite database to production. Once real data exists, never reset, flush, drop, or overwrite the production database as part of deployment.
 
+## Namecheap cPanel Python App
+
+In cPanel, open **Setup Python App** and create the Django app with these values:
+
+- Python version: 3.10 or 3.11
+- Application root: `/home/cpaneluser/kisugu`
+- Application URL: `kisugusacco.org`
+- Application startup file: `passenger_wsgi.py`
+- Application entry point: `application`
+
+The `passenger_wsgi.py` file in the project root loads Django using `landgroup.settings`. After changing code or environment variables, restart the Python app from cPanel or touch `tmp/restart.txt`.
+
 ## GitHub Actions Secrets
 
 Add these repository secrets in GitHub:
