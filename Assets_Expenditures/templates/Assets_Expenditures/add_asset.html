@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% load form_tags %}
+
+{% block content %}
+<div class="container py-4">
+  <h3 class="mb-4 text-primary">
+    <i class="bi bi-box-seam me-2"></i> Add Asset
+  </h3>
+
+  <div class="row g-3 mb-4">
+    {% for source, balance in available_balances.items %}
+    <div class="col-md-4 col-lg-2">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body py-3">
+          <div class="small text-muted">{{ source|title|cut:"_" }}</div>
+          <div class="fw-bold">UGX {{ balance.available|floatformat:"0" }}</div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <form method="post" class="card shadow-sm p-4 bg-light border-0">
+    {% csrf_token %}
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label for="{{ form.name.id_for_label }}" class="form-label">Name of Asset</label>
+        {{ form.name|add_class:"form-control" }}
+        {% if form.name.errors %}
+          <div class="text-danger small">{{ form.name.errors|striptags }}</div>
+        {% endif %}
+      </div>
+
+      <div class="col-md-6">
+        <label for="{{ form.value.id_for_label }}" class="form-label">Value</label>
+        {{ form.value|add_class:"form-control" }}
+        {% if form.value.errors %}
+          <div class="text-danger small">{{ form.value.errors|striptags }}</div>
+        {% endif %}
+      </div>
+
+      <div class="col-md-6">
+        <label for="{{ form.date_acquired.id_for_label }}" class="form-label">Date Acquired</label>
+        {{ form.date_acquired|add_class:"form-control" }}
+        {% if form.date_acquired.errors %}
+          <div class="text-danger small">{{ form.date_acquired.errors|striptags }}</div>
+        {% endif %}
+      </div>
+
+      <div class="col-md-6">
+        <label for="{{ form.source.id_for_label }}" class="form-label">Source of Funds</label>
+        {{ form.source|add_class:"form-select" }}
+        {% if form.source.errors %}
+          <div class="text-danger small">{{ form.source.errors|striptags }}</div>
+        {% endif %}
+      </div>
+
+      <div class="col-12">
+        <label for="{{ form.remarks.id_for_label }}" class="form-label">Remarks / Description</label>
+        {{ form.remarks|add_class:"form-control" }}
+        {% if form.remarks.errors %}
+          <div class="text-danger small">{{ form.remarks.errors|striptags }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="mt-4 text-end">
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-save me-1"></i> Save Asset
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

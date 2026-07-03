@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+  .loan-row-disabled {
+    opacity: 0.62;
+  }
+</style>
+<div class="container py-4">
+  <h2 class="mb-4 text-warning">Pending Loan Requests</h2>
+  <div class="table-responsive">
+    <table class="table table-bordered table-striped align-middle">
+      <thead>
+        <tr>
+          <th>Member</th>
+          <th>Requested Amount</th>
+          <th>Interest / Month</th>
+          <th>Duration</th>
+          <th>Approvals</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for loan in loans %}
+        <tr class="{% if loan.status == 'PENDING_GUARANTOR' %}loan-row-disabled{% endif %}">
+          <td>{{ loan.member.get_full_name|default:loan.member.username }}</td>
+          <td>UGX {{ loan.principal|floatformat:'0' }}</td>
+          <td>{{ loan.monthly_interest_rate }}%</td>
+          <td>{{ loan.duration_months }}</td>
+          <td>
+            {% if loan.status == 'PENDING_GUARANTOR' %}
+              <span class="badge text-bg-secondary">Awaiting Guarantors' Approval</span>
+              <div class="small text-muted mt-1">{{ loan.guarantor_approval_count }} of 3 approved</div>
+            {% else %}
+              T: {% if loan.treasurer_approved_by %}<span class="text-success fw-bold">✓</span>{% else %}<span class="text-danger">✗</span>{% endif %}&nbsp;
+              {% if loan.chairman_approved_by %}C: <span class="text-success fw-bold">✓</span>{% elif loan.vice_chairman_approved_by %}VC: <span class="text-success fw-bold">✓</span>{% else %}<span class="text-muted small">C/VC pending</span>{% endif %}
+            {% endif %}
+          </td>
+          <td>
+            {% if loan.status == 'PENDING_GUARANTOR' %}
+              <button type="button" class="btn btn-sm btn-secondary" disabled>Awaiting Guarantors' Approval</button>
+            {% elif is_treasurer and not loan.treasurer_approved_by %}
+            <form method="post" action="{% url 'approve_loan' loan.id %}" class="d-flex flex-column flex-sm-row align-items-start align-items-sm-end gap-2">
+              {% csrf_token %}
+              <div class="d-flex flex-column w-100" style="min-width: 8rem;">
+                <label class="form-label small mb-1 text-muted">Interest %/mo</label>
+                <input type="number" name="monthly_interest_rate" value="{{ loan.monthly_interest_rate }}" step="0.01" min="0" max="100" class="form-control form-control-sm" required>
+              </div>
+              <button type="submit" class="btn btn-sm btn-success">Approve</button>
+            </form>
+            {% elif is_chairman and loan.treasurer_approved_by and not loan.chairman_approved_by and not loan.fully_approved %}
+            <form method="post" action="{% url 'approve_loan' loan.id %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-success">Approve</button>
+            </form>
+            {% elif is_vice_chairman and loan.treasurer_approved_by and not loan.vice_chairman_approved_by and not loan.fully_approved %}
+            <form method="post" action="{% url 'approve_loan' loan.id %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-success">Approve</button>
+            </form>
+            {% else %}
+              {% if not loan.treasurer_approved_by %}
+                <span class="badge text-bg-secondary">Awaiting Treasurer</span>
+              {% elif not loan.chairman_approved_by and not loan.vice_chairman_approved_by %}
+                <span class="badge text-bg-warning text-dark">Awaiting Chairman/VC</span>
+              {% else %}
+                <span class="badge text-bg-success">Fully Approved</span>
+              {% endif %}
+            {% endif %}
+            {% if loan.status != 'PENDING_GUARANTOR' %}
+              {% if is_treasurer or is_chairman or is_vice_chairman %}
+              <a href="{% url 'reject_loan' loan.id %}" class="btn btn-sm btn-danger ms-sm-1 mt-2 mt-sm-0">Reject</a>
+              {% endif %}
+            {% endif %}
+
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center">No pending loan requests.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+  @media (max-width: 767.98px) {
+    .deposit-report-header {
+      font-size: 1.35rem;
+    }
+
+    .deposit-report-form .btn {
+      width: 100%;
+    }
+  }
+</style>
+<div class="container mt-4">
+  <h3 class="text-center mb-4 deposit-report-header"><i class="bi bi-wallet2"></i> Member Deposits Report - {{ selected_year }}</h3>
+
+  <div class="d-flex flex-wrap align-items-center gap-2 small mb-3">
+    <span class="text-muted fw-semibold">Deposit Types:</span>
+    <span class="badge text-bg-dark">Total</span>
+    <span class="badge text-bg-primary">Saving</span>
+    <span class="badge text-bg-success">Welfare</span>
+    <span class="badge text-bg-warning text-dark">Annual</span>
+    <span class="badge text-bg-danger">Fine</span>
+    <span class="badge text-bg-info text-dark">Shares</span>
+  </div>
+
+  <form method="get" class="mb-3 row g-2 deposit-report-form" id="filter-form">
+    <div class="col-md-4">
+      <input type="text" name="name" value="{{ name_query|default:'' }}" class="form-control" placeholder="Search by member name">
+    </div>
+    <div class="col-md-3">
+      <select name="year" class="form-select">
+      {% for year in years %}
+        <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>
+          {{ year }}
+        </option>
+      {% endfor %}
+    </select>
+    </div>
+    <div class="col-md-3">
+      <select name="month" class="form-select">
+        <option value="">-- Filter by Month --</option>
+        {% for num, name in months %}
+          <option value="{{ num }}" {% if num|stringformat:"s" == month_query %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-md-2">
+      <button type="submit" class="btn btn-primary w-100">Filter</button>
+    </div>
+
+    <div class="col-md-1">
+      <button type="submit" name="export" value="pdf" class="btn btn-success w-100">PDF</button>
+    </div>
+
+    <!-- Clear Filters Button -->
+    <div class="col-md-2">
+      <button type="button" class="btn btn-secondary w-100" id="clear-btn">Clear</button>
+    </div>
+  </form>
+
+  <div class="table-responsive">
+    <table class="table table-bordered table-hover table-sm">
+      <thead class="table-primary text-center">
+        <tr>
+          <th>#</th>
+          <th>Member</th>
+          <th>Saving Week</th>
+          <th>Total</th>
+          <th>Saving</th>
+          <th>Welfare</th>
+          <th>Annual</th>
+          <th>Fine</th>
+          <th>Shares</th>
+          <th>Payment Date</th>
+          <th>Payment time</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for deposit in deposits %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>{{ deposit.member.username }}</td>
+          <td>{{ deposit.payment_week }}</td>
+          <td>UGX {{ deposit.amount|floatformat:"0" }}</td>
+          <td>{{ deposit.saving_amount|floatformat:"0" }}</td>
+          <td>{{ deposit.welfare_amount|floatformat:"0" }}</td>
+          <td>{{ deposit.annual_subscription_amount|floatformat:"0" }}</td>
+          <td>{{ deposit.fine_amount|floatformat:"0" }}</td>
+          <td>{{ deposit.shares_amount|floatformat:"0" }}</td>
+          <td>{{ deposit.payment_date }}</td>
+          <td>{{ deposit.payment_time }}</td>
+          <td>
+            {% if deposit.status == 'APPROVED' %}
+              <span class="badge text-bg-success">Approved</span>
+            {% elif deposit.status == 'REJECTED' %}
+              <span class="badge text-bg-danger">Rejected</span>
+            {% else %}
+              <span class="badge text-bg-warning">Pending</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="12" class="text-center">No deposits found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+document.getElementById('clear-btn').addEventListener('click', function() {
+    const form = document.getElementById('filter-form');
+    form.reset(); // Clears all fields
+    window.location.href = "{% url 'chairman_deposit_report' %}";
+});
+</script>
+{% endblock %}

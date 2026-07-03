@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load widget_tweaks %}
+
+{% block content %}
+<style>
+  .upload-doc-shell {
+    max-width: 920px;
+  }
+
+  @media (max-width: 767.98px) {
+    .upload-doc-shell .card-body {
+      padding: 1rem;
+    }
+
+    .upload-doc-shell .text-end {
+      text-align: stretch !important;
+    }
+
+    .upload-doc-shell .btn {
+      width: 100%;
+    }
+  }
+</style>
+<div class="container py-4 upload-doc-shell">
+  <div class="card shadow-sm border-0">
+    <div class="card-header bg-primary text-white">
+      <h5 class="mb-0"><i class="bi bi-upload me-2"></i>Upload Document</h5>
+    </div>
+    <div class="card-body bg-light">
+      <form method="post" enctype="multipart/form-data" class="row g-3">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {{ form.non_field_errors }}
+        </div>
+        {% endif %}
+
+        <div class="col-md-6">
+          <label class="form-label">Document Title</label>
+          {{ form.title|add_class:"form-control" }}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Document Type</label>
+          {{ form.document_type|add_class:"form-select" }}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Attach File</label>
+          {{ form.file|add_class:"form-control" }}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Member (Optional)</label>
+          {{ form.user|add_class:"form-select" }}
+          <div class="form-text">Leave blank if the document is general (e.g., meeting minutes).</div>
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">Description</label>
+          {{ form.description|add_class:"form-control" }}
+        </div>
+
+        <div class="col-12 text-end mt-3">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-save me-1"></i> Save Document
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

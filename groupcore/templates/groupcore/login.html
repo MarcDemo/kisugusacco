@@ -1,0 +1,286 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Login</title>
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="{% static 'images/favicon1.ico' %}" />
+  <!-- Bootstrap CSS & Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
+  <style>
+    body, html {
+      min-height: 100%;
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow-x: hidden;
+    }
+
+    .login-page {
+      min-height: 100svh;
+      padding: 1rem;
+    }
+
+    .bg-slideshow {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+    }
+
+    .bg-slideshow .slide {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      opacity: 0;
+      animation: bgFade 18s infinite;
+    }
+
+    .bg-slideshow .slide:nth-child(1) {
+      background-image: url("{% static 'images/saving group (1).jpg' %}");
+      animation-delay: 0s;
+    }
+    .bg-slideshow .slide:nth-child(2) {
+      background-image: url("{% static 'images/plant saving (1).jpg' %}");
+      animation-delay: 6s;
+    }
+    .bg-slideshow .slide:nth-child(3) {
+      background-image: url("{% static 'images/saving 2.png' %}");
+      animation-delay: 12s;
+    }
+
+    @keyframes bgFade {
+      0%   { opacity: 0; }
+      8%   { opacity: 1; }
+      33%  { opacity: 1; }
+      41%  { opacity: 0; }
+      100% { opacity: 0; }
+    }
+
+    /* Glass card */
+    .glass-card {
+      position: relative;
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(14px);
+      border-radius: 1rem;
+      padding: 2.5rem 2rem 2rem 2rem;
+      box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      max-width: 400px;
+      width: 100%;
+      overflow: hidden;
+      opacity: 0;
+      transform: translateY(30px);
+      animation: fadeSlideIn 1.5s ease forwards;
+      animation-delay: 0.5s;
+    }
+
+    /* Diagonal light sweep */
+    .glass-card::before {
+      content: "";
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: linear-gradient(
+        120deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.2) 50%,
+        rgba(255, 255, 255, 0) 100%
+      );
+      transform: rotate(25deg) translateX(-100%);
+      animation: lightSweep 12s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    @keyframes lightSweep {
+      0%, 85%, 100% { transform: rotate(25deg) translateX(-120%); }
+      50% { transform: rotate(25deg) translateX(120%); }
+    }
+
+    @keyframes fadeSlideIn {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    label { color: #eee; font-weight: 600; }
+    .messages p { color: #ff6b6b; font-weight:600; }
+
+    .form-control {
+      background-color: rgba(255, 255, 255, 0.25);
+      border: none;
+      color: #fff;
+      font-weight: 500;
+    }
+    .form-control:focus {
+      background-color: rgba(255, 255, 255, 0.45);
+      color: #000;
+      box-shadow: none;
+    }
+
+    .btn-primary {
+      background-color: #0d6efd;
+      border: none;
+      font-weight: 600;
+      width: 100%;
+      padding: 0.5rem;
+      font-size: 1.1rem;
+      transition: background-color 0.3s ease, transform 0.2s ease;
+    }
+    .btn-primary:hover {
+      background-color: #084cd9;
+      transform: scale(1.03);
+    }
+
+    .welcome-message {
+      font-size: 1.15rem;
+      margin-bottom: 1.5rem;
+      font-weight: 500;
+      color: #0d0b0bdd;
+    }
+
+    /* Change Forgot Password link color to black */
+    .forgot-password {
+      color: #000 !important;
+      text-decoration: none;
+    }
+    .forgot-password:hover {
+      color: #333 !important;
+      text-decoration: underline;
+    }
+
+    /* Mobile responsiveness for screens like iPhone 12 Pro */
+    @media (max-width: 576px) {
+      .login-page {
+        align-items: flex-start !important;
+        padding: 1rem 0.75rem;
+      }
+
+      .glass-card {
+        max-width: 100%;
+        padding: 1.5rem 1.25rem;
+        border-radius: 0.75rem;
+      }
+
+      .welcome-message {
+        font-size: 1rem;
+        margin-bottom: 1rem;
+      }
+
+      h2 {
+        font-size: 1.5rem;
+      }
+
+      .form-control {
+        font-size: 0.9rem;
+        padding: 0.5rem;
+      }
+
+      .btn-primary {
+        font-size: 1rem;
+        padding: 0.5rem;
+        min-height: 44px;
+      }
+
+      body, html {
+        background-size: cover;
+        background-position: center;
+      }
+
+      .login-brand h4 {
+        font-size: 1.08rem;
+        line-height: 1.35;
+      }
+
+      .login-powered {
+        margin-top: 1.5rem !important;
+        text-align: center;
+      }
+
+      .login-powered a {
+        flex-direction: column;
+      }
+
+      .login-powered img {
+        height: 36px !important;
+      }
+    }
+
+    /* Ensure high-quality background image for high-density displays */
+    @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+      body, html {
+        background-image: url("{% static 'images/land_savings.webp' %}");
+        background-size: cover;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Background slideshow -->
+  <div class="bg-slideshow">
+    <div class="slide"></div>
+    <div class="slide"></div>
+    <div class="slide"></div>
+  </div>
+
+  <div class="login-page d-flex justify-content-center align-items-center">
+    <div class="d-flex flex-column align-items-center">
+
+      <!-- Group name above card -->
+      <div class="login-brand text-center mb-3">
+        <h4 style="color:#fff; font-weight:700; text-shadow: 0 2px 8px rgba(0,0,0,0.6); letter-spacing:0.03em;">
+          St. Stephen's Kisugu Savings and Loans Association
+          <span style="display:block; font-size:1.1rem; font-weight:600; opacity:0.9;">(SSLA)</span>
+        </h4>
+      </div>
+
+    <div class="glass-card text-center">
+      <h2 class="mb-3">Welcome Back!</h2>
+      <p class="welcome-message">Please login to access your account and manage your investments securely.</p>
+      <form method="post" novalidate>
+        {% csrf_token %}
+        <div class="mb-3 text-start">
+          <label for="id_username" class="form-label">Username</label>
+          <input type="text" class="form-control" id="id_username" name="username" placeholder="Enter username" required />
+        </div>
+        <div class="mb-4 text-start">
+          <label for="id_password" class="form-label">Password</label>
+          <input type="password" class="form-control" id="id_password" name="password" placeholder="Enter password" required />
+        </div>
+        <button type="submit" class="btn btn-primary mb-3">
+          <i class="bi bi-box-arrow-in-right me-2"></i> Login
+        </button>
+        <p class="mt-2">
+          <a href="{% url 'forgot_password' %}" class="forgot-password">Forgot Password?</a>
+        </p>
+      </form>
+
+      <div class="messages">
+        {% for message in messages %}
+          <p>{{ message }}</p>
+        {% endfor %}
+      </div>
+
+      
+    </div>
+
+    <!-- Footer below card -->
+    <div class="login-powered mt-5 d-flex justify-content-center align-items-center gap-2">
+      <a href="https://wa.me/message/3XKDABIYDNBEH1" target="_blank" style="text-decoration: none; display:flex; align-items:center; gap:8px;">
+        <img src="{% static 'images/deaplogof.webp' %}" alt="Deap Technologies Logo" style="height: 44px;">
+        <span style="font-size: 0.95rem; font-weight: 600; color: #fff; letter-spacing: 0.02em;">Powered by Deap Technologies</span>
+      </a>
+    </div>
+
+    </div>
+  </div>
+
+  <!-- Bootstrap JS Bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

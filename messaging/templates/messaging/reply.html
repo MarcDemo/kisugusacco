@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+  .msg-surface { font-family:'Outfit',sans-serif; background:linear-gradient(145deg,#eef6ff 0%,#f4fffb 52%,#fff 100%); border-radius:18px; padding:1.25rem; position:relative; overflow:hidden; isolation:isolate; }
+  .msg-surface::before { content:""; position:absolute; width:240px; height:240px; top:-90px; right:-80px; background:radial-gradient(circle at 35% 35%,rgba(32,112,78,.16),rgba(32,112,78,0)); border-radius:999px; z-index:-1; filter:blur(4px); }
+  .msg-compose-card { border:0; border-radius:16px; background:#fff; box-shadow:0 14px 28px rgba(9,32,69,.08); padding:2rem; }
+  .msg-compose-card .form-control, .msg-compose-card .form-select { border-radius:10px; border:1px solid #d8e4f4; }
+  .msg-compose-card .form-control:focus, .msg-compose-card .form-select:focus { border-color:#9fc0e8; box-shadow:0 0 0 .2rem rgba(31,122,63,.12); }
+  .msg-compose-card .form-label { font-weight:600; margin-bottom:.35rem; }
+  .original-quote { background:#f8fafd; border-left:3px solid #c8d8ee; border-radius:8px; padding:.75rem 1rem; font-size:.9rem; color:#555; }
+  .recipients-list { display:flex; flex-wrap:wrap; gap:.5rem; list-style:none; padding:0; margin:0; }
+  .recipients-list li label { display:inline-flex; align-items:center; gap:.4rem; padding:.35rem .75rem; background:#f1f8f4; border:1px solid #c8ddd0; border-radius:20px; cursor:pointer; font-size:.875rem; transition:background 150ms; }
+  .recipients-list li input[type=checkbox]:checked + label, .recipients-list li label:has(input:checked) { background:#d4edda; border-color:#166534; font-weight:600; }
+</style>
+
+<div class="msg-surface">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+      <h2 class="mb-1 text-primary"><i class="bi bi-reply me-2"></i>Reply</h2>
+      <p class="text-muted mb-0">Replying to: <strong>{{ original.subject }}</strong></p>
+    </div>
+    <a href="{% url 'message_detail' original.pk %}" class="btn btn-outline-primary">
+      <i class="bi bi-arrow-left me-1"></i>Back to Message
+    </a>
+  </div>
+
+  <div class="msg-compose-card mb-4">
+    <p class="text-muted small mb-1">Original message from <strong>{{ original.sender.get_full_name|default:original.sender.username }}</strong> on {{ original.sent_at|date:"M d, Y H:i" }}</p>
+    <div class="original-quote">{{ original.body|linebreaksbr }}</div>
+  </div>
+
+  <div class="msg-compose-card">
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+      <div class="alert alert-danger">{% for e in form.non_field_errors %}<div>{{ e }}</div>{% endfor %}</div>
+      {% endif %}
+
+      <div class="mb-4">
+        <label class="form-label">Recipients <span class="text-danger">*</span></label>
+        <ul class="recipients-list">
+          {% for choice in form.recipients %}
+          <li>{{ choice }}</li>
+          {% endfor %}
+        </ul>
+        {% if form.recipients.errors %}<div class="text-danger small mt-1">{{ form.recipients.errors|striptags }}</div>{% endif %}
+      </div>
+
+      <div class="mb-3">
+        <label for="{{ form.subject.id_for_label }}" class="form-label">Subject</label>
+        {{ form.subject }}
+        {% if form.subject.errors %}<div class="text-danger small mt-1">{{ form.subject.errors|striptags }}</div>{% endif %}
+      </div>
+
+      <div class="mb-4">
+        <label for="{{ form.body.id_for_label }}" class="form-label">Message <span class="text-danger">*</span></label>
+        {{ form.body }}
+        {% if form.body.errors %}<div class="text-danger small mt-1">{{ form.body.errors|striptags }}</div>{% endif %}
+      </div>
+
+      <div class="d-flex gap-2">
+        <button class="btn btn-success" type="submit">
+          <i class="bi bi-send-fill me-1"></i>Send Reply
+        </button>
+        <a class="btn btn-outline-secondary" href="{% url 'message_detail' original.pk %}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

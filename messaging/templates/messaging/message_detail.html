@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+  .msg-surface { font-family:'Outfit',sans-serif; background:linear-gradient(145deg,#eef6ff 0%,#f4fffb 52%,#fff 100%); border-radius:18px; padding:1.25rem; position:relative; overflow:hidden; isolation:isolate; }
+  .msg-surface::before { content:""; position:absolute; width:240px; height:240px; top:-90px; right:-80px; background:radial-gradient(circle at 35% 35%,rgba(32,112,78,.16),rgba(32,112,78,0)); border-radius:999px; z-index:-1; filter:blur(4px); }
+  .msg-detail-card { border:0; border-radius:16px; background:#fff; box-shadow:0 14px 28px rgba(9,32,69,.08); overflow:hidden; }
+  .msg-detail-header { background:#f4f9ff; border-bottom:1px solid #e4edf8; padding:1.25rem 1.5rem; }
+  .msg-body { padding:1.5rem; white-space:pre-wrap; line-height:1.75; font-size:.97rem; color:#2c3e50; }
+</style>
+
+<div class="msg-surface">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+      <h2 class="mb-1 text-primary"><i class="bi bi-envelope-open me-2"></i>Message</h2>
+    </div>
+    <a href="{% if from_inbox %}{% url 'inbox' %}{% else %}{% url 'sent_messages' %}{% endif %}" class="btn btn-outline-primary">
+      <i class="bi bi-arrow-left me-1"></i>{% if from_inbox %}Back to Inbox{% else %}Back to Sent{% endif %}
+    </a>
+  </div>
+
+  <div class="msg-detail-card">
+    <div class="msg-detail-header">
+      <h4 class="mb-3 fw-bold">{{ message.subject|default:"(No Subject)" }}</h4>
+      <div class="row g-2 text-muted small">
+        <div class="col-sm-6">
+          <span class="fw-semibold text-dark">{% if from_inbox %}From{% else %}To{% endif %}:</span>
+          {% if from_inbox %}
+            {% if message.sender %}
+              {{ message.sender.get_full_name|default:message.sender.username }}
+            {% else %}
+              System
+            {% endif %}
+          {% else %}
+            {% for recipient in message.recipients.all %}
+              <span class="badge text-bg-light border me-1">{{ recipient.get_full_name|default:recipient.username }}</span>
+            {% endfor %}
+          {% endif %}
+        </div>
+        <div class="col-sm-6 text-sm-end">
+          <i class="bi bi-clock me-1"></i>{{ message.sent_at|date:"M d, Y H:i" }}
+        </div>
+      </div>
+    </div>
+
+    <div class="msg-body">{{ message.body }}</div>
+
+    {% if message.sender %}
+    <div class="px-4 pb-4">
+      <a href="{% url 'reply_message' message.id %}" class="btn btn-primary">
+        <i class="bi bi-reply me-1"></i>Reply
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load file_extras %}
+
+{% block content %}
+<style>
+  .profile-media {
+    width: 100%;
+    max-width: 200px;
+    height: auto;
+  }
+
+  .profile-doc {
+    width: 100%;
+    max-width: 400px;
+    height: auto;
+  }
+
+  @media (max-width: 767.98px) {
+    .profile-media,
+    .profile-doc {
+      max-width: 100%;
+    }
+  }
+</style>
+<div class="container mt-5">
+  <h3 class="mb-4">My Profile</h3>
+
+  <div class="row">
+    <!-- Profile Picture -->
+    <div class="col-md-4 text-center">
+      {% if user.profile_picture %}
+        <img src="{{ user.profile_picture.url }}" class="img-thumbnail mb-3 profile-media">
+      {% else %}
+        <img src="{% static 'images/default_dp_avatar.jpg' %}" class="img-thumbnail mb-3 profile-media">
+      {% endif %}
+
+       <!-- National ID Display -->
+  {% if nid_document %}
+    <hr>
+    <h5 class="mt-4">National ID</h5>
+    <p><strong>Title:</strong> {{ nid_document.title }}</p>
+    <p><strong>Description:</strong> {{ nid_document.description }}</p>
+    {% if nid_document.file.url|is_pdf %}
+        <iframe src="{{ nid_document.file.url }}" width="100%" height="400px" class="border rounded"></iframe>
+        {% else %}
+        <img src="{{ nid_document.file.url }}" class="img-fluid rounded profile-doc">
+    {% endif %}
+  {% else %}
+    <div class="mt-4 text-muted"><em>No National ID document uploaded yet.</em></div>
+    <img src="{% static 'images/default-avatar.png' %}" class="img-thumbnail mb-3 profile-media">
+  {% endif %}
+    </div>
+
+    <!-- Profile Info and Edit Form -->
+    <div class="col-md-8">
+      {% if not editing %}
+        <ul class="list-group">
+          <li class="list-group-item"><strong>Username:</strong> {{ user.username }}</li>
+          <li class="list-group-item"><strong>Full Name:</strong> {{ user.get_full_name }}</li>
+          <li class="list-group-item"><strong>Email:</strong> {{ user.email }}</li>
+          <li class="list-group-item"><strong>Phone Number:</strong> {{ user.phone_number }}</li>
+          <li class="list-group-item"><strong>Next of Kin Name:</strong> {{ user.next_of_kin_name }}</li>
+          <li class="list-group-item"><strong>Next of Kin Contact:</strong> {{ user.next_of_kin_contact }}</li>
+        </ul>
+        <a href="{% url 'my_profile' %}?edit=true" class="btn btn-outline-primary mt-3">Edit Profile</a>
+      {% else %}
+        <form method="POST" enctype="multipart/form-data">
+          {% csrf_token %}
+          {{ form|crispy }}
+          <button type="submit" class="btn btn-primary mt-3">Save Changes</button>
+          <a href="{% url 'my_profile' %}" class="btn btn-secondary mt-3">Cancel</a>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

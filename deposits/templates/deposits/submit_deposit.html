@@ -1,0 +1,343 @@
+{% extends 'base.html' %}
+{% load form_tags %}
+
+{% block content %}
+<style>
+  .purpose-box {
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 180ms ease, transform 180ms ease;
+  }
+  .purpose-box.purpose-hiding {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  @media (max-width: 767.98px) {
+    .card-body {
+      padding: 1rem;
+    }
+
+    #depositForm .form-check {
+      width: 100%;
+      margin-bottom: 0.15rem;
+    }
+
+    #depositForm .purpose-box {
+      flex: 0 0 100%;
+      max-width: 100%;
+    }
+
+    #depositForm .text-end {
+      text-align: stretch !important;
+    }
+
+    #depositForm #submitBtn {
+      width: 100%;
+    }
+  }
+</style>
+
+<div class="container py-4">
+  <div class="row justify-content-center">
+    <div class="col-md-8">
+
+      <div class="card shadow border-0">
+        <div class="card-header bg-success text-white">
+          <h4 class="mb-0"><i class="bi bi-wallet2 me-2"></i> Submit Deposit</h4>
+        </div>
+
+        <div class="card-body">
+          {% if form.errors %}
+          <div class="alert alert-danger" role="alert">
+            <div class="fw-semibold mb-1">
+              <i class="bi bi-exclamation-triangle me-1"></i> Deposit not submitted
+            </div>
+            <div class="small mb-2">Please correct the highlighted item(s) below and submit again.</div>
+            <ul class="mb-0 small">
+              {% for field in form.visible_fields %}
+                {% for error in field.errors %}
+                <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+                {% endfor %}
+              {% endfor %}
+              {% for error in form.non_field_errors %}
+              <li>{{ error }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+
+          <form id="depositForm" method="post" enctype="multipart/form-data" class="row g-3">
+            {% csrf_token %}
+            <!-- Payment Date -->
+            <div class="col-md-6">
+              <label for="id_account" class="form-label">Account <span class="text-danger">*</span></label>
+              {{ form.account|add_class:"form-select" }}
+              {% if form.account.errors %}
+              <div class="text-danger small mt-1">{{ form.account.errors|join:", " }}</div>
+              {% endif %}
+            </div>
+
+            <!-- Payment Date -->
+            <div class="col-md-6">
+              <label for="id_payment_date" class="form-label">Payment Date <span class="text-danger">*</span></label>
+              {{ form.payment_date|add_class:"form-control" }}
+              {% if form.payment_date.errors %}
+              <div class="text-danger small mt-1">{{ form.payment_date.errors|join:", " }}</div>
+              {% endif %}
+            </div>
+
+            <!-- Payment Time -->
+            <div class="col-md-6">
+              <label for="id_payment_time" class="form-label">Payment Time <span class="text-danger">*</span></label>
+              {{ form.payment_time|add_class:"form-control" }}
+              {% if form.payment_time.errors %}
+              <div class="text-danger small mt-1">{{ form.payment_time.errors|join:", " }}</div>
+              {% endif %}
+            </div>
+
+            <!-- Purpose selection -->
+            <div class="col-12">
+              <label class="form-label fw-semibold">Deposit Purpose <span class="text-danger">*</span></label>
+              <small class="text-muted d-block mb-2">Tick the purpose(s), then enter amount(s) only for the selected ones.</small>
+              <div class="d-flex flex-wrap gap-3">
+                {% for checkbox in form.selected_purposes %}
+                <div class="form-check">
+                  {{ checkbox.tag }}
+                  <label class="form-check-label" for="{{ checkbox.id_for_label }}">{{ checkbox.choice_label }}</label>
+                </div>
+                {% endfor %}
+              </div>
+              {% if form.selected_purposes.errors %}
+              <div class="text-danger small mt-1">{{ form.selected_purposes.errors|join:", " }}</div>
+              {% endif %}
+            </div>
+
+            <!-- Per-purpose amounts -->
+            <div class="col-12">
+              <label class="form-label fw-semibold">Amount per Purpose <span class="text-danger">*</span></label>
+              <small class="text-muted d-block mb-2">Only selected purposes are shown below.</small>
+              <div class="row g-2">
+                <div class="col-md-3 col-6 purpose-box" data-purpose="saving">
+                  <label for="id_saving_amount" class="form-label small">Saving (UGX)</label>
+                  {{ form.saving_amount|add_class:"form-control purpose-amount" }}
+                  {% if form.saving_amount.errors %}
+                  <div class="text-danger small mt-1">{{ form.saving_amount.errors|join:", " }}</div>
+                  {% endif %}
+                </div>
+                <div class="col-md-3 col-6 purpose-box" data-purpose="welfare">
+                  <label for="id_welfare_amount" class="form-label small">Welfare (UGX)</label>
+                  {{ form.welfare_amount|add_class:"form-control purpose-amount" }}
+                  {% if form.welfare_amount.errors %}
+                  <div class="text-danger small mt-1">{{ form.welfare_amount.errors|join:", " }}</div>
+                  {% endif %}
+                </div>
+                <div class="col-md-3 col-6 purpose-box" data-purpose="annual_subscription">
+                  <label for="id_annual_subscription_amount" class="form-label small">Annual Subscription (UGX)</label>
+                  {{ form.annual_subscription_amount|add_class:"form-control purpose-amount" }}
+                  {% if form.annual_subscription_amount.errors %}
+                  <div class="text-danger small mt-1">{{ form.annual_subscription_amount.errors|join:", " }}</div>
+                  {% endif %}
+                </div>
+                <div class="col-md-3 col-6 purpose-box" data-purpose="fine">
+                  <label for="id_fine_amount" class="form-label small">Fine (UGX)</label>
+                  {{ form.fine_amount|add_class:"form-control purpose-amount" }}
+                  {% if form.fine_amount.errors %}
+                  <div class="text-danger small mt-1">{{ form.fine_amount.errors|join:", " }}</div>
+                  {% endif %}
+                </div>
+                <div class="col-md-3 col-6 purpose-box" data-purpose="shares">
+                  <label for="id_shares_amount" class="form-label small">Shares (UGX)</label>
+                  {{ form.shares_amount|add_class:"form-control purpose-amount" }}
+                  {% if form.shares_amount.errors %}
+                  <div class="text-danger small mt-1">{{ form.shares_amount.errors|join:", " }}</div>
+                  {% endif %}
+                </div>
+                <div class="col-md-3 col-6 purpose-box" data-purpose="loan_repayment">
+                  <label for="id_loan_repayment_amount" class="form-label small">Loan Repayment (UGX)</label>
+                  {{ form.loan_repayment_amount|add_class:"form-control purpose-amount" }}
+                  {% if form.loan_repayment_amount.errors %}
+                  <div class="text-danger small mt-1">{{ form.loan_repayment_amount.errors|join:", " }}</div>
+                  {% endif %}
+                </div>
+              </div>
+              {% if form.saving_amount.errors or form.welfare_amount.errors or form.annual_subscription_amount.errors or form.fine_amount.errors or form.shares_amount.errors or form.loan_repayment_amount.errors %}
+              <div class="text-danger small mt-1">Please correct the amounts above.</div>
+              {% endif %}
+              {% if form.non_field_errors %}
+              <div class="text-danger small mt-1">{{ form.non_field_errors|join:", " }}</div>
+              {% endif %}
+            </div>
+
+            <!-- Live total -->
+            <div class="col-12">
+              <div class="alert alert-success py-2 mb-0 d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">Total Deposit:</span>
+                <span id="totalDisplay" class="fs-5 fw-bold">UGX 0</span>
+              </div>
+            </div>
+
+            <!-- Proof Upload -->
+            <div class="col-md-6">
+              <label for="id_proof" class="form-label">Proof of Payment <span class="text-danger">*</span></label>
+              {{ form.proof|add_class:"form-control" }}
+              <small class="text-muted">Upload an image only, for example .jpg, .jpeg, or .png. PDF files are not accepted.</small>
+              {% if form.proof.errors %}
+              <div class="text-danger small mt-1">{{ form.proof.errors|join:", " }}</div>
+              {% endif %}
+            </div>
+
+            <!-- Remarks -->
+            <div class="col-12">
+              <label for="id_remarks" class="form-label">Remarks (optional)</label>
+              {{ form.remarks|add_class:"form-control" }}
+              {% if form.remarks.errors %}
+              <div class="text-danger small mt-1">{{ form.remarks.errors|join:", " }}</div>
+              {% endif %}
+            </div>
+
+            <div class="col-12 text-end">
+              <button type="submit" id="submitBtn" class="btn btn-success px-4">
+                <span class="button-text"><i class="bi bi-check-circle me-1"></i> Submit Deposit</span>
+                <span class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Loader Script -->
+<script>
+document.getElementById('depositForm').addEventListener('submit', function() {
+    if (!this.checkValidity()) {
+      return;
+    }
+    let submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.querySelector('.spinner-border').classList.remove('d-none');
+});
+</script>
+
+<script>
+function selectedPurposes() {
+  return Array.from(document.querySelectorAll('input[name="selected_purposes"]:checked')).map(function(el) {
+    return el.value;
+  });
+}
+
+function togglePurposeBoxes() {
+  const selected = selectedPurposes();
+  document.querySelectorAll('.purpose-box').forEach(function(box) {
+    const purpose = box.getAttribute('data-purpose');
+    const input = box.querySelector('input');
+    const isSelected = selected.includes(purpose);
+    if (isSelected) {
+      if (box.classList.contains('d-none')) {
+        box.classList.remove('d-none', 'purpose-hiding');
+        box.style.opacity = '0';
+        box.style.transform = 'translateY(-6px)';
+        requestAnimationFrame(function() {
+          box.style.opacity = '';
+          box.style.transform = '';
+        });
+      }
+      if (input) {
+        input.disabled = false;
+      }
+    } else {
+      if (!box.classList.contains('d-none')) {
+        box.classList.add('purpose-hiding');
+        window.setTimeout(function() {
+          box.classList.add('d-none');
+          box.classList.remove('purpose-hiding');
+        }, 180);
+      }
+      if (input) {
+        input.disabled = true;
+        input.value = '';
+      }
+    }
+  });
+}
+
+function updateTotal() {
+  const fields = document.querySelectorAll('.purpose-box:not(.d-none) .purpose-amount');
+  let total = 0;
+  fields.forEach(function(f) {
+    const val = parseFloat(f.value) || 0;
+    total += val;
+  });
+  document.getElementById('totalDisplay').textContent = 'UGX ' + total.toLocaleString('en-UG', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+}
+
+// ── Loan-repayment per-account gating ───────────────────────────────────────
+const LOAN_ACCOUNT_IDS = new Set({{ loan_account_ids_json }});
+
+function getLoanRepaymentCheckbox() {
+  return document.querySelector('input[name="selected_purposes"][value="loan_repayment"]');
+}
+
+function getLoanRepaymentCheckboxWrapper() {
+  const cb = getLoanRepaymentCheckbox();
+  return cb ? cb.closest('.form-check') : null;
+}
+
+function updateLoanRepaymentVisibility() {
+  const accountSelect = document.getElementById('id_account');
+  const selectedId = accountSelect ? parseInt(accountSelect.value, 10) : NaN;
+  const accountHasLoan = !isNaN(selectedId) && LOAN_ACCOUNT_IDS.has(selectedId);
+
+  const wrapper = getLoanRepaymentCheckboxWrapper();
+  const cb = getLoanRepaymentCheckbox();
+  const amountBox = document.querySelector('.purpose-box[data-purpose="loan_repayment"]');
+
+  if (!wrapper) return; // loan_repayment not in choices (user has no loans at all)
+
+  if (accountHasLoan) {
+    wrapper.style.display = '';
+    wrapper.title = '';
+  } else {
+    // Hide and uncheck the checkbox; clear the amount box too.
+    wrapper.style.display = 'none';
+    if (cb && cb.checked) {
+      cb.checked = false;
+      togglePurposeBoxes();
+      updateTotal();
+    }
+    if (amountBox) {
+      amountBox.classList.add('d-none');
+      const input = amountBox.querySelector('input');
+      if (input) { input.disabled = true; input.value = ''; }
+    }
+  }
+}
+
+const accountSelect = document.getElementById('id_account');
+if (accountSelect) {
+  accountSelect.addEventListener('change', function() {
+    updateLoanRepaymentVisibility();
+    togglePurposeBoxes();
+    updateTotal();
+  });
+}
+
+document.querySelectorAll('input[name="selected_purposes"]').forEach(function(cb) {
+  cb.addEventListener('change', function() {
+    togglePurposeBoxes();
+    updateTotal();
+  });
+});
+document.querySelectorAll('.purpose-amount').forEach(function(f) {
+  f.addEventListener('input', updateTotal);
+});
+
+// Run on page load to set correct initial state.
+updateLoanRepaymentVisibility();
+togglePurposeBoxes();
+updateTotal();
+</script>
+{% endblock %}

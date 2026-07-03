@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&display=swap');
+
+    .fine-form-surface {
+        font-family: 'Outfit', sans-serif;
+        background: linear-gradient(145deg, #eef6ff 0%, #f4fffb 52%, #ffffff 100%);
+        border-radius: 18px;
+        padding: 1.25rem;
+        position: relative;
+        overflow: hidden;
+        isolation: isolate;
+    }
+
+    .fine-form-surface::before,
+    .fine-form-surface::after {
+        content: "";
+        position: absolute;
+        border-radius: 999px;
+        z-index: -1;
+        filter: blur(4px);
+    }
+
+    .fine-form-surface::before {
+        width: 230px;
+        height: 230px;
+        top: -90px;
+        right: -80px;
+        background: radial-gradient(circle at 35% 35%, rgba(32, 112, 78, 0.18), rgba(32, 112, 78, 0));
+    }
+
+    .fine-form-surface::after {
+        width: 220px;
+        height: 220px;
+        left: -90px;
+        bottom: -100px;
+        background: radial-gradient(circle at 45% 45%, rgba(13, 110, 253, 0.18), rgba(13, 110, 253, 0));
+    }
+
+    .fine-form-card {
+        border: 0;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: 0 14px 28px rgba(9, 32, 69, 0.08);
+    }
+
+    .fine-form-card .form-label {
+        font-weight: 600;
+        margin-bottom: 0.35rem;
+    }
+
+    .fine-form-card .form-control,
+    .fine-form-card .form-select,
+    .fine-form-card textarea {
+        border-radius: 10px;
+        border: 1px solid #d8e4f4;
+    }
+
+    .fine-form-card .form-control:focus,
+    .fine-form-card .form-select:focus,
+    .fine-form-card textarea:focus {
+        border-color: #9fc0e8;
+        box-shadow: 0 0 0 0.2rem rgba(31, 122, 63, 0.12);
+    }
+</style>
+
+<div class="fine-form-surface">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <div>
+            <h2 class="mb-1 text-primary"><i class="bi bi-plus-circle me-2"></i>Add Fine</h2>
+            <p class="text-muted mb-0">Create a new fine and assign it to the correct member account.</p>
+        </div>
+        <a class="btn btn-outline-primary" href="{% url 'manage_fines' %}">
+            <i class="bi bi-arrow-left me-1"></i>Back to Manage Fines
+        </a>
+    </div>
+
+    <div class="fine-form-card p-4">
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+            <div class="alert alert-danger" role="alert">
+                {% for error in form.non_field_errors %}
+                    <div>{{ error }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="{{ form.member.id_for_label }}" class="form-label">Member</label>
+                    {{ form.member }}
+                    {% if form.member.errors %}<div class="text-danger small mt-1">{{ form.member.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label for="{{ form.account.id_for_label }}" class="form-label">Account</label>
+                    {{ form.account }}
+                    <div class="form-text">Required when the selected member has multiple accounts.</div>
+                    {% if form.account.errors %}<div class="text-danger small mt-1">{{ form.account.errors|striptags }}</div>{% endif %}
+                </div>
+
+                <div class="col-md-6">
+                    <label for="{{ form.amount.id_for_label }}" class="form-label">Amount</label>
+                    {{ form.amount }}
+                    {% if form.amount.errors %}<div class="text-danger small mt-1">{{ form.amount.errors|striptags }}</div>{% endif %}
+                </div>
+
+                <div class="col-12">
+                    <label for="{{ form.reason.id_for_label }}" class="form-label">Reason</label>
+                    {{ form.reason }}
+                    {% if form.reason.errors %}<div class="text-danger small mt-1">{{ form.reason.errors|striptags }}</div>{% endif %}
+                </div>
+            </div>
+
+            <div class="d-flex gap-2 mt-4">
+                <button class="btn btn-primary" type="submit">
+                    <i class="bi bi-check2-circle me-1"></i>Save Fine
+                </button>
+                <a class="btn btn-outline-secondary" href="{% url 'manage_fines' %}">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const memberSelect = document.getElementById('{{ form.member.id_for_label }}');
+    const accountSelect = document.getElementById('{{ form.account.id_for_label }}');
+    const endpointTemplate = "{% url 'member_accounts_api' 0 %}";
+
+    if (!memberSelect || !accountSelect) {
+        return;
+    }
+
+    function setPlaceholder() {
+        accountSelect.innerHTML = '<option value="">-- Select member first --</option>';
+    }
+
+    async function loadAccounts(memberId) {
+        if (!memberId) {
+            setPlaceholder();
+            return;
+        }
+
+        const currentValue = accountSelect.value;
+        const url = endpointTemplate.replace('/0/', '/' + memberId + '/');
+        const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        const payload = await response.json();
+        const accounts = payload.accounts || [];
+
+        accountSelect.innerHTML = '<option value="">-- Select Account --</option>';
+        accounts.forEach(function (account) {
+            const option = document.createElement('option');
+            option.value = account.id;
+            option.textContent = account.label;
+            if (String(account.id) === String(currentValue)) {
+                option.selected = true;
+            }
+            accountSelect.appendChild(option);
+        });
+    }
+
+    memberSelect.addEventListener('change', function () {
+        loadAccounts(memberSelect.value);
+    });
+
+    if (memberSelect.value) {
+        loadAccounts(memberSelect.value);
+    }
+});
+</script>
+{% endblock %}

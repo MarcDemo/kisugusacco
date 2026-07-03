@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+  .msg-surface { font-family:'Outfit',sans-serif; background:linear-gradient(145deg,#eef6ff 0%,#f4fffb 52%,#fff 100%); border-radius:18px; padding:1.25rem; position:relative; overflow:hidden; isolation:isolate; }
+  .msg-surface::before { content:""; position:absolute; width:240px; height:240px; top:-90px; right:-80px; background:radial-gradient(circle at 35% 35%,rgba(32,112,78,.16),rgba(32,112,78,0)); border-radius:999px; z-index:-1; filter:blur(4px); }
+  .msg-card { border:0; border-radius:16px; background:#fff; box-shadow:0 14px 28px rgba(9,32,69,.08); }
+  .msg-row { transition:background 150ms ease; }
+  .msg-row:hover { background:#f0f7ff; }
+  .msg-row .subject-link { color:inherit; text-decoration:none; }
+  .msg-row .subject-link:hover { color:#166534; text-decoration:underline; }
+</style>
+
+<div class="msg-surface">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+      <h2 class="mb-1 text-primary"><i class="bi bi-send-check me-2"></i>Sent</h2>
+      <p class="text-muted mb-0">Messages you have sent.</p>
+    </div>
+    <a href="{% url 'send_message' %}" class="btn btn-primary">
+      <i class="bi bi-pencil-square me-1"></i>Compose
+    </a>
+  </div>
+
+  <div class="msg-card">
+    <div class="table-responsive">
+      <table class="table mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>To</th>
+            <th>Subject</th>
+            <th>Sent</th>
+            <th>Read Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for message in messages %}
+          <tr class="msg-row">
+            <td>
+              {% for r in message.recipients.all %}
+                <span class="badge text-bg-light border me-1">{{ r.get_full_name|default:r.username }}</span>
+              {% endfor %}
+            </td>
+            <td>
+              <a href="{% url 'message_detail' message.pk %}" class="subject-link">
+                {{ message.subject|default:"(No Subject)"|truncatechars:55 }}
+              </a>
+            </td>
+            <td class="text-muted small">{{ message.sent_at|date:"M d, Y H:i" }}</td>
+            <td>
+              {% with read_count=message.messagerecipient_set.filter.count %}
+                {% if message.messagerecipient_set.filter %}
+                  <span class="badge text-bg-success">Read</span>
+                {% else %}
+                  <span class="badge text-bg-secondary">Unread</span>
+                {% endif %}
+              {% endwith %}
+            </td>
+            <td>
+              <a href="{% url 'reply_message' message.pk %}" class="btn btn-sm btn-outline-primary" title="Reply">
+                <i class="bi bi-reply-fill"></i>
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="text-center text-muted py-5">
+            <i class="bi bi-send fs-2 d-block mb-2"></i>No sent messages yet.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-4">
+  <h3 class="text-center mb-4"><i class="bi bi-calendar-check"></i> Weekly Payment Status - Week {{ current_week_number }}</h3>
+  <div class="table-responsive">
+    <table class="table table-bordered table-hover table-sm">
+      <thead class="table-success text-center">
+        <tr>
+          <th>#</th>
+          <th>Member</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in status_list %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>{{ item.member.username }}</td>
+          <td>
+            {% if item.has_paid %}
+              <span class="badge bg-success">Paid</span>
+            {% else %}
+              <span class="badge bg-danger">Not Paid</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-muted text-center mt-3">Week {{ current_week_number }} starting on: <strong>{{ current_week|date:"l, d M Y" }}</strong></p>
+</div>
+{% endblock %}

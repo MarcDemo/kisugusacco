@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4">
+  <h4 class="text-danger"><i class="bi bi-trash"></i> Confirm Delete</h4>
+
+  <p>Are you sure you want to delete the document titled:</p>
+  <p><strong>{{ document.title }}</strong> ({{ document.get_document_type_display }})?</p>
+
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">
+      <i class="bi bi-trash"></i> Confirm Delete
+    </button>
+    <a href="{% url 'list_documents' %}" class="btn btn-secondary ms-2">Cancel</a>
+  </form>
+</div>
+{% endblock %}

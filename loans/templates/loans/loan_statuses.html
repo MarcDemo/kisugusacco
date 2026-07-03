@@ -1,0 +1,508 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&display=swap');
+
+  .loans-surface {
+    font-family: 'Outfit', sans-serif;
+    background: linear-gradient(145deg, #f0f4ff 0%, #fdf0ff 50%, #f0fff8 100%);
+    border-radius: 20px;
+    padding: 1.5rem;
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .loans-surface::before,
+  .loans-surface::after {
+    content: "";
+    position: absolute;
+    border-radius: 999px;
+    z-index: -1;
+    filter: blur(5px);
+    animation: loansDrift 10s ease-in-out infinite;
+  }
+  .loans-surface::before {
+    width: 300px; height: 300px;
+    top: -110px; right: -110px;
+    background: radial-gradient(circle at 35% 35%, rgba(99, 102, 241, 0.22), transparent);
+  }
+  .loans-surface::after {
+    width: 240px; height: 240px;
+    left: -90px; bottom: -100px;
+    background: radial-gradient(circle at 45% 45%, rgba(16, 185, 129, 0.22), transparent);
+    animation-delay: 1.5s;
+  }
+  @keyframes loansDrift {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-12px); }
+  }
+
+  /* ── shared card shells ── */
+  .soft-card {
+    border: 0;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 14px 30px rgba(9, 32, 69, 0.08);
+    transition: transform 220ms ease, box-shadow 220ms ease;
+  }
+  .soft-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 22px 38px rgba(9, 32, 69, 0.13);
+  }
+
+  /* ── stat boxes ── */
+  .stat-box {
+    border-radius: 14px;
+    padding: 1rem 1.1rem;
+    border: 1px solid #e8edf6;
+    background: #fff;
+    transition: transform 220ms ease, border-color 220ms ease;
+  }
+  .stat-box:hover { transform: translateY(-3px); border-color: #c8d7f0; }
+
+  /* ── colorful gradient stat-boxes ── */
+  .cc-green  { background: linear-gradient(135deg,#14532d 0%,#22c55e 100%) !important; color:#fff !important; border:0 !important; }
+  .cc-blue   { background: linear-gradient(135deg,#1e3a8a 0%,#3b82f6 100%) !important; color:#fff !important; border:0 !important; }
+  .cc-amber  { background: linear-gradient(135deg,#78350f 0%,#f59e0b 100%) !important; color:#fff !important; border:0 !important; }
+  .cc-rose   { background: linear-gradient(135deg,#881337 0%,#f43f5e 100%) !important; color:#fff !important; border:0 !important; }
+  .cc-teal   { background: linear-gradient(135deg,#134e4a 0%,#2dd4bf 100%) !important; color:#fff !important; border:0 !important; }
+  .cc-purple { background: linear-gradient(135deg,#4c1d95 0%,#a78bfa 100%) !important; color:#fff !important; border:0 !important; }
+  .cc-indigo { background: linear-gradient(135deg,#312e81 0%,#818cf8 100%) !important; color:#fff !important; border:0 !important; }
+  [class*="cc-"] small, [class*="cc-"] .text-muted { color: rgba(255,255,255,0.78) !important; }
+  .cc-icon { font-size: 2.4rem; opacity: 0.22; line-height: 1; color: #fff; flex-shrink: 0; }
+
+  /* ── section heading pills ── */
+  .section-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: .95rem;
+    font-weight: 700;
+    padding: .35rem .9rem;
+    border-radius: 50px;
+    margin-bottom: 1rem;
+    letter-spacing: .02em;
+  }
+  .pill-green  { background: #dcfce7; color: #15803d; }
+  .pill-amber  { background: #fef3c7; color: #92400e; }
+  .pill-rose   { background: #ffe4e6; color: #9f1239; }
+  .pill-indigo { background: #e0e7ff; color: #3730a3; }
+  .pill-teal   { background: #ccfbf1; color: #0f766e; }
+
+  /* ── progress bars ── */
+  .loan-progress { height: 8px; border-radius: 99px; }
+
+  /* ── repayment status list cards ── */
+  .status-card-header {
+    border-radius: 12px 12px 0 0;
+    padding: .75rem 1rem;
+    font-weight: 700;
+    font-size: .95rem;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+  .sh-teal   { background: linear-gradient(90deg,#134e4a,#2dd4bf); color:#fff; }
+  .sh-blue   { background: linear-gradient(90deg,#1e3a8a,#3b82f6); color:#fff; }
+  .sh-rose   { background: linear-gradient(90deg,#881337,#f43f5e); color:#fff; }
+
+  /* ── entrance animation ── */
+  .loans-surface .stat-box,
+  .loans-surface .soft-card {
+    opacity: 0;
+    transform: translateY(14px);
+    animation: loansReveal 500ms ease forwards;
+  }
+  .stat-row .col-md-4:nth-child(1) .stat-box { animation-delay: 30ms; }
+  .stat-row .col-md-4:nth-child(2) .stat-box { animation-delay: 80ms; }
+  .stat-row .col-md-4:nth-child(3) .stat-box { animation-delay: 130ms; }
+  .stat-row .col-md-4:nth-child(4) .stat-box { animation-delay: 180ms; }
+  .stat-row .col-md-4:nth-child(5) .stat-box { animation-delay: 230ms; }
+  .stat-row .col-md-4:nth-child(6) .stat-box { animation-delay: 280ms; }
+  .section-1 { animation-delay: 340ms; }
+  .section-2 { animation-delay: 400ms; }
+  .section-3 { animation-delay: 460ms; }
+  .section-4 { animation-delay: 520ms; }
+  @keyframes loansReveal {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── table styling ── */
+  .loans-table thead { background: linear-gradient(90deg, #312e81 0%, #6366f1 100%); color: #fff; }
+  .loans-table thead th { border: 0; font-weight: 600; font-size: .82rem; white-space: nowrap; padding: .65rem .8rem; }
+  .loans-table tbody tr { transition: background 150ms; }
+  .loans-table tbody tr:hover { background: #f5f3ff; }
+  .loans-table td { vertical-align: middle; font-size: .85rem; }
+
+  .breakdown-table thead { background: linear-gradient(90deg, #134e4a 0%, #2dd4bf 100%); color: #fff; }
+  .breakdown-table thead th { border: 0; font-weight: 600; font-size: .82rem; white-space: nowrap; padding: .65rem .8rem; }
+  .breakdown-table tbody tr:hover { background: #f0fdf4; }
+
+  .pending-table thead { background: linear-gradient(90deg, #78350f 0%, #f59e0b 100%); color: #fff; }
+  .pending-table thead th { border: 0; font-weight: 600; font-size: .82rem; }
+
+  .rejected-table thead { background: linear-gradient(90deg, #881337 0%, #f43f5e 100%); color: #fff; }
+  .rejected-table thead th { border: 0; font-weight: 600; font-size: .82rem; }
+
+  /* ── record payment form inside table ── */
+  .pay-form { display: flex; flex-direction: column; gap: .3rem; min-width: 160px; }
+  .pay-form .btn-save {
+    background: linear-gradient(90deg,#1e3a8a,#6366f1);
+    color: #fff; border: 0; border-radius: 8px;
+    font-size: .8rem; padding: .3rem .7rem;
+    transition: opacity 200ms;
+  }
+  .pay-form .btn-save:hover { opacity: .88; }
+
+  @media (max-width: 767.98px) {
+    .loans-surface {
+      padding: 1rem;
+      border-radius: 16px;
+    }
+    .loans-surface .row.stat-row > .col-md-4 {
+      flex: 0 0 50%;
+      max-width: 50%;
+    }
+    .loans-surface .stat-box {
+      padding: 0.9rem;
+    }
+    .loans-surface .section-pill {
+      font-size: 0.85rem;
+      padding: 0.32rem 0.7rem;
+    }
+    .loans-surface .pay-form {
+      min-width: 140px;
+    }
+    .loans-surface .btn.btn-sm[style*="linear-gradient"] {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+</style>
+
+<div class="loans-surface">
+
+  <!-- ── Page header ── -->
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+      <h2 class="mb-0 fw-bold" style="background:linear-gradient(90deg,#4f46e5,#06b6d4);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">
+        <i class="bi bi-cash-stack me-2" style="-webkit-text-fill-color:#4f46e5;"></i>Loan Management
+      </h2>
+      <p class="text-muted mb-0 small mt-1">Full overview of all loan statuses, repayments, and balances.</p>
+    </div>
+    <a href="{% url 'pending_loans' %}" class="btn btn-sm" style="background:linear-gradient(90deg,#78350f,#f59e0b);color:#fff;border:0;border-radius:10px;">
+      <i class="bi bi-hourglass-split me-1"></i> Pending Approvals
+    </a>
+  </div>
+
+  <!-- ── Summary stat cards ── -->
+  <div class="row g-3 mb-4 stat-row">
+    <div class="col-md-4 col-6">
+      <div class="stat-box cc-green">
+        <div class="d-flex justify-content-between align-items-start">
+          <div><small>Approved</small><div class="fs-4 fw-bold">{{ approved_loans|length }}</div></div>
+          <i class="bi bi-check-circle-fill cc-icon"></i>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4 col-6">
+      <div class="stat-box cc-amber">
+        <div class="d-flex justify-content-between align-items-start">
+          <div><small>Pending</small><div class="fs-4 fw-bold">{{ pending_loans|length }}</div></div>
+          <i class="bi bi-hourglass-split cc-icon"></i>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4 col-6">
+      <div class="stat-box cc-rose">
+        <div class="d-flex justify-content-between align-items-start">
+          <div><small>Rejected</small><div class="fs-4 fw-bold">{{ rejected_loans|length }}</div></div>
+          <i class="bi bi-x-circle-fill cc-icon"></i>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4 col-6">
+      <div class="stat-box cc-teal">
+        <div class="d-flex justify-content-between align-items-start">
+          <div><small>Fully Paid</small><div class="fs-4 fw-bold">{{ fully_paid_loans|length }}</div></div>
+          <i class="bi bi-patch-check-fill cc-icon"></i>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4 col-6">
+      <div class="stat-box cc-blue">
+        <div class="d-flex justify-content-between align-items-start">
+          <div><small>In Progress</small><div class="fs-4 fw-bold">{{ progress_loans|length }}</div></div>
+          <i class="bi bi-arrow-repeat cc-icon"></i>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4 col-6">
+      <div class="stat-box cc-purple">
+        <div class="d-flex justify-content-between align-items-start">
+          <div><small>Unpaid</small><div class="fs-4 fw-bold">{{ unpaid_loans|length }}</div></div>
+          <i class="bi bi-exclamation-circle-fill cc-icon"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Approved Loans table ── -->
+  <div class="soft-card mb-4 section-1">
+    <div class="p-3 border-bottom d-flex align-items-center gap-2">
+      <span class="section-pill pill-green"><i class="bi bi-check-circle-fill"></i> Approved Loans</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table loans-table align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Member</th>
+            <th>Account</th>
+            <th>Principal</th>
+            <th>Rate</th>
+            <th>Duration</th>
+            <th>Overdue</th>
+            <th>Overdue Interest</th>
+            <th>Total Repayment</th>
+            <th>Total Due Now</th>
+            <th>Paid</th>
+            <th>Outstanding</th>
+            <th>Progress</th>
+            <th>Approved On</th>
+            {% if is_treasurer %}<th>Record Payment</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for loan in approved_loans %}
+          <tr>
+            <td class="fw-semibold">{{ loan.member.get_full_name|default:loan.member.username }}</td>
+            <td>{% if loan.account %}<span class="badge rounded-pill" style="background:#e0e7ff;color:#3730a3;">Acct {{ loan.account.label }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="fw-semibold">UGX {{ loan.principal|floatformat:'0' }}</td>
+            <td><span class="badge text-bg-light border">{{ loan.monthly_interest_rate }}%</span></td>
+            <td>{{ loan.duration_months }} mo</td>
+            <td>
+              {% if loan.overdue_months_as_of %}
+                <span class="badge rounded-pill" style="background:#ffe4e6;color:#9f1239;">{{ loan.overdue_months_as_of }} mo</span>
+              {% else %}<span class="text-muted small">—</span>{% endif %}
+            </td>
+            <td>{% if loan.overdue_interest_as_of %}UGX {{ loan.overdue_interest_as_of|floatformat:'0' }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>UGX {{ loan.total_repayment|floatformat:'0' }}</td>
+            <td class="fw-semibold text-danger">UGX {{ loan.total_due_as_of|floatformat:'0' }}</td>
+            <td class="text-success fw-semibold">UGX {{ loan.amount_paid|floatformat:'0' }}</td>
+            <td class="fw-bold">UGX {{ loan.outstanding_balance|floatformat:'0' }}</td>
+            <td style="min-width:110px;">
+              <div class="d-flex align-items-center gap-2">
+                <div class="progress flex-grow-1 loan-progress">
+                  <div class="progress-bar" role="progressbar"
+                       style="width:{{ loan.repayment_progress_percent|floatformat:'0' }}%;
+                              background:linear-gradient(90deg,#14532d,#22c55e);"
+                       aria-valuenow="{{ loan.repayment_progress_percent|floatformat:'0' }}"
+                       aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <small class="text-muted" style="white-space:nowrap;">{{ loan.repayment_progress_percent|floatformat:'0' }}%</small>
+              </div>
+            </td>
+            <td><small class="text-muted">{{ loan.approved_on|date:'d M Y' }}</small></td>
+            {% if is_treasurer %}
+            <td>
+              <form method="post" action="{% url 'record_loan_repayment' loan.id %}" class="pay-form">
+                {% csrf_token %}
+                <input type="number" name="amount" step="0.01" min="0.01" class="form-control form-control-sm" placeholder="Amount" required>
+                <input type="date" name="paid_on" class="form-control form-control-sm" required>
+                <input type="text" name="notes" class="form-control form-control-sm" placeholder="Notes (optional)">
+                <button type="submit" class="btn-save">Save Payment</button>
+              </form>
+            </td>
+            {% endif %}
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="{% if is_treasurer %}14{% else %}13{% endif %}" class="text-center text-muted py-4">
+              <i class="bi bi-inbox fs-3 d-block mb-2 opacity-25"></i>No approved loans yet.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Pending & Rejected ── -->
+  <div class="row g-3 mb-4 section-2">
+    <div class="col-lg-6">
+      <div class="soft-card h-100">
+        <div class="status-card-header sh-amber" style="background:linear-gradient(90deg,#78350f,#f59e0b);">
+          <i class="bi bi-hourglass-split"></i> Pending Loan Requests
+        </div>
+        <div class="table-responsive">
+          <table class="table pending-table align-middle mb-0">
+            <thead><tr><th>Member</th><th>Amount</th><th>Status</th><th>Requested On</th></tr></thead>
+            <tbody>
+              {% for loan in pending_loans %}
+              <tr>
+                <td class="fw-semibold">{{ loan.member.get_full_name|default:loan.member.username }}</td>
+                <td>UGX {{ loan.principal|floatformat:'0' }}</td>
+                <td>
+                  {% if loan.status == 'PENDING_GUARANTOR' %}
+                    <span class="badge text-bg-secondary">Awaiting Guarantors' Approval</span>
+                  {% else %}
+                    <span class="badge text-bg-warning">Management Review</span>
+                  {% endif %}
+                </td>
+                <td><small class="text-muted">{{ loan.requested_on|date:'d M Y' }}</small></td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="text-center text-muted py-3"><i class="bi bi-check2-all me-1"></i>No pending requests.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="soft-card h-100">
+        <div class="status-card-header" style="background:linear-gradient(90deg,#881337,#f43f5e);color:#fff;border-radius:12px 12px 0 0;padding:.75rem 1rem;font-weight:700;display:flex;align-items:center;gap:.5rem;">
+          <i class="bi bi-x-circle-fill"></i> Rejected Loans
+        </div>
+        <div class="table-responsive">
+          <table class="table rejected-table align-middle mb-0">
+            <thead><tr><th>Member</th><th>Amount</th><th>Status</th><th>Remarks</th></tr></thead>
+            <tbody>
+              {% for loan in rejected_loans %}
+              <tr>
+                <td class="fw-semibold">{{ loan.member.get_full_name|default:loan.member.username }}</td>
+                <td>UGX {{ loan.principal|floatformat:'0' }}</td>
+                <td>
+                  {% if loan.status == 'REJECTED_GUARANTOR' %}
+                    <span class="badge text-bg-danger">Rejected by Guarantor</span>
+                  {% else %}
+                    <span class="badge text-bg-danger">Rejected</span>
+                  {% endif %}
+                </td>
+                <td><span class="text-muted small">{{ loan.remarks|default:'—' }}</span></td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="text-center text-muted py-3"><i class="bi bi-check2-all me-1"></i>No rejected loans.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Repayment Status Cards ── -->
+  <div class="soft-card mb-4 p-3 section-3">
+    <span class="section-pill pill-indigo mb-3"><i class="bi bi-bar-chart-steps"></i> Repayment Status — Approved Loans</span>
+    <div class="row g-3">
+      <!-- Fully Paid -->
+      <div class="col-lg-4">
+        <div class="rounded-3 overflow-hidden" style="border:1.5px solid #bbf7d0;">
+          <div class="status-card-header sh-teal">
+            <i class="bi bi-patch-check-fill"></i> Fully Paid
+            <span class="ms-auto badge rounded-pill" style="background:rgba(255,255,255,0.25);">{{ fully_paid_loans|length }}</span>
+          </div>
+          <ul class="list-group list-group-flush">
+            {% for loan in fully_paid_loans %}
+            <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+              <span class="fw-semibold small">{{ loan.member.get_full_name|default:loan.member.username }}</span>
+              <span class="badge rounded-pill" style="background:#ccfbf1;color:#0f766e;">UGX {{ loan.principal|floatformat:'0' }}</span>
+            </li>
+            {% empty %}
+            <li class="list-group-item text-muted small py-3 text-center"><i class="bi bi-inbox me-1"></i>None yet.</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+      <!-- In Progress -->
+      <div class="col-lg-4">
+        <div class="rounded-3 overflow-hidden" style="border:1.5px solid #bfdbfe;">
+          <div class="status-card-header sh-blue">
+            <i class="bi bi-arrow-repeat"></i> In Progress
+            <span class="ms-auto badge rounded-pill" style="background:rgba(255,255,255,0.25);">{{ progress_loans|length }}</span>
+          </div>
+          <ul class="list-group list-group-flush">
+            {% for loan in progress_loans %}
+            <li class="list-group-item py-2">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="fw-semibold small">{{ loan.member.get_full_name|default:loan.member.username }}</span>
+                <span class="badge rounded-pill" style="background:#dbeafe;color:#1e40af;">{{ loan.repayment_progress_percent|floatformat:'0' }}%</span>
+              </div>
+              <div class="progress loan-progress">
+                <div class="progress-bar" role="progressbar"
+                     style="width:{{ loan.repayment_progress_percent|floatformat:'0' }}%;background:linear-gradient(90deg,#1e3a8a,#3b82f6);"
+                     aria-valuenow="{{ loan.repayment_progress_percent|floatformat:'0' }}"
+                     aria-valuemin="0" aria-valuemax="100"></div>
+              </div>
+            </li>
+            {% empty %}
+            <li class="list-group-item text-muted small py-3 text-center"><i class="bi bi-inbox me-1"></i>None in progress.</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+      <!-- Unpaid -->
+      <div class="col-lg-4">
+        <div class="rounded-3 overflow-hidden" style="border:1.5px solid #fecdd3;">
+          <div class="status-card-header sh-rose">
+            <i class="bi bi-exclamation-circle-fill"></i> Unpaid
+            <span class="ms-auto badge rounded-pill" style="background:rgba(255,255,255,0.25);">{{ unpaid_loans|length }}</span>
+          </div>
+          <ul class="list-group list-group-flush">
+            {% for loan in unpaid_loans %}
+            <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+              <span class="fw-semibold small">{{ loan.member.get_full_name|default:loan.member.username }}</span>
+              <span class="badge rounded-pill" style="background:#ffe4e6;color:#9f1239;">UGX {{ loan.principal|floatformat:'0' }}</span>
+            </li>
+            {% empty %}
+            <li class="list-group-item text-muted small py-3 text-center"><i class="bi bi-check2-all me-1"></i>All clear!</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Loan Balance Breakdown ── -->
+  <div class="soft-card section-4">
+    <div class="p-3 border-bottom d-flex align-items-center gap-2">
+      <span class="section-pill pill-teal mb-0"><i class="bi bi-table"></i> Balance Breakdown</span>
+      <small class="text-muted ms-1">Principal · accrued interest · paid · current outstanding</small>
+    </div>
+    <div class="table-responsive">
+      <table class="table breakdown-table align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Member</th>
+            <th>Account</th>
+            <th>Principal</th>
+            <th>Accrued Interest (To Date)</th>
+            <th>Total Paid</th>
+            <th>Current Outstanding</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for loan in approved_loans %}
+          <tr>
+            <td class="fw-semibold">{{ loan.member.get_full_name|default:loan.member.username }}</td>
+            <td>{% if loan.account %}<span class="badge rounded-pill" style="background:#ccfbf1;color:#0f766e;">Acct {{ loan.account.label }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>UGX {{ loan.principal|floatformat:'0' }}</td>
+            <td class="text-warning fw-semibold">UGX {{ loan.accrued_interest_as_of|floatformat:'0' }}</td>
+            <td class="text-success fw-semibold">UGX {{ loan.amount_paid|floatformat:'0' }}</td>
+            <td class="fw-bold text-danger">UGX {{ loan.outstanding_balance|floatformat:'0' }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-4">
+              <i class="bi bi-inbox fs-3 d-block mb-2 opacity-25"></i>No approved loans.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

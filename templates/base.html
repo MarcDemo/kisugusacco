@@ -1,0 +1,1495 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Investment Group System</title>
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="{% static 'images/favicon1.ico' %}" />
+
+  <!-- Bootstrap CSS & Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
+
+  <style>
+  :root {
+    --forest-900: #0b3d20;
+    --forest-800: #14532d;
+    --forest-700: #166534;
+    --forest-600: #1f7a3f;
+    --forest-500: #2f8f4e;
+    --forest-100: #dcf5e4;
+    --forest-050: #eefaf1;
+
+    --bs-primary: var(--forest-700);
+    --bs-success: var(--forest-600);
+    --bs-info: #2f8f4e;
+  }
+
+  html {
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: radial-gradient(circle at top left, #f4fcf6 0%, #ffffff 45%, #f1f9f3 100%);
+    overflow-x: hidden;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Navbar color fill */
+  nav.navbar {
+    background: linear-gradient(90deg, var(--forest-900), var(--forest-700)) !important;
+    color: white;
+  }
+
+  nav.navbar .navbar-brand,
+  nav.navbar .navbar-text,
+  nav.navbar .nav-link,
+  nav.navbar .btn {
+    color: white !important;
+  }
+
+  /* Invert navbar-toggler icon colors for visibility */
+  .navbar-toggler-icon {
+    filter: invert(1);
+  }
+
+  #sidebar {
+    background: linear-gradient(180deg, var(--forest-050), #ffffff 65%);
+    color: var(--forest-900);
+  }
+
+  #main-content {
+    margin-left: 0;
+    padding: 2rem;
+    margin-top: 56px;
+    min-height: calc(100vh - 56px);
+    background-color: #fff;
+    flex: 1 0 auto;
+    min-width: 0;
+  }
+
+  @media (min-width: 992px) {
+    #sidebar {
+      height: calc(100vh - 56px - 40px);
+      position: fixed;
+      top: 56px;
+      left: 0;
+      width: 250px;
+      border-right: 1px solid #b9ddc3;
+      padding-top: 1rem;
+      overflow-y: auto;
+      z-index: 1000;
+      transform: none !important;
+      visibility: visible !important;
+    }
+
+    #main-content {
+      margin-left: 250px;
+    }
+  }
+
+  .sidebar-heading {
+    font-size: 1rem;
+    font-weight: 700;
+    padding: 0.5rem 1rem;
+    text-transform: uppercase;
+    color: var(--forest-800);
+  }
+
+  .nav-link {
+    color: var(--forest-800);
+    border-radius: 10px;
+    margin: 1px 8px;
+    transition: all 0.25s ease;
+  }
+
+  .nav-link.active {
+    background: linear-gradient(90deg, var(--forest-700), var(--forest-500));
+    color: white !important;
+    font-weight: 600;
+    box-shadow: 0 6px 16px rgba(22, 101, 52, 0.25);
+  }
+
+  .nav-link:hover {
+    background-color: var(--forest-100);
+    color: var(--forest-900) !important;
+    transform: translateX(4px);
+  }
+
+  .dropdown-menu.sidebar-dropdown {
+    max-height: 250px;
+    overflow-y: auto;
+    z-index: 1050;
+    position: static !important;
+    float: none !important;
+    box-shadow: none !important;
+    background: var(--forest-050) !important;
+    border: none !important;
+    padding-left: 1rem !important;
+    width: 100% !important;
+  }
+
+  .dropdown-menu.sidebar-dropdown a {
+    padding-left: 2rem !important;
+    color: var(--forest-900) !important;
+  }
+
+  .dropdown-toggle::after {
+    margin-left: auto;
+  }
+
+  .mobile-menu-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .mobile-menu-btn:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  .mobile-bottom-nav {
+    display: none;
+  }
+
+  .mobile-bottom-nav__link {
+    color: #d5eadb;
+    text-decoration: none;
+    font-size: 0.72rem;
+    font-weight: 700;
+    min-width: 0;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    position: relative;
+  }
+
+  .mobile-bottom-nav__link i {
+    font-size: 1.25rem;
+    line-height: 1;
+  }
+
+  .mobile-bottom-nav__link span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-bottom-nav__link.active {
+    color: #ffffff;
+  }
+
+  .mobile-bottom-nav__link.active i {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 12px;
+    padding: 0.35rem 0.55rem;
+  }
+
+  .mobile-bottom-nav__badge {
+    position: absolute;
+    top: 0.2rem;
+    right: 18%;
+    min-width: 1.15rem;
+    height: 1.15rem;
+    padding: 0 0.25rem;
+    border-radius: 999px;
+    background: #dc3545;
+    color: #ffffff;
+    font-size: 0.66rem;
+    line-height: 1.15rem;
+    text-align: center;
+  }
+
+  .sidebar-mobile-header {
+    display: none;
+  }
+
+  /* Scrollbar for sidebar */
+  #sidebar::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  #sidebar::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+  }
+
+  /* Footer */
+  footer {
+    border-top: 1px solid #b9ddc3;
+    position: relative; /* Ensure footer is in normal flow but spans full width */
+    width: 100%; /* Full viewport width, including sidebar area */
+    z-index: 1050; /* Higher than sidebar to appear in front */
+    overflow: visible; /* Prevent clipping */
+  }
+
+  footer .container-fluid {
+    padding-left: 15px; /* Ensure padding for left content */
+    padding-right: 40px; /* Increased padding for right content */
+  }
+
+  footer .d-flex {
+    flex-wrap: nowrap; /* Prevent wrapping to ensure right content stays visible */
+    width: 100%;
+  }
+
+  footer p {
+    white-space: nowrap; /* Prevent text wrapping */
+  }
+
+  footer p:last-child {
+    margin-left: 20px; /* Shift "Powered by" text and logo to the left */
+    margin-right: 15px; /* Add right margin to prevent edge clipping */
+    display: flex; /* Use flex to ensure logo and text align properly */
+    align-items: center; /* Vertically center the logo and text */
+    color: white !important; /* Force text visibility for debugging */
+  }
+
+  footer img {
+    margin-right: 8px; /* Spacing between logo and text */
+    height: 28px; /* Increased image height for better visibility */
+    width: auto; /* Maintain aspect ratio */
+    vertical-align: middle; /* Align with text */
+  }
+
+  .btn {
+    border-radius: 10px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  }
+
+  .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 18px rgba(20, 83, 45, 0.22);
+    filter: brightness(1.03);
+  }
+
+  .btn:active {
+    transform: translateY(0);
+  }
+
+  .btn-primary,
+  .bg-primary {
+    background-color: var(--forest-700) !important;
+    border-color: var(--forest-700) !important;
+  }
+
+  .btn-success,
+  .bg-success {
+    background-color: var(--forest-600) !important;
+    border-color: var(--forest-600) !important;
+  }
+
+  .btn-info,
+  .bg-info {
+    background-color: #2d7a46 !important;
+    border-color: #2d7a46 !important;
+    color: #ffffff !important;
+  }
+
+  .btn-warning,
+  .bg-warning {
+    background-color: #facc15 !important;
+    border-color: #eab308 !important;
+    color: #1f2937 !important;
+  }
+
+  .btn-danger,
+  .bg-danger {
+    background-color: #dc3545 !important;
+    border-color: #b91c1c !important;
+    color: #ffffff !important;
+  }
+
+  .btn-secondary,
+  .bg-secondary {
+    background-color: #4f7f60 !important;
+    border-color: #4f7f60 !important;
+    color: #ffffff !important;
+  }
+
+  .btn-dark,
+  .bg-dark {
+    background-color: var(--forest-900) !important;
+    border-color: var(--forest-900) !important;
+  }
+
+  .text-primary,
+  .text-success,
+  .text-info {
+    color: var(--forest-700) !important;
+  }
+
+  .text-warning {
+    color: #a16207 !important;
+  }
+
+  .text-danger {
+    color: #b91c1c !important;
+  }
+
+  .badge.bg-info,
+  .badge.bg-primary,
+  .badge.bg-success {
+    background-color: var(--forest-700) !important;
+    color: #ffffff !important;
+  }
+
+  .badge.bg-warning {
+    background-color: #facc15 !important;
+    color: #1f2937 !important;
+  }
+
+  .badge.bg-danger {
+    background-color: #dc3545 !important;
+    color: #ffffff !important;
+  }
+
+  .table-light,
+  .table thead,
+  .table th {
+    --bs-table-bg: #eaf7ee;
+    --bs-table-striped-bg: #f4fbf6;
+    --bs-table-hover-bg: #e2f3e7;
+    color: var(--forest-900);
+  }
+
+  .card,
+  .table-responsive,
+  .modal-content {
+    animation: layerFadeUp 0.5s ease both;
+  }
+
+  .card {
+    border: 1px solid #d6eadb;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  .card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 22px rgba(20, 83, 45, 0.12);
+  }
+
+  @keyframes layerFadeUp {
+    0% {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Responsive */
+  @media (max-width: 991.98px) {
+    nav.navbar.fixed-top {
+      position: sticky;
+      top: 0;
+    }
+
+    #sidebar {
+      width: min(86vw, 320px) !important;
+      max-width: 320px;
+      height: 100vh;
+      border-right: 1px solid #d6eadb;
+      border-bottom: none;
+      padding-bottom: 1rem;
+      z-index: 1100;
+      margin-top: 0;
+    }
+
+    #sidebar .nav-link,
+    #sidebar .dropdown-item {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 0.15rem;
+    }
+
+    #sidebar .dropdown-item {
+      padding-top: 0.6rem;
+      padding-bottom: 0.6rem;
+    }
+
+    .sidebar-mobile-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1rem 0.75rem;
+      border-bottom: 1px solid #dceee1;
+      margin-bottom: 0.5rem;
+    }
+
+    #main-content {
+      margin-left: 0;
+      margin-top: 0;
+      padding: 1rem;
+    }
+
+    body.has-mobile-bottom-nav main#main-content {
+      padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+    }
+
+    .mobile-bottom-nav {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1080;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.2rem;
+      min-height: calc(64px + env(safe-area-inset-bottom));
+      padding: 0.45rem 0.5rem calc(0.45rem + env(safe-area-inset-bottom));
+      background: linear-gradient(90deg, var(--forest-900), var(--forest-700));
+      box-shadow: 0 -10px 28px rgba(11, 61, 32, 0.22);
+    }
+
+    .btn,
+    .form-control,
+    .form-select {
+      min-height: 44px;
+    }
+
+    .btn-sm {
+      min-height: 38px;
+    }
+
+    .modal-dialog {
+      margin: 0.75rem;
+    }
+
+    body.has-mobile-bottom-nav footer {
+      margin-bottom: calc(64px + env(safe-area-inset-bottom));
+    }
+    footer .d-flex {
+      flex-direction: column; /* Stack items vertically on smaller screens */
+      text-align: center; /* Center text for mobile */
+    }
+    footer p {
+      font-size: 0.85rem; /* Smaller text for compact footer */
+      margin-bottom: 0.3rem; /* Reduced spacing between stacked items */
+      white-space: normal; /* Allow wrapping on mobile */
+    }
+    footer p:last-child {
+      margin-left: 0; /* Remove left margin on mobile */
+      margin-right: 0; /* Remove right margin on mobile */
+      display: block; /* Reset to block on mobile */
+    }
+    footer img {
+      height: 24px; /* Slightly smaller on mobile */
+      margin-right: 6px; /* Adjusted spacing for mobile */
+    }
+    footer .container-fluid {
+      padding-left: 10px; /* Reduced padding for mobile */
+      padding-right: 10px;
+    }
+  }
+
+  @media (max-width: 767.98px) {
+    .navbar-brand {
+      font-size: 0.92rem;
+      line-height: 1.25;
+      white-space: normal;
+      max-width: calc(100vw - 88px);
+    }
+
+    .navbar-text {
+      font-size: 0.9rem;
+      flex-wrap: wrap;
+      row-gap: 0.25rem;
+    }
+
+    #sidebar {
+      width: min(92vw, 320px) !important;
+    }
+
+    #main-content {
+      padding: 0.85rem;
+    }
+
+    body.has-mobile-bottom-nav #main-content {
+      padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+    }
+
+    .container,
+    .container-fluid {
+      padding-left: 0.75rem;
+      padding-right: 0.75rem;
+    }
+
+    .card-body,
+    .card-header {
+      padding-left: 0.85rem;
+      padding-right: 0.85rem;
+    }
+
+    .table-responsive {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    table.table {
+      display: block;
+      width: 100%;
+      overflow-x: auto;
+      white-space: nowrap;
+      font-size: 0.85rem;
+    }
+
+    table.table thead,
+    table.table tbody,
+    table.table tfoot {
+      white-space: nowrap;
+    }
+
+    .btn,
+    .form-control,
+    .form-select {
+      font-size: 0.95rem;
+    }
+
+    #main-content h1 {
+      font-size: 1.55rem;
+      line-height: 1.25;
+    }
+
+    #main-content h2 {
+      font-size: 1.38rem;
+      line-height: 1.3;
+    }
+
+    #main-content h3 {
+      font-size: 1.24rem;
+      line-height: 1.3;
+    }
+
+    #main-content .card-header,
+    #main-content .alert,
+    #main-content .list-group-item,
+    #main-content .d-flex.justify-content-between {
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+
+    #main-content .btn-group {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.4rem;
+    }
+
+    #main-content .btn-group > .btn {
+      border-radius: 10px !important;
+      width: 100%;
+    }
+
+    .nav-link:hover,
+    .btn:hover,
+    .card:hover {
+      transform: none;
+    }
+  }
+
+  @media (max-width: 575.98px) {
+    #main-content {
+      padding-left: 0.7rem;
+      padding-right: 0.7rem;
+    }
+
+    #main-content > .container,
+    #main-content > .container-fluid {
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    #main-content .card,
+    #main-content .modern-card,
+    #main-content .soft-card,
+    #main-content .neo-card,
+    #main-content .sec-card,
+    #main-content .mob-card,
+    #main-content .fines-card {
+      max-width: 100%;
+    }
+
+    #main-content .text-end {
+      text-align: start !important;
+    }
+
+    #main-content .text-end .btn,
+    #main-content form .btn[type="submit"] {
+      width: 100%;
+    }
+
+    #main-content .mobile-card-table {
+      display: block;
+      overflow: visible;
+      white-space: normal;
+      border: 0;
+      background: transparent;
+      font-size: 0.9rem;
+    }
+
+    #main-content .mobile-card-table thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    #main-content .mobile-card-table tbody,
+    #main-content .mobile-card-table tr,
+    #main-content .mobile-card-table td {
+      display: block;
+      width: 100%;
+      white-space: normal;
+    }
+
+    #main-content .mobile-card-table tbody tr {
+      border: 1px solid #d6eadb;
+      border-radius: 12px;
+      background: #ffffff;
+      box-shadow: 0 8px 18px rgba(20, 83, 45, 0.08);
+      margin-bottom: 0.8rem;
+      overflow: hidden;
+    }
+
+    #main-content .mobile-card-table tbody tr:last-child {
+      margin-bottom: 0;
+    }
+
+    #main-content .mobile-card-table td {
+      border-bottom: 1px solid #edf4ef;
+      padding: 0.7rem 0.8rem;
+      min-height: 44px;
+    }
+
+    #main-content .mobile-card-table td:last-child {
+      border-bottom: 0;
+    }
+
+    #main-content .mobile-card-table td:not(.mobile-card-full) {
+      display: grid;
+      grid-template-columns: minmax(7.5rem, 40%) minmax(0, 1fr);
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    #main-content .mobile-card-table td::before {
+      content: attr(data-label);
+      color: var(--forest-800);
+      font-weight: 700;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+    }
+
+    #main-content .mobile-card-table td.mobile-card-full::before,
+    #main-content .mobile-card-table td[data-label=""]::before {
+      display: none;
+    }
+
+    #main-content .mobile-card-table td.mobile-card-full {
+      text-align: center;
+    }
+
+    #main-content .mobile-card-table .btn,
+    #main-content .mobile-card-table .form-control,
+    #main-content .mobile-card-table .form-select {
+      width: 100%;
+    }
+
+    #main-content .mobile-card-table .text-nowrap {
+      white-space: normal !important;
+    }
+
+    #main-content .pagination {
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+  }
+  </style>
+</head>
+<body class="{% if request.user.is_authenticated %}has-mobile-bottom-nav{% endif %}">
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-light bg-light fixed-top shadow-sm">
+    <div class="container-fluid">
+      {% if request.user.is_authenticated %}
+      <button
+        class="btn mobile-menu-btn text-white d-lg-none me-2"
+        type="button"
+        data-bs-toggle="offcanvas"
+        data-bs-target="#sidebar"
+        aria-controls="sidebar"
+        aria-label="Open menu"
+      >
+        <i class="bi bi-list fs-4"></i>
+      </button>
+      {% endif %}
+      <a class="navbar-brand fw-bold" href="#">
+        <i class="bi bi-building"></i> St. Stephen's Kisugu Savings and Loans Association (SSLA)
+      </a>
+      <button
+        class="navbar-toggler"
+        type="button"
+        data-bs-toggle="collapse"
+        data-bs-target="#navbarSupportedContent"
+        aria-controls="navbarSupportedContent"
+        aria-expanded="false"
+        aria-label="Toggle navigation"
+      >
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="collapse navbar-collapse" id="navbarSupportedContent">
+        {% if request.user.is_authenticated %}
+          <ul class="navbar-nav ms-auto align-items-center">
+            <li class="nav-item me-3">
+              <span class="navbar-text d-flex align-items-center">
+                {% if request.user.profile_picture %}
+                  <img src="{{ request.user.profile_picture.url }}" 
+                      alt="Profile" 
+                      class="rounded-circle me-2"
+                      style="width: 30px; height: 30px; max-width: 30px; object-fit: cover;">
+                {% else %}
+                  <i class="bi bi-person-circle me-2" style="font-size: 1.5rem;"></i>
+                {% endif %}
+                Logged in as <strong>{{ request.user.username }}</strong>
+                {% if request.user.role %}
+                  ({{ request.user.role }})
+                {% endif %}
+              </span>
+            </li>
+            {% if request.user.is_member and active_savings_account %}
+            <li class="nav-item me-3">
+              <span class="badge bg-light text-dark">
+                Account: {{ active_savings_account.label }}
+              </span>
+            </li>
+            {% endif %}
+            <li class="nav-item">
+              <a class="btn btn-outline-danger btn-sm" href="{% url 'logout' %}">
+                <i class="bi bi-box-arrow-right me-1"></i> Logout
+              </a>
+            </li>
+          </ul>
+        {% else %}
+          <ul class="navbar-nav ms-auto">
+            <li class="nav-item">
+              <a class="btn btn-primary btn-sm" href="{% url 'login' %}">
+                <i class="bi bi-box-arrow-in-right me-1"></i> Login
+              </a>
+            </li>
+          </ul>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
+
+  <!-- Sidebar -->
+  <nav id="sidebar" class="offcanvas-lg offcanvas-start" tabindex="-1" aria-labelledby="sidebarMenuLabel" aria-label="Sidebar navigation">
+    <div class="sidebar-mobile-header d-lg-none">
+      <div>
+        <div class="fw-bold" id="sidebarMenuLabel">Menu</div>
+        <div class="small text-muted">Navigate the system</div>
+      </div>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#sidebar" aria-label="Close"></button>
+    </div>
+    <div class="sidebar-heading px-3 mb-2">Menu</div>
+    <ul class="nav flex-column">
+      {% if request.user.is_authenticated %}
+        {% if request.user.is_member %}
+          {% if has_multiple_savings_accounts %}
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'select_savings_account' %}active{% endif %}" href="{% url 'select_savings_account' %}">
+              <i class="bi bi-diagram-3 me-2"></i> Switch Savings Account
+            </a>
+          </li>
+          {% endif %}
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'member_dashboard' %}active{% endif %}" href="{% url 'member_dashboard' %}">
+              <i class="bi bi-speedometer2 me-2"></i> Dashboard
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'submit_deposit' %}active{% endif %}" href="{% url 'submit_deposit' %}">
+              <i class="bi bi-wallet2 me-2"></i> Submit Deposit
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_contributions' %}active{% endif %}" href="{% url 'my_contributions' %}">
+              <i class="bi bi-cash-stack me-2"></i> My Contributions
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'request_loan' %}active{% endif %}" href="{% url 'request_loan' %}">
+              <i class="bi bi-cash-coin me-2"></i> Request Loan
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_loans' %}active{% endif %}" href="{% url 'my_loans' %}">
+              <i class="bi bi-bank me-2"></i> My Loans
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_fines' %}active{% endif %}" href="{% url 'my_fines' %}">
+              <i class="bi bi-exclamation-circle me-2"></i> My Fines
+            </a>
+          </li>
+        {% endif %}
+
+        {% if request.user.is_treasurer %}
+          <li class="nav-item mt-3"><div class="sidebar-heading px-3">Treasurer Panel</div></li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'treasurer_dashboard' %}active{% endif %}" href="{% url 'treasurer_dashboard' %}">
+              <i class="bi bi-tools me-2"></i> Dashboard
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'manage_deposits' %}active{% endif %}" href="{% url 'manage_deposits' %}">
+              <i class="bi bi-clipboard-check me-2"></i> Manage Deposits
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'manage_fines' %}active{% endif %}" href="{% url 'manage_fines' %}">
+              <i class="bi bi-currency-exchange me-2"></i> Manage Fines
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'treasurer_reports' %}active{% endif %}" href="{% url 'treasurer_reports' %}">
+              <i class="bi bi-file-earmark-bar-graph me-2"></i> Member Reports
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'other_income_list' %}active{% endif %}" href="{% url 'other_income_list' %}">
+              <i class="bi bi-cash-coin me-2"></i> Financial Records
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'loan_statuses' %}active{% endif %}" href="{% url 'loan_statuses' %}">
+              <i class="bi bi-bank me-2"></i> Loans
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'pending_loans' %}active{% endif %}" href="{% url 'pending_loans' %}">
+              <i class="bi bi-hourglass-split me-2"></i> Pending Loans
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'year_end_settlement' %}active{% endif %}" href="{% url 'year_end_settlement' %}">
+              <i class="bi bi-calendar2-check me-2"></i> Year-End Settlement
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'current_week_status' %}active{% endif %}" href="{% url 'current_week_status' %}">
+              <i class="bi bi-calendar-check me-2"></i> Current Payments
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'list_assets' %}active{% endif %}" href="{% url 'list_assets' %}">
+              <i class="bi bi-box-seam me-2"></i> View Assets
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'list_expenditures' %}active{% endif %}" href="{% url 'list_expenditures' %}">
+              <i class="bi bi-cash-stack me-2"></i> View Expenditures
+            </a>
+          </li>
+        {% endif %}
+
+        {% if request.user.is_chairman or request.user.is_vice_chairman or request.user.is_overseer %}
+          <li class="nav-item mt-3"><div class="sidebar-heading px-3">Leadership Panel</div></li>
+          <li class="nav-item">
+            {% if request.user.is_chairman %}
+            <a class="nav-link {% if request.resolver_match.url_name == 'chairman_dashboard' %}active{% endif %}" href="{% url 'chairman_dashboard' %}">
+            {% elif request.user.is_vice_chairman %}
+            <a class="nav-link {% if request.resolver_match.url_name == 'vice_chairman_dashboard' %}active{% endif %}" href="{% url 'vice_chairman_dashboard' %}">
+            {% else %}
+            <a class="nav-link {% if request.resolver_match.url_name == 'overseer_dashboard' %}active{% endif %}" href="{% url 'overseer_dashboard' %}">
+            {% endif %}
+              <i class="bi bi-speedometer2 me-2"></i> Dashboard
+            </a>
+          </li>
+          {% if request.user.is_chairman %}
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'manage_users' or request.resolver_match.url_name == 'user_detail' or request.resolver_match.url_name == 'edit_user' %}active{% endif %}" href="{% url 'manage_users' %}">
+              <i class="bi bi-person-gear me-2"></i> Manage Users
+            </a>
+          </li>
+          {% endif %}
+          {% if request.user.is_chairman or request.user.is_vice_chairman %}
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'loan_statuses' %}active{% endif %}" href="{% url 'loan_statuses' %}">
+              <i class="bi bi-bank me-2"></i> Loans
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'pending_loans' %}active{% endif %}" href="{% url 'pending_loans' %}">
+              <i class="bi bi-hourglass-split me-2"></i> Pending Loans
+            </a>
+          </li>
+          {% elif request.user.is_overseer %}
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'loan_statuses' %}active{% endif %}" href="{% url 'loan_statuses' %}">
+              <i class="bi bi-bank me-2"></i> Loans
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'pending_loans' %}active{% endif %}" href="{% url 'pending_loans' %}">
+              <i class="bi bi-hourglass-split me-2"></i> Pending Loans
+            </a>
+          </li>
+          {% endif %}
+          <li><hr class="my-2"></li>
+          <li class="nav-item px-3 text-uppercase small text-muted">Reports</li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'chairman_deposit_report' %}active{% endif %}" href="{% url 'chairman_deposit_report' %}">
+              <i class="bi bi-wallet2 me-2"></i> Member Deposits
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'chairman_fine_report' %}active{% endif %}" href="{% url 'chairman_fine_report' %}">
+              <i class="bi bi-exclamation-circle me-2"></i> Fines
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'chairman_document_report' %}active{% endif %}" href="{% url 'chairman_document_report' %}">
+              <i class="bi bi-file-earmark-text me-2"></i> Documents
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'chairman_income_report' %}active{% endif %}" href="{% url 'chairman_income_report' %}">
+              <i class="bi bi-cash-coin me-2"></i> Financial Report
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'current_week_status' %}active{% endif %}" href="{% url 'current_week_status' %}">
+              <i class="bi bi-calendar-check me-2"></i> Current Week Status
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'chairman_asset_report' %}active{% endif %}" href="{% url 'chairman_asset_report' %}">
+              <i class="bi bi-box-seam me-2"></i> Assets
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'chairman_expenditure_report' %}active{% endif %}" href="{% url 'chairman_expenditure_report' %}">
+              <i class="bi bi-receipt me-2"></i> Expenditures
+            </a>
+          </li>
+
+          <li class="nav-item mt-3"><div class="sidebar-heading px-3">Member Panel</div></li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'submit_deposit' %}active{% endif %}" href="{% url 'submit_deposit' %}">
+              <i class="bi bi-wallet2 me-2"></i> Submit Deposit
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_contributions' %}active{% endif %}" href="{% url 'my_contributions' %}">
+              <i class="bi bi-cash-stack me-2"></i> My Contributions
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_loans' %}active{% endif %}" href="{% url 'my_loans' %}">
+              <i class="bi bi-bank me-2"></i> My Loans
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'request_loan' %}active{% endif %}" href="{% url 'request_loan' %}">
+              <i class="bi bi-cash-coin me-2"></i> Request Loan
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_fines' %}active{% endif %}" href="{% url 'my_fines' %}">
+              <i class="bi bi-exclamation-circle me-2"></i> My Fines
+            </a>
+          </li>
+        {% endif %}
+
+        {% if request.user.is_secretary %}
+          <li class="nav-item mt-3"><div class="sidebar-heading px-3">Secretary Panel</div></li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'secretary_dashboard' %}active{% endif %}" href="{% url 'secretary_dashboard' %}">
+              <i class="bi bi-speedometer2 me-2"></i> Dashboard
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'manage_users' or request.resolver_match.url_name == 'user_detail' or request.resolver_match.url_name == 'edit_user' %}active{% endif %}" href="{% url 'manage_users' %}">
+              <i class="bi bi-person-gear me-2"></i> Manage Users
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'upload_document' %}active{% endif %}" href="{% url 'upload_document' %}">
+              <i class="bi bi-cloud-upload me-2"></i> Upload Document
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'list_documents' %}active{% endif %}" href="{% url 'list_documents' %}">
+              <i class="bi bi-collection me-2"></i> View Documents
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'pending_loans' %}active{% endif %}" href="{% url 'pending_loans' %}">
+              <i class="bi bi-bank me-2"></i> Loan Statuses
+            </a>
+          </li>
+
+          <li class="nav-item mt-3"><div class="sidebar-heading px-3">Member Panel</div></li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'member_dashboard' %}active{% endif %}" href="{% url 'member_dashboard' %}">
+              <i class="bi bi-house-door me-2"></i> Member Dashboard
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'submit_deposit' %}active{% endif %}" href="{% url 'submit_deposit' %}">
+              <i class="bi bi-wallet2 me-2"></i> Submit Deposit
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_contributions' %}active{% endif %}" href="{% url 'my_contributions' %}">
+              <i class="bi bi-cash-stack me-2"></i> My Contributions
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_loans' %}active{% endif %}" href="{% url 'my_loans' %}">
+              <i class="bi bi-bank me-2"></i> My Loans
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_fines' %}active{% endif %}" href="{% url 'my_fines' %}">
+              <i class="bi bi-exclamation-circle me-2"></i> My Fines
+            </a>
+          </li>
+        {% endif %}
+
+        {% if request.user.is_mobilizer %}
+          <li class="nav-item mt-3"><div class="sidebar-heading px-3">Mobilizer Panel</div></li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'mobilizer_dashboard' %}active{% endif %}" href="{% url 'mobilizer_dashboard' %}">
+              <i class="bi bi-speedometer2 me-2"></i> Dashboard
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'current_week_status' %}active{% endif %}" href="{% url 'current_week_status' %}">
+              <i class="bi bi-calendar-check me-2"></i> Payment Status
+            </a>
+          </li>
+
+          <li class="nav-item mt-3"><div class="sidebar-heading px-3">Member Panel</div></li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'member_dashboard' %}active{% endif %}" href="{% url 'member_dashboard' %}">
+              <i class="bi bi-house-door me-2"></i> Member Dashboard
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'submit_deposit' %}active{% endif %}" href="{% url 'submit_deposit' %}">
+              <i class="bi bi-wallet2 me-2"></i> Submit Deposit
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_contributions' %}active{% endif %}" href="{% url 'my_contributions' %}">
+              <i class="bi bi-cash-stack me-2"></i> My Contributions
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_loans' %}active{% endif %}" href="{% url 'my_loans' %}">
+              <i class="bi bi-bank me-2"></i> My Loans
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_fines' %}active{% endif %}" href="{% url 'my_fines' %}">
+              <i class="bi bi-exclamation-circle me-2"></i> My Fines
+            </a>
+          </li>
+        {% endif %}
+
+        <li class="nav-item mt-3 px-3">
+          <a class="nav-link {% if request.resolver_match.url_name == 'guarantor_requests' or request.resolver_match.url_name == 'guarantor_request_detail' %}active{% endif %}" href="{% url 'guarantor_requests' %}">
+            <i class="bi bi-shield-check me-2"></i> Guarantor Requests
+          </a>
+        </li>
+
+        <!-- Messages Dropdown -->
+        <li class="nav-item dropdown mt-3 px-3">
+          <a
+            class="nav-link dropdown-toggle d-flex justify-content-between align-items-center"
+            href="#"
+            id="messagesDropdown"
+            role="button"
+            data-bs-toggle="dropdown"
+            aria-expanded="false"
+          >
+            <span><i class="bi bi-envelope-fill me-2"></i> Messages</span>
+            {% if unread_count > 0 %}
+              <span class="badge bg-danger rounded-pill ms-2">{{ unread_count }}</span>
+            {% endif %}
+          </a>
+          <ul class="dropdown-menu sidebar-dropdown" aria-labelledby="messagesDropdown">
+            <li><a class="dropdown-item" href="{% url 'inbox' %}"><i class="bi bi-inbox me-2"></i> Inbox</a></li>
+            <li><a class="dropdown-item" href="{% url 'sent_messages' %}"><i class="bi bi-send-check me-2"></i> Sent</a></li>
+            <li><a class="dropdown-item" href="{% url 'send_message' %}"><i class="bi bi-pencil-square me-2"></i> Compose</a></li>
+          </ul>
+        </li>
+
+        <li class="nav-item mt-3 px-3">
+          <a class="nav-link" href="{% url 'my_profile' %}">
+            <i class="bi bi-person-circle me-2"></i> My Profile
+          </a>
+        </li>
+        
+      {% else %}
+        <li class="nav-item">
+          <a class="nav-link" href="{% url 'login' %}">
+            <i class="bi bi-box-arrow-in-right me-2"></i> Login
+          </a>
+        </li>
+      {% endif %}
+    </ul>
+  </nav>
+
+  <!-- Main content -->
+  <main id="main-content" role="main">
+    {% if request.user.is_authenticated and request.user.is_member and active_savings_account %}
+    <div class="alert alert-info d-flex justify-content-between align-items-center mb-3" role="alert">
+      <div>
+        <i class="bi bi-diagram-3 me-2"></i>
+        Active Savings Account: <strong>{{ active_savings_account.label }}</strong>
+      </div>
+      {% if has_multiple_savings_accounts %}
+      <a href="{% url 'select_savings_account' %}" class="btn btn-sm btn-outline-primary">
+        <i class="bi bi-arrow-repeat me-1"></i> Switch
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if messages %}
+      <div class="mb-3">
+        {% for message in messages %}
+          <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% block content %}
+    {% endblock %}
+  </main>
+
+  {% if request.user.is_authenticated %}
+  <nav class="mobile-bottom-nav d-lg-none" aria-label="Mobile quick navigation">
+    {% if request.user.is_treasurer %}
+      <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'treasurer_dashboard' %}active{% endif %}" href="{% url 'treasurer_dashboard' %}">
+        <i class="bi bi-house-door-fill"></i><span>Home</span>
+      </a>
+    {% elif request.user.is_chairman %}
+      <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'chairman_dashboard' %}active{% endif %}" href="{% url 'chairman_dashboard' %}">
+        <i class="bi bi-house-door-fill"></i><span>Home</span>
+      </a>
+    {% elif request.user.is_vice_chairman %}
+      <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'vice_chairman_dashboard' %}active{% endif %}" href="{% url 'vice_chairman_dashboard' %}">
+        <i class="bi bi-house-door-fill"></i><span>Home</span>
+      </a>
+    {% elif request.user.is_overseer %}
+      <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'overseer_dashboard' %}active{% endif %}" href="{% url 'overseer_dashboard' %}">
+        <i class="bi bi-house-door-fill"></i><span>Home</span>
+      </a>
+    {% elif request.user.is_secretary %}
+      <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'secretary_dashboard' %}active{% endif %}" href="{% url 'secretary_dashboard' %}">
+        <i class="bi bi-house-door-fill"></i><span>Home</span>
+      </a>
+    {% elif request.user.is_mobilizer %}
+      <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'mobilizer_dashboard' %}active{% endif %}" href="{% url 'mobilizer_dashboard' %}">
+        <i class="bi bi-house-door-fill"></i><span>Home</span>
+      </a>
+    {% else %}
+      <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'member_dashboard' %}active{% endif %}" href="{% url 'member_dashboard' %}">
+        <i class="bi bi-house-door-fill"></i><span>Home</span>
+      </a>
+    {% endif %}
+
+    <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'submit_deposit' %}active{% endif %}" href="{% url 'submit_deposit' %}">
+      <i class="bi bi-wallet2"></i><span>Deposit</span>
+    </a>
+    <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'request_loan' or request.resolver_match.url_name == 'my_loans' or request.resolver_match.url_name == 'loan_statuses' or request.resolver_match.url_name == 'pending_loans' or request.resolver_match.url_name == 'guarantor_requests' or request.resolver_match.url_name == 'guarantor_request_detail' %}active{% endif %}" href="{% url 'my_loans' %}">
+      <i class="bi bi-bank"></i><span>Loans</span>
+    </a>
+    <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'inbox' or request.resolver_match.url_name == 'sent_messages' or request.resolver_match.url_name == 'send_message' %}active{% endif %}" href="{% url 'inbox' %}">
+      <i class="bi bi-envelope-fill"></i><span>Messages</span>
+      {% if unread_count > 0 %}<span class="mobile-bottom-nav__badge">{{ unread_count }}</span>{% endif %}
+    </a>
+    <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'my_profile' %}active{% endif %}" href="{% url 'my_profile' %}">
+      <i class="bi bi-person-circle"></i><span>Profile</span>
+    </a>
+  </nav>
+  {% endif %}
+
+  <!-- Footer -->
+  <footer class="bg-dark text-white py-2">
+    <div class="container-fluid">
+      <div class="d-flex justify-content-between align-items-center">
+        <p class="mb-0">&copy; 2026 St. Stephen's Kisugu Savings and Loans Association (SSLA) Ug. All rights reserved.</p>
+        <p class="mb-0">
+          <a href="https://wa.me/message/3XKDABIYDNBEH1" target="_blank" style="text-decoration: none; color: inherit;">
+            <img src="{% static 'images/deaplogof.webp' %}" alt="Deap Technologies Logo" 
+                onerror="this.src='https://via.placeholder.com/28x28?text=Logo';">
+            Powered by Deap Technologies
+          </a>
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Bootstrap JS bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Auto-dismiss Django flash messages after 3 seconds
+    document.addEventListener('DOMContentLoaded', function () {
+      document.querySelectorAll('.alert.alert-dismissible').forEach(function (el) {
+        setTimeout(function () {
+          var bsAlert = bootstrap.Alert.getOrCreateInstance(el);
+          bsAlert.close();
+        }, 3000);
+      });
+
+      const sidebar = document.getElementById('sidebar');
+      if (sidebar) {
+        sidebar.querySelectorAll('a.nav-link, .dropdown-item').forEach(function (link) {
+          link.addEventListener('click', function () {
+            if (window.innerWidth < 992 && sidebar.classList.contains('show')) {
+              const offcanvas = bootstrap.Offcanvas.getOrCreateInstance(sidebar);
+              offcanvas.hide();
+            }
+          });
+        });
+      }
+
+      document.querySelectorAll('#main-content table.table').forEach(function (table) {
+        if (table.dataset.mobileTable === 'scroll') {
+          return;
+        }
+
+        const headers = Array.from(table.querySelectorAll('thead th')).map(function (header) {
+          return header.textContent.replace(/\s+/g, ' ').trim();
+        });
+
+        if (!headers.length) {
+          return;
+        }
+
+        table.classList.add('mobile-card-table');
+        table.querySelectorAll('tbody tr').forEach(function (row) {
+          let cellIndex = 0;
+          row.querySelectorAll('td').forEach(function (cell) {
+            const colspan = parseInt(cell.getAttribute('colspan') || '1', 10);
+            const label = headers[cellIndex] || '';
+
+            if (!cell.hasAttribute('data-label')) {
+              cell.setAttribute('data-label', label);
+            }
+
+            if (colspan > 1 || !label) {
+              cell.classList.add('mobile-card-full');
+            }
+
+            cellIndex += colspan;
+          });
+        });
+      });
+
+      const validationMessages = {
+        name: 'Use letters, spaces, apostrophes, hyphens, or periods only.',
+        username: 'Use letters, numbers, and @/./+/-/_ only.',
+        phone: 'Use digits, spaces, hyphens, parentheses, and one leading + only.',
+        email: 'Enter a valid email address.',
+        account: 'Use letters, numbers, spaces, hyphens, underscores, or periods only.',
+        national_id: 'Use letters and numbers only.',
+        integer: 'Use whole numbers only.',
+        decimal: 'Use numbers and one decimal point only.',
+        money: 'Use a positive amount with numbers and one decimal point only.'
+      };
+
+      function inferValidationRule(input) {
+        const explicit = input.dataset.validate;
+        if (explicit) {
+          return explicit;
+        }
+
+        const key = ((input.name || '') + ' ' + (input.id || '') + ' ' + (input.placeholder || '')).toLowerCase();
+        const type = (input.type || '').toLowerCase();
+
+        if (type === 'password' || type === 'hidden' || type === 'file' || input.tagName === 'TEXTAREA') {
+          return null;
+        }
+        if (type === 'email' || key.includes('email')) {
+          return 'email';
+        }
+        if (key.includes('phone') || key.includes('contact') || key.includes('mobile')) {
+          return 'phone';
+        }
+        if (key.includes('national') || key.includes('nin')) {
+          return 'national_id';
+        }
+        if (key.includes('first_name') || key.includes('last_name') || key.includes('next_of_kin_name')) {
+          return 'name';
+        }
+        if (key.includes('username')) {
+          return 'username';
+        }
+        if (key.includes('account') && !key.includes('amount')) {
+          return 'account';
+        }
+        if (type === 'number' || key.includes('amount') || key.includes('rate') || key.includes('principal')) {
+          return key.includes('month') || key.includes('weeks') || key.includes('duration') ? 'integer' : 'money';
+        }
+        return null;
+      }
+
+      function regexForRule(rule) {
+        if (rule === 'name') return /[^\p{L}\s'.-]/gu;
+        if (rule === 'username') return /[^A-Za-z0-9@.+_-]/g;
+        if (rule === 'phone') return /[^0-9+\s()\-]/g;
+        if (rule === 'email') return /[^A-Za-z0-9@._%+\-]/g;
+        if (rule === 'account') return /[^A-Za-z0-9 _.-]/g;
+        if (rule === 'national_id') return /[^A-Za-z0-9]/g;
+        if (rule === 'integer') return /[^0-9]/g;
+        if (rule === 'decimal' || rule === 'money') return /[^0-9.]/g;
+        return null;
+      }
+
+      function sanitizeValue(value, rule) {
+        const pattern = regexForRule(rule);
+        let cleaned = pattern ? value.replace(pattern, '') : value;
+
+        if (rule === 'phone') {
+          cleaned = cleaned.replace(/\+/g, function (match, offset) {
+            return offset === 0 ? match : '';
+          });
+        }
+
+        if (rule === 'decimal' || rule === 'money') {
+          const firstDot = cleaned.indexOf('.');
+          if (firstDot !== -1) {
+            cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+          }
+        }
+
+        if (rule === 'national_id') {
+          cleaned = cleaned.toUpperCase();
+        }
+
+        return cleaned;
+      }
+
+      function ensureFeedback(input) {
+        let feedback = input.parentElement.querySelector('.js-realtime-validation');
+        if (!feedback) {
+          feedback = document.createElement('div');
+          feedback.className = 'invalid-feedback js-realtime-validation';
+          input.insertAdjacentElement('afterend', feedback);
+        }
+        return feedback;
+      }
+
+      function setValidationMessage(input, message) {
+        const feedback = ensureFeedback(input);
+        feedback.textContent = message || '';
+        input.classList.toggle('is-invalid', Boolean(message));
+      }
+
+      function validateFinalShape(input, rule) {
+        const value = input.value.trim();
+        if (!value) {
+          setValidationMessage(input, '');
+          return;
+        }
+
+        if (rule === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+          setValidationMessage(input, validationMessages.email);
+          return;
+        }
+
+        if (rule === 'money' && Number(value) <= 0) {
+          setValidationMessage(input, validationMessages.money);
+          return;
+        }
+
+        setValidationMessage(input, '');
+      }
+
+      function characterAllowed(input, rule, text) {
+        const cleaned = sanitizeValue(text, rule);
+        if (cleaned !== text) {
+          return false;
+        }
+        if ((rule === 'decimal' || rule === 'money') && text === '.' && input.value.includes('.')) {
+          return false;
+        }
+        if (rule === 'phone' && text === '+' && (input.selectionStart !== 0 || input.value.includes('+'))) {
+          return false;
+        }
+        return true;
+      }
+
+      document.querySelectorAll('#main-content input, #main-content textarea').forEach(function (input) {
+        const rule = inferValidationRule(input);
+        if (!rule) {
+          return;
+        }
+
+        input.addEventListener('beforeinput', function (event) {
+          if (!event.data || event.inputType.indexOf('delete') === 0) {
+            return;
+          }
+          if (!characterAllowed(input, rule, event.data)) {
+            event.preventDefault();
+            setValidationMessage(input, validationMessages[rule]);
+          }
+        });
+
+        input.addEventListener('input', function () {
+          const original = input.value;
+          const cleaned = sanitizeValue(original, rule);
+          if (original !== cleaned) {
+            input.value = cleaned;
+            setValidationMessage(input, validationMessages[rule]);
+          } else {
+            validateFinalShape(input, rule);
+          }
+        });
+
+        input.addEventListener('blur', function () {
+          validateFinalShape(input, rule);
+        });
+      });
+    });
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

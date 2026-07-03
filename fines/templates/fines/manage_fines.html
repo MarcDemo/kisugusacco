@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&display=swap');
+
+    .fines-surface {
+        font-family: 'Outfit', sans-serif;
+        background: linear-gradient(145deg, #eef6ff 0%, #f4fffb 52%, #ffffff 100%);
+        border-radius: 18px;
+        padding: 1.25rem;
+        position: relative;
+        overflow: hidden;
+        isolation: isolate;
+    }
+
+    .fines-surface::before,
+    .fines-surface::after {
+        content: "";
+        position: absolute;
+        border-radius: 999px;
+        z-index: -1;
+        filter: blur(4px);
+    }
+
+    .fines-surface::before {
+        width: 230px;
+        height: 230px;
+        top: -90px;
+        right: -80px;
+        background: radial-gradient(circle at 35% 35%, rgba(32, 112, 78, 0.18), rgba(32, 112, 78, 0));
+    }
+
+    .fines-surface::after {
+        width: 220px;
+        height: 220px;
+        left: -90px;
+        bottom: -100px;
+        background: radial-gradient(circle at 45% 45%, rgba(13, 110, 253, 0.18), rgba(13, 110, 253, 0));
+    }
+
+    .fines-card,
+    .metric-box {
+        border: 0;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: 0 14px 28px rgba(9, 32, 69, 0.08);
+    }
+
+    .metric-box {
+        padding: 0.95rem;
+        border: 1px solid #e8edf6;
+        transition: transform 200ms ease, border-color 200ms ease;
+    }
+
+    .metric-box:hover {
+        transform: translateY(-3px);
+        border-color: #c9d9ef;
+    }
+
+    .reason-col {
+        max-width: 420px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .fine-table th {
+        white-space: nowrap;
+    }
+
+    .fine-table td {
+        vertical-align: middle;
+    }
+
+    @media (max-width: 767.98px) {
+        .fines-surface {
+            padding: 1rem;
+            border-radius: 14px;
+        }
+
+        .reason-col {
+            max-width: 220px;
+        }
+    }
+</style>
+
+<div class="fines-surface">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <div>
+            <h2 class="mb-1 text-primary"><i class="bi bi-receipt-cutoff me-2"></i>Manage Fines</h2>
+            <p class="text-muted mb-0">Track, review, and close unpaid penalties quickly.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'add_fine' %}">
+            <i class="bi bi-plus-circle me-1"></i>Add Fine
+        </a>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3 col-6">
+            <div class="metric-box">
+                <small class="text-muted">Total Fines</small>
+                <div class="fs-4 fw-bold">{{ totals.total_records|default:0 }}</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-6">
+            <div class="metric-box">
+                <small class="text-muted">Paid</small>
+                <div class="fs-4 fw-bold">{{ totals.paid_count|default:0 }}</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-6">
+            <div class="metric-box">
+                <small class="text-muted">Unpaid</small>
+                <div class="fs-4 fw-bold">{{ totals.unpaid_count|default:0 }}</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-6">
+            <div class="metric-box">
+                <small class="text-muted">Outstanding Amount</small>
+                <div class="fs-5 fw-bold">UGX {{ totals.unpaid_amount|default:0|floatformat:"0" }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="fines-card">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 fine-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>Member</th>
+                        <th>Account</th>
+                        <th>Reason</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Issued By</th>
+                        <th>Date</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for fine in fines %}
+                    <tr>
+                        <td>{{ fine.member.username }}</td>
+                        <td>{% if fine.account %}{{ fine.account.label }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                        <td class="reason-col" title="{{ fine.reason }}">{{ fine.reason }}</td>
+                        <td>UGX {{ fine.amount|floatformat:"0" }}</td>
+                        <td>
+                            {% if fine.is_paid %}
+                                <span class="badge text-bg-success">Paid</span>
+                            {% else %}
+                                <span class="badge text-bg-danger">Unpaid</span>
+                            {% endif %}
+                        </td>
+                        <td>{% if fine.issued_by %}{{ fine.issued_by.username }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                        <td>{{ fine.date_issued|date:"Y-m-d" }}</td>
+                        <td>
+                            {% if not fine.is_paid %}
+                                <a class="btn btn-sm btn-outline-success" href="{% url 'mark_fine_paid' fine.id %}">Mark Paid</a>
+                            {% else %}
+                                <span class="text-muted">Closed</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">No fines found yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

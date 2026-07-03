@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-4">
+  <h3 class="text-center mb-4"><i class="bi bi-exclamation-triangle"></i> Member Fines Report</h3>
+  <div class="table-responsive">
+    <table class="table table-bordered table-hover table-sm">
+      <thead class="table-danger text-center">
+        <tr>
+          <th>#</th>
+          <th>Member</th>
+          <th>Reason</th>
+          <th>Amount</th>
+          <th>Date Issued</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fine in fines %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>{{ fine.member.username }}</td>
+          <td>{{ fine.reason }}</td>
+          <td>UGX {{ fine.amount|floatformat:'0' }}</td>
+          <td>{{ fine.date_issued|date:"M d, Y" }}</td>
+          <td>
+            {% if fine.is_paid %}
+              <span class="badge text-bg-success">Paid</span>
+            {% else %}
+              <span class="badge text-bg-danger">Unpaid</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center">No fines recorded.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+{% load widget_tweaks static %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="row justify-content-center">
+    <div class="col-lg-7 col-md-9">
+      <div class="card shadow-sm border-0 rounded">
+        <div class="card-header bg-primary text-white text-center py-3">
+          <h4 class="mb-0"><i class="bi bi-pencil-square"></i> Edit User</h4>
+        </div>
+        <div class="card-body p-4">
+          <form method="post" novalidate>
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+              <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            <div class="mb-3">
+              <label for="id_username" class="form-label">Username</label>
+              {{ form.username|add_class:"form-control" }}
+              {% for error in form.username.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label for="id_first_name" class="form-label">First Name</label>
+                {{ form.first_name|add_class:"form-control" }}
+                {% for error in form.first_name.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+              </div>
+              <div class="col-md-6 mb-3">
+                <label for="id_last_name" class="form-label">Last Name</label>
+                {{ form.last_name|add_class:"form-control" }}
+                {% for error in form.last_name.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label for="id_email" class="form-label">Email</label>
+              {{ form.email|add_class:"form-control" }}
+              {% for error in form.email.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="mb-3">
+              <label for="id_phone_number" class="form-label">Phone Number</label>
+              {{ form.phone_number|add_class:"form-control" }}
+              {% for error in form.phone_number.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="mb-3">
+              <label for="id_role" class="form-label">Role</label>
+              {{ form.role|add_class:"form-select" }}
+              {% for error in form.role.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="mb-3">
+              <label for="id_password" class="form-label">New Password</label>
+              {{ form.password|add_class:"form-control" }}
+              {% if form.password.help_text %}<div class="form-text">{{ form.password.help_text }}</div>{% endif %}
+              {% for error in form.password.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="border rounded p-3 mb-3">
+              <h5 class="mb-3"><i class="bi bi-wallet2 me-1"></i> Savings Accounts</h5>
+              {% if accounts %}
+                <div class="mb-3">
+                  {% for account in accounts %}
+                    <div class="form-check form-switch mb-2" data-existing-account-label="{{ account.label }}">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        role="switch"
+                        id="account_{{ account.id }}"
+                        name="active_accounts"
+                        value="{{ account.id }}"
+                        {% if account.is_active %}checked{% endif %}
+                      >
+                      <label class="form-check-label" for="account_{{ account.id }}">
+                        Account {{ account.label }}
+                        {% if account.is_active %}
+                          <span class="badge bg-success ms-1">Active</span>
+                        {% else %}
+                          <span class="badge bg-secondary ms-1">Inactive</span>
+                        {% endif %}
+                      </label>
+                    </div>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <p class="text-muted small">No savings accounts yet.</p>
+              {% endif %}
+
+              <div data-account-label-builder>
+                {{ form.account_labels }}
+                <label for="edit-user-account-label-entry" class="form-label">Add New Account Label</label>
+                <div class="input-group">
+                  <input
+                    type="text"
+                    id="edit-user-account-label-entry"
+                    class="form-control"
+                    maxlength="20"
+                    data-account-label-entry
+                    data-validate="account"
+                    autocomplete="off"
+                  >
+                  <button type="button" class="btn btn-outline-primary" data-add-account-label>
+                    <i class="bi bi-plus-circle"></i> Add Account
+                  </button>
+                </div>
+                <div class="invalid-feedback d-block d-none" data-account-label-error></div>
+                <div class="form-text">{{ form.account_labels.help_text }}</div>
+                <div class="small fw-semibold text-muted mt-3 mb-2">New accounts to create</div>
+                <div class="d-flex flex-wrap gap-2" data-account-label-list aria-live="polite"></div>
+                <div class="text-muted small mt-2" data-account-label-empty>No new accounts added.</div>
+              </div>
+              {% for error in form.account_labels.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="text-end mt-4">
+              <a href="{% url 'user_detail' managed_user.id %}" class="btn btn-secondary me-2">
+                <i class="bi bi-arrow-left-circle"></i> Back
+              </a>
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-circle"></i> Save Changes
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  {{ block.super }}
+  <script src="{% static 'js/account-label-builder.js' %}"></script>
+{% endblock %}

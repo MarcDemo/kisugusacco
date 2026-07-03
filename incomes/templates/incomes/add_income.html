@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+{% load form_tags %}
+{% block content %}
+<style>
+  .income-shell {
+    max-width: 1200px;
+  }
+
+  .check-field {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-height: 100%;
+  }
+
+  .check-field .form-check-input {
+    margin-top: 0;
+  }
+
+  @media (max-width: 767.98px) {
+    .income-shell .card {
+      padding: 1rem !important;
+      border-radius: 14px;
+    }
+
+    .income-shell .text-end {
+      text-align: stretch !important;
+    }
+
+    .income-shell .btn {
+      width: 100%;
+    }
+  }
+</style>
+<div class="container py-4 income-shell">
+  <h2 class="mb-4 text-primary"><i class="bi bi-plus-circle me-2"></i> Add Financial Record</h2>
+
+  <div class="row g-4">
+    <div class="col-md-6">
+      <form method="post" class="card p-4 shadow-sm">
+        {% csrf_token %}
+        <h5 class="mb-3">Share Contribution</h5>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Member</label>
+            {{ share_form.member|add_class:"form-select" }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Account</label>
+            {{ share_form.account|add_class:"form-select" }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Amount</label>
+            {{ share_form.amount|add_class:"form-control" }}
+          </div>
+          <div class="col-md-12">
+            <label class="form-label">Remarks</label>
+            {{ share_form.remarks|add_class:"form-control" }}
+          </div>
+        </div>
+
+        <div class="mt-4 text-end">
+          <button type="submit" name="save_share" class="btn btn-success">
+            <i class="bi bi-check-circle me-1"></i> Save Share
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="col-md-6">
+      <form method="post" class="card p-4 shadow-sm">
+        {% csrf_token %}
+        <h5 class="mb-3">Annual Subscription</h5>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Member</label>
+            {{ subscription_form.member|add_class:"form-select" }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Year</label>
+            {{ subscription_form.year|add_class:"form-control" }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Amount</label>
+            {{ subscription_form.amount|add_class:"form-control" }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Paid?</label>
+            <div class="check-field">
+              {{ subscription_form.is_paid|add_class:"form-check-input" }}
+              <span class="small text-muted">Mark if this subscription has already been paid.</span>
+            </div>
+          </div>
+          <div class="col-md-12">
+            <label class="form-label">Paid On</label>
+            {{ subscription_form.paid_on|add_class:"form-control" }}
+          </div>
+        </div>
+
+        <div class="mt-4 text-end">
+          <button type="submit" name="save_subscription" class="btn btn-primary">
+            <i class="bi bi-check-circle me-1"></i> Save Subscription
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const memberSelect = document.getElementById('{{ share_form.member.id_for_label }}');
+  const accountSelect = document.getElementById('{{ share_form.account.id_for_label }}');
+  const endpointTemplate = "{% url 'member_accounts_api' 0 %}";
+
+  if (!memberSelect || !accountSelect) {
+    return;
+  }
+
+  async function loadAccounts(memberId) {
+    if (!memberId) {
+      accountSelect.innerHTML = '<option value="">-- Select member first --</option>';
+      return;
+    }
+
+    const currentValue = accountSelect.value;
+    const url = endpointTemplate.replace('/0/', '/' + memberId + '/');
+    const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    const payload = await response.json();
+    const accounts = payload.accounts || [];
+
+    accountSelect.innerHTML = '<option value="">-- Select Account --</option>';
+    accounts.forEach(function (account) {
+      const option = document.createElement('option');
+      option.value = account.id;
+      option.textContent = account.label;
+      if (String(account.id) === String(currentValue)) {
+        option.selected = true;
+      }
+      accountSelect.appendChild(option);
+    });
+  }
+
+  memberSelect.addEventListener('change', function () {
+    loadAccounts(memberSelect.value);
+  });
+
+  if (memberSelect.value) {
+    loadAccounts(memberSelect.value);
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="text-primary"><i class="bi bi-box-seam me-2"></i> Group Assets</h3>
+    <a href="{% url 'add_asset' %}" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i> Add Asset</a>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-bordered mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Name</th>
+              <th>Value</th>
+              <th>Source</th>
+              <th>Date Acquired</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for asset in assets %}
+            <tr>
+              <td>{{ asset.name }}</td>
+              <td>UGX {{ asset.value|floatformat:"0" }}</td>
+              <td>{{ asset.get_source_display }}</td>
+              <td>{{ asset.date_acquired|date:"Y-m-d" }}</td>
+              <td>{{ asset.remarks|default:"-" }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="5" class="text-center text-muted">No assets recorded yet.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

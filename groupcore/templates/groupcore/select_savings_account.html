@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 700px;">
+  <div class="card shadow-sm border-0">
+    <div class="card-header bg-primary text-white">
+      <h4 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>Select Savings Account</h4>
+    </div>
+    <div class="card-body">
+      <p class="text-muted mb-3">
+        You have multiple savings accounts. Select the account you want to use for this session.
+      </p>
+
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <div class="col-12">
+          <label for="account_id" class="form-label">Savings Account <span class="text-danger">*</span></label>
+          <select name="account_id" id="account_id" class="form-select" required>
+            <option value="">-- Select Account --</option>
+            {% for account in accounts %}
+              <option value="{{ account.id }}">Account {{ account.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-12 text-end">
+          <button type="submit" class="btn btn-primary px-4">
+            Continue
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

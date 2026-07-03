@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4">
+  <h2 class="text-primary mb-4"><i class="bi bi-people-fill me-2"></i> Member Weekly Payment Reports - {{ selected_year }}</h2>
+
+  <div class="d-flex flex-wrap align-items-center gap-2 small mb-3">
+    <span class="text-muted fw-semibold">Deposit Types:</span>
+    <span class="badge text-bg-dark">Total</span>
+    <span class="badge text-bg-primary">Saving</span>
+    <span class="badge text-bg-success">Welfare</span>
+    <span class="badge text-bg-warning text-dark">Annual</span>
+    <span class="badge text-bg-danger">Fine</span>
+    <span class="badge text-bg-info text-dark">Shares</span>
+    <span class="badge text-bg-secondary">Interest</span>
+  </div>
+
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+    <form method="get" class="d-flex flex-wrap align-items-end gap-2">
+      <div>
+        <label for="report-year" class="form-label small text-muted mb-1">Saving Year</label>
+        <select id="report-year" name="year" class="form-select form-select-sm">
+          {% for year in years %}
+            <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">View Year</button>
+    </form>
+
+    <div class="text-end">
+      <a href="{% url 'download_all_reports' 'pdf' %}?year={{ selected_year }}" class="btn btn-danger btn-sm me-2">
+        <i class="bi bi-download me-1"></i> Download All (PDF)
+      </a>
+      <a href="{% url 'download_all_reports' 'excel' %}?year={{ selected_year }}" class="btn btn-success btn-sm">
+        <i class="bi bi-download me-1"></i> Download All (Excel)
+      </a>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-bordered table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Member</th>
+          <th>Total</th>
+          <th>Saving</th>
+          <th>Welfare</th>
+          <th>Annual</th>
+          <th>Fine</th>
+          <th>Shares</th>
+          <th>Interest</th>
+          <th>Weeks Paid</th>
+          <th>Download</th>
+        </tr>
+      </thead>
+      <tbody>
+          {% for row in report_data %}
+              <tr>
+              <td>{{ row.member.get_full_name|default:row.member.username }}</td>
+              <td>UGX {{ row.total_amount|default:0|floatformat:"0" }}</td>
+              <td>UGX {{ row.total_saving|default:0|floatformat:"0" }}</td>
+              <td>UGX {{ row.total_welfare|default:0|floatformat:"0" }}</td>
+              <td>UGX {{ row.total_annual|default:0|floatformat:"0" }}</td>
+              <td>UGX {{ row.total_fine|default:0|floatformat:"0" }}</td>
+              <td>UGX {{ row.total_shares|default:0|floatformat:"0" }}</td>
+              <td>UGX {{ row.total_interest|default:0|floatformat:"0" }}</td>
+              <td>{{ row.total_weeks|default:0 }}</td>
+              <td class="text-nowrap">
+                  <a href="{% url 'download_member_report' row.member.id 'pdf' %}?year={{ selected_year }}" class="btn btn-sm btn-danger">
+                  <i class="bi bi-file-earmark-pdf"></i> PDF
+                  </a>
+                  <a href="{% url 'download_member_report' row.member.id 'excel' %}?year={{ selected_year }}" class="btn btn-sm btn-success">
+                  <i class="bi bi-file-earmark-excel"></i> Excel
+                  </a>
+              </td>
+              </tr>
+          {% empty %}
+              <tr>
+            <td colspan="10" class="text-center text-muted">No members found.</td>
+              </tr>
+          {% endfor %}
+          </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

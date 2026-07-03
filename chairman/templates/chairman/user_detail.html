@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <h2 class="mb-0 text-primary"><i class="bi bi-person-vcard me-2"></i>User Details</h2>
+    <div class="d-flex gap-2 flex-wrap">
+      <a href="{% url 'edit_user' managed_user.id %}" class="btn btn-success">
+        <i class="bi bi-pencil-square me-1"></i> Edit
+      </a>
+      <a href="{% url 'manage_users' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+      </a>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-5">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0"><i class="bi bi-person me-1"></i> Profile</h5>
+        </div>
+        <div class="card-body">
+          <dl class="row mb-0">
+            <dt class="col-sm-4">Username</dt>
+            <dd class="col-sm-8">{{ managed_user.username }}</dd>
+            <dt class="col-sm-4">Name</dt>
+            <dd class="col-sm-8">{{ managed_user.get_full_name|default:'-' }}</dd>
+            <dt class="col-sm-4">Email</dt>
+            <dd class="col-sm-8">{{ managed_user.email|default:'-' }}</dd>
+            <dt class="col-sm-4">Phone</dt>
+            <dd class="col-sm-8">{{ managed_user.phone_number|default:'-' }}</dd>
+            <dt class="col-sm-4">Role</dt>
+            <dd class="col-sm-8"><span class="badge bg-primary">{{ managed_user.get_role_display }}</span></dd>
+            <dt class="col-sm-4">Status</dt>
+            <dd class="col-sm-8">
+              {% if managed_user.is_active %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-danger">Inactive</span>
+              {% endif %}
+            </dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-success text-white">
+          <h5 class="mb-0"><i class="bi bi-wallet2 me-1"></i> Savings Accounts</h5>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-striped mb-0 align-middle">
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Status</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for account in managed_user.savings_accounts.all %}
+              <tr>
+                <td class="fw-semibold">Account {{ account.label }}</td>
+                <td>
+                  {% if account.is_active %}
+                    <span class="badge bg-success">Active</span>
+                  {% else %}
+                    <span class="badge bg-secondary">Inactive</span>
+                  {% endif %}
+                </td>
+                <td>{{ account.created_at|date:'Y-m-d' }}</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="3" class="text-center text-muted py-4">No savings accounts found.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

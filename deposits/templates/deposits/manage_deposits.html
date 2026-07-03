@@ -1,0 +1,448 @@
+{% extends 'base.html' %}
+{% load form_tags %}
+
+{% block content %}
+<style>
+  .dd-purpose-box {
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 180ms ease, transform 180ms ease;
+  }
+  .dd-purpose-box.dd-purpose-hiding {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  .proof-modal {
+    z-index: 1065;
+  }
+
+  .proof-modal .modal-header {
+    background: #f4f9ff;
+  }
+
+  .proof-modal .btn-close {
+    opacity: 1;
+    filter: contrast(1.8);
+  }
+
+  .proof-thumb {
+    width: 60px;
+    max-width: 100%;
+    height: auto;
+  }
+</style>
+
+<div class="container py-4">
+  <h3 class="mb-4 text-success">
+    <i class="bi bi-clipboard-check me-2"></i> Manage Deposits
+  </h3>
+
+  <!-- Pending Deposits -->
+  <div class="card shadow-sm mb-5">
+    <div class="card-header bg-success text-white">
+      <h5 class="mb-0"><i class="bi bi-hourglass-split me-2"></i> Pending Deposits</h5>
+    </div>
+    <div class="card-body p-0">
+      {% if pending_deposits %}
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Member</th>
+              <th>Account</th>
+              <th>Total</th>
+              <th>Types</th>
+              <th>Saving</th>
+              <th>Welfare</th>
+              <th>Annual</th>
+              <th>Fine</th>
+              <th>Shares</th>
+              <th>Loan Repayment</th>
+              <th>Saving Week</th>
+              <th>Proof</th>
+              <th>Remarks</th>
+              <th>Submitted</th>
+              <th>Payment Date</th>
+              <th>Payment Time</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for deposit in pending_deposits %}
+            <tr>
+              <td>{{ deposit.member.username }}</td>
+              <td>{{ deposit.account.label|default:"-" }}</td>
+              <td>UGX {{ deposit.amount|floatformat:"0" }}</td>
+              <td>
+                {% for purpose, value in deposit.purpose_breakdown.items %}
+                <span class="badge text-bg-primary me-1">{{ purpose }}</span>
+                {% empty %}
+                <span class="text-muted">-</span>
+                {% endfor %}
+              </td>
+              <td>{{ deposit.saving_amount|floatformat:"0" }}</td>
+              <td>{{ deposit.welfare_amount|floatformat:"0" }}</td>
+              <td>{{ deposit.annual_subscription_amount|floatformat:"0" }}</td>
+              <td>{{ deposit.fine_amount|floatformat:"0" }}</td>
+              <td>{{ deposit.shares_amount|floatformat:"0" }}</td>
+              <td>{{ deposit.loan_repayment_amount|floatformat:"0" }}</td>
+              <td>{{ deposit.payment_week }}</td>
+              <td>
+                {% if deposit.proof %}
+                <a data-bs-toggle="modal" data-bs-target="#proofModal{{ deposit.id }}">
+                  <img src="{{ deposit.proof.url }}" alt="Proof" class="img-thumbnail proof-thumb" title="Click to view">
+                </a>
+                <div class="modal fade proof-modal" id="proofModal{{ deposit.id }}" tabindex="-1" aria-hidden="true">
+                  <div class="modal-dialog modal-dialog-centered modal-lg">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h5 class="modal-title">Proof of Payment</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                      </div>
+                      <div class="modal-body text-center">
+                        <img src="{{ deposit.proof.url }}" class="img-fluid" alt="Full proof">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {% else %}
+                <span class="text-muted">No proof</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if deposit.remarks %}
+                {{ deposit.remarks|truncatewords:5 }}...
+                <a tabindex="0" class="text-primary" role="button" data-bs-toggle="popover" data-bs-trigger="focus" title="Remarks" data-bs-content="{{ deposit.remarks }}">Read More</a>
+                {% else %}
+                <span class="text-muted">-</span>
+                {% endif %}
+              </td>
+              <td>{{ deposit.date_submitted|date:"Y-m-d H:i" }}</td>
+              <td>{{ deposit.payment_date|date:"Y-m-d" }}</td>
+              <td>{{ deposit.payment_time|date:"H:i" }}</td>
+              <td class="text-nowrap">
+                <a href="{% url 'approve_deposit' deposit.id %}" class="btn btn-sm btn-success" title="Approve">
+                  <i class="bi bi-check-circle"></i>
+                </a>
+                <a href="{% url 'reject_deposit' deposit.id %}" class="btn btn-sm btn-danger" title="Reject">
+                  <i class="bi bi-x-circle"></i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="p-4 text-muted">No pending deposits at the moment.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Add Direct Deposit -->
+  <div class="card shadow-sm">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+      <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i> Add Direct Deposit</h5>
+      <button class="btn btn-light btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#addDepositForm" aria-expanded="{% if form.errors %}true{% else %}false{% endif %}">
+        <i class="bi bi-caret-down-fill"></i> Toggle Form
+      </button>
+    </div>
+
+    <div class="collapse {% if form.errors %}show{% endif %}" id="addDepositForm">
+      <div class="card-body">
+        {% if form.errors %}
+        <div class="alert alert-danger" role="alert">
+          <div class="fw-semibold mb-1">
+            <i class="bi bi-exclamation-triangle me-1"></i> Direct deposit not saved
+          </div>
+          <div class="small mb-2">Please correct the highlighted item(s) below and submit again.</div>
+          <ul class="mb-0 small">
+            {% for field in form.visible_fields %}
+              {% for error in field.errors %}
+              <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+              {% endfor %}
+            {% endfor %}
+            {% for error in form.non_field_errors %}
+            <li>{{ error }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        <form method="post" enctype="multipart/form-data" class="row g-3">
+          {% csrf_token %}
+
+          <!-- Select Member -->
+          <div class="col-md-6">
+            <label for="id_member" class="form-label">Select Member <span class="text-danger">*</span></label>
+            {{ form.member|add_class:"form-select" }}
+            {% if form.member.errors %}
+            <div class="text-danger small mt-1">{{ form.member.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+
+          <div class="col-md-6">
+            <label for="id_account" class="form-label">Select Account (optional)</label>
+            {{ form.account|add_class:"form-select" }}
+            {% if form.account.errors %}
+            <div class="text-danger small mt-1">{{ form.account.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+
+          <div class="col-md-3">
+            <label for="id_payment_week" class="form-label">Saving Week <span class="text-danger">*</span></label>
+            {{ form.payment_week|add_class:"form-control" }}
+            {% if form.payment_week.errors %}
+            <div class="text-danger small mt-1">{{ form.payment_week.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+
+          <!-- Payment Date -->
+          <div class="col-md-3">
+            <label for="id_payment_date" class="form-label">Payment Date <span class="text-danger">*</span></label>
+            {{ form.payment_date|add_class:"form-control" }}
+            {% if form.payment_date.errors %}
+            <div class="text-danger small mt-1">{{ form.payment_date.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+
+          <!-- Payment Time -->
+          <div class="col-md-3">
+            <label for="id_payment_time" class="form-label">Payment Time <span class="text-danger">*</span></label>
+            {{ form.payment_time|add_class:"form-control" }}
+            {% if form.payment_time.errors %}
+            <div class="text-danger small mt-1">{{ form.payment_time.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+
+          <!-- Purpose selection -->
+          <div class="col-12">
+            <label class="form-label fw-semibold">Deposit Purpose <span class="text-danger">*</span></label>
+            <small class="text-muted d-block mb-2">Tick the purpose(s), then enter amount(s) only for selected purposes.</small>
+            <div class="d-flex flex-wrap gap-3">
+              {% for checkbox in form.selected_purposes %}
+              <div class="form-check">
+                {{ checkbox.tag }}
+                <label class="form-check-label" for="{{ checkbox.id_for_label }}">{{ checkbox.choice_label }}</label>
+              </div>
+              {% endfor %}
+            </div>
+            {% if form.selected_purposes.errors %}
+            <div class="text-danger small mt-1">{{ form.selected_purposes.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+
+          <!-- Per-purpose amounts -->
+          <div class="col-12">
+            <label class="form-label fw-semibold">Amount per Purpose <span class="text-danger">*</span></label>
+            <small class="text-muted d-block mb-2">Only selected purposes are shown below.</small>
+            <div class="row g-2">
+              <div class="col-md-3 col-6 dd-purpose-box" data-purpose="saving">
+                <label for="id_saving_amount" class="form-label small">Saving (UGX)</label>
+                {{ form.saving_amount|add_class:"form-control dd-purpose-amount" }}
+                {% if form.saving_amount.errors %}
+                <div class="text-danger small mt-1">{{ form.saving_amount.errors|join:", " }}</div>
+                {% endif %}
+              </div>
+              <div class="col-md-3 col-6 dd-purpose-box" data-purpose="welfare">
+                <label for="id_welfare_amount" class="form-label small">Welfare (UGX)</label>
+                {{ form.welfare_amount|add_class:"form-control dd-purpose-amount" }}
+                {% if form.welfare_amount.errors %}
+                <div class="text-danger small mt-1">{{ form.welfare_amount.errors|join:", " }}</div>
+                {% endif %}
+              </div>
+              <div class="col-md-3 col-6 dd-purpose-box" data-purpose="annual_subscription">
+                <label for="id_annual_subscription_amount" class="form-label small">Annual Subscription (UGX)</label>
+                {{ form.annual_subscription_amount|add_class:"form-control dd-purpose-amount" }}
+                {% if form.annual_subscription_amount.errors %}
+                <div class="text-danger small mt-1">{{ form.annual_subscription_amount.errors|join:", " }}</div>
+                {% endif %}
+              </div>
+              <div class="col-md-3 col-6 dd-purpose-box" data-purpose="fine">
+                <label for="id_fine_amount" class="form-label small">Fine (UGX)</label>
+                {{ form.fine_amount|add_class:"form-control dd-purpose-amount" }}
+                {% if form.fine_amount.errors %}
+                <div class="text-danger small mt-1">{{ form.fine_amount.errors|join:", " }}</div>
+                {% endif %}
+              </div>
+              <div class="col-md-3 col-6 dd-purpose-box" data-purpose="shares">
+                <label for="id_shares_amount" class="form-label small">Shares (UGX)</label>
+                {{ form.shares_amount|add_class:"form-control dd-purpose-amount" }}
+                {% if form.shares_amount.errors %}
+                <div class="text-danger small mt-1">{{ form.shares_amount.errors|join:", " }}</div>
+                {% endif %}
+              </div>
+              <div class="col-md-3 col-6 dd-purpose-box" data-purpose="loan_repayment">
+                <label for="id_loan_repayment_amount" class="form-label small">Loan Repayment (UGX)</label>
+                {{ form.loan_repayment_amount|add_class:"form-control dd-purpose-amount" }}
+                {% if form.loan_repayment_amount.errors %}
+                <div class="text-danger small mt-1">{{ form.loan_repayment_amount.errors|join:", " }}</div>
+                {% endif %}
+              </div>
+            </div>
+            {% if form.non_field_errors %}
+            <div class="text-danger small mt-1">{{ form.non_field_errors|join:", " }}</div>
+            {% endif %}
+          </div>
+
+          <!-- Live total -->
+          <div class="col-12">
+            <div class="alert alert-info py-2 mb-0 d-flex justify-content-between align-items-center">
+              <span class="fw-semibold">Total Deposit:</span>
+              <span id="ddTotalDisplay" class="fs-5 fw-bold">UGX 0</span>
+            </div>
+          </div>
+
+          <!-- Proof -->
+          <div class="col-md-6">
+            <label for="id_proof" class="form-label">Proof of Payment <span class="text-danger">*</span></label>
+            {{ form.proof|add_class:"form-control" }}
+            <small class="text-muted">Upload an image only, for example .jpg, .jpeg, or .png. PDF files are not accepted.</small>
+            {% if form.proof.errors %}
+            <div class="text-danger small mt-1">{{ form.proof.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+
+          <!-- Remarks -->
+          <div class="col-12">
+            <label for="id_remarks" class="form-label">Remarks (optional)</label>
+            {{ form.remarks|add_class:"form-control" }}
+            {% if form.remarks.errors %}
+            <div class="text-danger small mt-1">{{ form.remarks.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+
+          <div class="col-12 text-end">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-circle me-1"></i> Submit Direct Deposit
+            </button>
+          </div>
+        </form>
+
+      <script>
+      function selectedDdPurposes() {
+        return Array.from(document.querySelectorAll('input[name="selected_purposes"]:checked')).map(function(el) {
+          return el.value;
+        });
+      }
+
+      function toggleDdPurposeBoxes() {
+        const selected = selectedDdPurposes();
+        document.querySelectorAll('.dd-purpose-box').forEach(function(box) {
+          const purpose = box.getAttribute('data-purpose');
+          const input = box.querySelector('input');
+          const isSelected = selected.includes(purpose);
+          if (isSelected) {
+            if (box.classList.contains('d-none')) {
+              box.classList.remove('d-none', 'dd-purpose-hiding');
+              box.style.opacity = '0';
+              box.style.transform = 'translateY(-6px)';
+              requestAnimationFrame(function() {
+                box.style.opacity = '';
+                box.style.transform = '';
+              });
+            }
+            if (input) {
+              input.disabled = false;
+            }
+          } else {
+            if (!box.classList.contains('d-none')) {
+              box.classList.add('dd-purpose-hiding');
+              window.setTimeout(function() {
+                box.classList.add('d-none');
+                box.classList.remove('dd-purpose-hiding');
+              }, 180);
+            }
+            if (input) {
+              input.disabled = true;
+              input.value = '';
+            }
+          }
+        });
+      }
+
+      function updateDdTotal() {
+        const fields = document.querySelectorAll('.dd-purpose-box:not(.d-none) .dd-purpose-amount');
+        let total = 0;
+        fields.forEach(function(f) {
+          const val = parseFloat(f.value) || 0;
+          total += val;
+        });
+        document.getElementById('ddTotalDisplay').textContent = 'UGX ' + total.toLocaleString('en-UG', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+      }
+      document.querySelectorAll('input[name="selected_purposes"]').forEach(function(cb) {
+        cb.addEventListener('change', function() {
+          toggleDdPurposeBoxes();
+          updateDdTotal();
+        });
+      });
+      document.querySelectorAll('.dd-purpose-amount').forEach(function(f) {
+        f.addEventListener('input', updateDdTotal);
+      });
+      toggleDdPurposeBoxes();
+      updateDdTotal();
+      </script>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Bootstrap Popover Script -->
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.proof-modal').forEach(function (modalEl) {
+      if (modalEl.parentElement !== document.body) {
+        document.body.appendChild(modalEl);
+      }
+    });
+
+    const memberSelect = document.getElementById('id_member');
+    const accountSelect = document.getElementById('id_account');
+    const endpointTemplate = "{% url 'member_accounts_api' 0 %}";
+
+    async function loadMemberAccounts(memberId) {
+      if (!memberSelect || !accountSelect) {
+        return;
+      }
+
+      if (!memberId) {
+        accountSelect.innerHTML = '<option value="">-- Select member first --</option>';
+        return;
+      }
+
+      const currentValue = accountSelect.value;
+      const url = endpointTemplate.replace('/0/', '/' + memberId + '/');
+      const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      const payload = await response.json();
+      const accounts = payload.accounts || [];
+
+      accountSelect.innerHTML = '<option value="">-- Select Account --</option>';
+      accounts.forEach(function (account) {
+        const option = document.createElement('option');
+        option.value = account.id;
+        option.textContent = account.label;
+        if (String(account.id) === String(currentValue)) {
+          option.selected = true;
+        }
+        accountSelect.appendChild(option);
+      });
+    }
+
+    if (memberSelect) {
+      memberSelect.addEventListener('change', function () {
+        loadMemberAccounts(memberSelect.value);
+      });
+      if (memberSelect.value) {
+        loadMemberAccounts(memberSelect.value);
+      }
+    }
+
+    const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'))
+    popoverTriggerList.map(function (popoverTriggerEl) {
+      return new bootstrap.Popover(popoverTriggerEl)
+    })
+  });
+</script>
+{% endblock %}

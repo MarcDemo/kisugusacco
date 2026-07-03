@@ -1,0 +1,209 @@
+{% extends 'base.html' %}
+{% load form_tags %}
+{% block content %}
+<style>
+  .loan-request-shell {
+    max-width: 860px;
+  }
+
+  .guarantor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.65rem;
+  }
+
+  .guarantor-search .input-group-text {
+    background: #fff;
+    border-color: #d6eadb;
+    color: #198754;
+  }
+
+  .guarantor-option {
+    border: 1px solid #d6eadb;
+    border-radius: 10px;
+    padding: 0.7rem 0.85rem;
+    background: #fff;
+  }
+
+  @media (max-width: 767.98px) {
+    .loan-request-shell {
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    .loan-request-shell .card {
+      padding: 1rem !important;
+      border-radius: 14px;
+    }
+
+    .loan-request-shell .text-end {
+      text-align: stretch !important;
+    }
+
+    .loan-request-shell .btn {
+      width: 100%;
+    }
+  }
+</style>
+<div class="container py-4 loan-request-shell">
+  <h2 class="mb-4 text-primary">Request Loan</h2>
+  <form method="post" class="card p-4 shadow-sm">
+    {% csrf_token %}
+    <div class="row g-3">
+      {% if form.non_field_errors %}
+        <div class="col-12">
+          <div class="alert alert-danger mb-0">{{ form.non_field_errors }}</div>
+        </div>
+      {% endif %}
+      <div class="col-md-6">
+        <label class="form-label">Account</label>
+        {{ form.account|add_class:'form-select' }}
+        {% for error in form.account.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Requested Amount</label>
+        {{ form.principal|add_class:'form-control' }}
+        {% for error in form.principal.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Duration (Months)</label>
+        {{ form.duration_months|add_class:'form-control' }}
+        {% for error in form.duration_months.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+      </div>
+      <div class="col-12">
+        <label class="form-label">Purpose</label>
+        {{ form.purpose|add_class:'form-control' }}
+        {% for error in form.purpose.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+      </div>
+      <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
+          <label class="form-label mb-0">{{ form.guarantors.label }}</label>
+          <span class="badge text-bg-light border" id="guarantor-count">0 selected</span>
+        </div>
+        <div class="input-group guarantor-search mb-3">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+          <input
+            type="search"
+            class="form-control"
+            id="guarantor-search"
+            placeholder="Search members"
+            autocomplete="off"
+          >
+          <button type="button" class="btn btn-outline-secondary d-none" id="guarantor-search-clear" aria-label="Clear search">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+        <div class="guarantor-grid" id="guarantor-grid">
+          {% for choice in form.guarantors %}
+            <label class="guarantor-option" data-guarantor-option>
+              {{ choice.tag }}
+              <span class="ms-2">{{ choice.choice_label }}</span>
+            </label>
+          {% empty %}
+            <div class="alert alert-warning mb-0">No eligible active guarantors are available.</div>
+          {% endfor %}
+        </div>
+        <div class="alert alert-light border d-none mt-2 mb-0" id="guarantor-no-results">
+          No members match your search.
+        </div>
+        {% if form.guarantors.help_text %}
+          <div class="form-text">{{ form.guarantors.help_text }}</div>
+        {% endif %}
+        <div class="text-danger small mt-1" id="guarantor-feedback">
+          {% for error in form.guarantors.errors %}{{ error }}{% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="mt-4 text-end">
+      <button class="btn btn-success" type="submit">Submit Request</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const checkboxes = Array.from(document.querySelectorAll('input[name="guarantors"]'));
+    const guarantorOptions = Array.from(document.querySelectorAll('[data-guarantor-option]'));
+    const countBadge = document.getElementById('guarantor-count');
+    const feedback = document.getElementById('guarantor-feedback');
+    const searchInput = document.getElementById('guarantor-search');
+    const clearSearchButton = document.getElementById('guarantor-search-clear');
+    const noResults = document.getElementById('guarantor-no-results');
+
+    function updateSearchResults() {
+      if (!searchInput) {
+        return;
+      }
+
+      const query = searchInput.value.trim().toLowerCase();
+      let visibleCount = 0;
+
+      guarantorOptions.forEach(function (option) {
+        const checkbox = option.querySelector('input[name="guarantors"]');
+        const name = option.textContent.trim().toLowerCase();
+        const isSelected = Boolean(checkbox && checkbox.checked);
+        const isVisible = !query || name.includes(query) || isSelected;
+
+        option.hidden = !isVisible;
+        if (isVisible && (!query || name.includes(query))) {
+          visibleCount += 1;
+        }
+      });
+
+      if (clearSearchButton) {
+        clearSearchButton.classList.toggle('d-none', !query);
+      }
+
+      if (noResults) {
+        noResults.classList.toggle('d-none', !query || visibleCount > 0);
+      }
+    }
+
+    function updateGuarantorState(changedBox) {
+      const selected = checkboxes.filter(function (box) { return box.checked; });
+      if (selected.length > 3 && changedBox) {
+        changedBox.checked = false;
+      }
+
+      const selectedCount = checkboxes.filter(function (box) { return box.checked; }).length;
+      if (countBadge) {
+        countBadge.textContent = selectedCount + ' selected';
+      }
+
+      checkboxes.forEach(function (box) {
+        box.disabled = selectedCount >= 3 && !box.checked;
+      });
+
+      if (feedback) {
+        feedback.textContent = selectedCount === 3 || selectedCount === 0
+          ? ''
+          : 'Exactly three guarantors are required.';
+      }
+
+      updateSearchResults();
+    }
+
+    checkboxes.forEach(function (box) {
+      box.addEventListener('change', function () {
+        updateGuarantorState(box);
+      });
+    });
+
+    if (searchInput) {
+      searchInput.addEventListener('input', updateSearchResults);
+    }
+
+    if (clearSearchButton && searchInput) {
+      clearSearchButton.addEventListener('click', function () {
+        searchInput.value = '';
+        updateSearchResults();
+        searchInput.focus();
+      });
+    }
+
+    updateGuarantorState();
+  });
+</script>
+{% endblock %}

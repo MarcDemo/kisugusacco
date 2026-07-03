@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4">
+  <h2 class="mb-4 text-success"><i class="bi bi-cash-stack me-2"></i> Financial Records</h2>
+
+  <a href="{% url 'add_income' %}" class="btn btn-sm btn-primary mb-3">
+    <i class="bi bi-plus-circle me-1"></i> Add Share / Subscription
+  </a>
+
+  <h5 class="mt-3">Share Contributions</h5>
+  <div class="table-responsive mb-4">
+    <table class="table table-bordered table-striped mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Member</th>
+          <th>Account</th>
+          <th>Amount</th>
+          <th>Remarks</th>
+          <th>Recorded By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for share in shares %}
+          <tr>
+            <td>{{ share.contribution_date }}</td>
+            <td>{{ share.member.get_full_name|default:share.member.username }}</td>
+            <td>{{ share.account.label|default:"-" }}</td>
+            <td>UGX {{ share.amount|floatformat:"0" }}</td>
+            <td>{{ share.remarks|default:"-" }}</td>
+            <td>{{ share.recorded_by.get_full_name|default:share.recorded_by.username }}</td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="6" class="text-center text-muted">No other income recorded.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h5>Annual Subscriptions</h5>
+  <div class="table-responsive">
+    <table class="table table-bordered table-striped align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Member</th>
+          <th>Year</th>
+          <th>Amount</th>
+          <th>Status</th>
+          <th>Paid On</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for subscription in subscriptions %}
+          <tr>
+            <td>{{ subscription.member.get_full_name|default:subscription.member.username }}</td>
+            <td>{{ subscription.year }}</td>
+            <td>UGX {{ subscription.amount|floatformat:"0" }}</td>
+            <td>
+              {% if subscription.is_paid %}
+                <span class="badge bg-success">Paid</span>
+              {% else %}
+                <span class="badge bg-warning text-dark">Pending</span>
+              {% endif %}
+            </td>
+            <td>{{ subscription.paid_on|default:"-" }}</td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="5" class="text-center text-muted">No subscriptions recorded.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

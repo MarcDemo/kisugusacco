@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4">
+  <h2 class="mb-3 text-primary">Year-End Settlement {{ target_year }}</h2>
+
+  <form method="get" class="d-flex flex-wrap align-items-end gap-2 mb-3">
+    <div>
+      <label for="settlement-year" class="form-label small text-muted mb-1">Settlement Year</label>
+      <select id="settlement-year" name="year" class="form-select form-select-sm">
+        {% for year in years %}
+          <option value="{{ year }}" {% if year == target_year %}selected{% endif %}>{{ year }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">View Year</button>
+  </form>
+
+  <div class="d-flex flex-wrap align-items-center gap-2 small mb-3">
+    <span class="text-muted fw-semibold">Legend:</span>
+    <span class="badge text-bg-primary">Savings</span>
+    <span class="badge text-bg-secondary">Distributed Interest</span>
+    <span class="badge text-bg-dark">Gross Distribution</span>
+    <span class="badge text-bg-info text-dark">Shares</span>
+    <span class="badge text-bg-success">Welfare</span>
+    <span class="badge text-bg-danger">Fines</span>
+    <span class="badge text-bg-warning text-dark">Annual</span>
+    <span class="badge text-bg-dark">Net Share</span>
+  </div>
+
+  {% if is_current_year and not is_settlement_day %}
+  <div class="alert alert-warning">
+    Settlement closing day is December 11. This page currently shows a live preview.
+  </div>
+  {% elif not is_current_year %}
+  <div class="alert alert-info">
+    Viewing the historical settlement calculation for {{ target_year }}.
+  </div>
+  {% endif %}
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-6">
+      <div class="alert alert-info mb-0">
+        Group Savings Pool: <strong>UGX {{ group_savings_total|floatformat:'0' }}</strong>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="alert alert-success mb-0">
+        Loan Interest Pool to Distribute: <strong>UGX {{ loan_interest_pool|floatformat:'0' }}</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-bordered table-striped align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Member</th>
+          <th>Savings</th>
+          <th>Distributed Interest</th>
+          <th>Gross Distribution</th>
+          <th>Shares</th>
+          <th>Welfare</th>
+          <th>Fines</th>
+          <th>Annual Subscription</th>
+          <th>Net Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.member.get_full_name|default:row.member.username }}</td>
+          <td>UGX {{ row.saving_total|floatformat:'0' }}</td>
+          <td>UGX {{ row.interest_share|floatformat:'0' }}</td>
+          <td>UGX {{ row.gross_distribution|floatformat:'0' }}</td>
+          <td>UGX {{ row.shares_total|floatformat:'0' }}</td>
+          <td>UGX {{ row.welfare_total|floatformat:'0' }}</td>
+          <td>UGX {{ row.fine_total|floatformat:'0' }}</td>
+          <td>UGX {{ row.annual_total|floatformat:'0' }}</td>
+          <td class="fw-bold">UGX {{ row.net_share|floatformat:'0' }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="text-center text-muted">No members found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4">
+  <h2 class="mb-4 text-success">My Loans</h2>
+  <a class="btn btn-primary btn-sm mb-3" href="{% url 'request_loan' %}">Request Loan</a>
+  <div class="table-responsive">
+    <table class="table table-bordered table-sm align-middle">
+      <thead>
+        <tr>
+          <th>Requested On</th>
+          <th>Monthly Rate</th>
+          <th>Duration</th>
+          <th>Monthly Repayment</th>
+          <th>Total Repayment</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for loan in loans %}
+        <tr>
+          <td>{{ loan.requested_on|date:'Y-m-d H:i' }}</td>
+          <td>{{ loan.monthly_interest_rate }}% p.m.</td>
+          <td>{{ loan.duration_months }} months</td>
+          <td>UGX {{ loan.monthly_repayment|floatformat:'0' }}</td>
+          <td>UGX {{ loan.total_repayment|floatformat:'0' }}</td>
+          <td>
+            {% if loan.status == 'APPROVED' %}
+              <span class="badge text-bg-success">Approved</span>
+            {% elif loan.status == 'PENDING_GUARANTOR' %}
+              <span class="badge text-bg-secondary">Awaiting Guarantors</span>
+              <div class="small text-muted mt-1">{{ loan.guarantor_approval_count }} of 3 approved</div>
+            {% elif loan.status == 'REJECTED_GUARANTOR' %}
+              <span class="badge text-bg-danger">Rejected by Guarantor</span>
+            {% elif loan.status == 'REJECTED' %}
+              <span class="badge text-bg-danger">Rejected</span>
+            {% else %}
+              <span class="badge text-bg-warning">Pending Management Review</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center">No loan requests yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

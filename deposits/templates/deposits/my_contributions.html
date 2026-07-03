@@ -1,0 +1,217 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+  .proof-modal {
+    z-index: 1065;
+  }
+
+  .proof-modal .modal-header {
+    background: #f4f9ff;
+  }
+
+  .proof-modal .btn-close {
+    opacity: 1;
+    filter: contrast(1.8);
+  }
+
+  .proof-thumb {
+    width: 60px;
+    max-width: 100%;
+    height: auto;
+  }
+</style>
+
+<div class="container-fluid py-4">
+  <h2 class="mb-4 text-success"><i class="bi bi-cash-coin me-2"></i> My Contributions</h2>
+
+  <div class="d-flex flex-wrap align-items-center gap-2 small mb-3">
+    <span class="text-muted fw-semibold">Deposit Types:</span>
+    <span class="badge text-bg-dark">Total</span>
+    <span class="badge text-bg-primary">Saving</span>
+    <span class="badge text-bg-success">Welfare</span>
+    <span class="badge text-bg-warning text-dark">Annual</span>
+    <span class="badge text-bg-danger">Fine</span>
+    <span class="badge text-bg-info text-dark">Shares</span>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-success text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <h5 class="mb-0"><i class="bi bi-wallet-fill me-2"></i> Contribution History</h5>
+      {% if active_account %}
+      <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'export_my_contributions' 'pdf' %}{% if export_querystring %}?{{ export_querystring }}{% endif %}" class="btn btn-light btn-sm">
+          <i class="bi bi-file-earmark-pdf me-1"></i> PDF
+        </a>
+        <a href="{% url 'export_my_contributions' 'excel' %}{% if export_querystring %}?{{ export_querystring }}{% endif %}" class="btn btn-light btn-sm">
+          <i class="bi bi-file-earmark-excel me-1"></i> Excel
+        </a>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="card-body">
+      <!-- Filter Section -->
+      <form method="get" class="row g-3 align-items-end mb-4">
+        <div class="col-md-4">
+          <label for="year" class="form-label">Filter by Year</label>
+          <select name="year" id="year" class="form-select">
+            {% for y in years %}
+              <option value="{{ y }}" {% if selected_year == y %}selected{% endif %}>{{ y }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-4">
+          <label for="month" class="form-label">Filter by Month</label>
+          <select name="month" id="month" class="form-select">
+            <option value="">All Months</option>
+            {% for m_val, m_name in months %}
+              <option value="{{ m_val }}" {% if selected_month == m_val %}selected{% endif %}>{{ m_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-4 d-flex gap-2">
+          <button type="submit" class="btn btn-success w-50">
+            <i class="bi bi-funnel me-1"></i> Apply Filter
+          </button>
+          <a href="{% url 'my_contributions' %}" class="btn btn-outline-secondary w-50">
+            <i class="bi bi-x-circle me-1"></i> Clear Filters
+          </a>
+        </div>
+      </form>
+
+      <!-- Contributions Table -->
+      <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Saving Week</th>
+              <th>Account</th>
+              <th>Total</th>
+              <th>Saving</th>
+              <th>Welfare</th>
+              <th>Annual</th>
+              <th>Fine</th>
+              <th>Shares</th>
+              <th>Status</th>
+              <th>Proof</th>
+              <th>Date Submitted</th>
+              <th>Payment Date</th>
+              <th>Payment Time</th>
+              <th>Remarks</th>
+              <th>Submitted By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if deposits %}
+            {% for deposit in deposits %}
+            <tr>
+              <td>{{ deposit.payment_week }}</td>
+              <td>{{ deposit.account.label|default:"-" }}</td>
+              <td>UGX {{ deposit.amount|floatformat:"0" }}</td>
+              <td>{{ deposit.saving_amount|floatformat:"0" }}</td>
+              <td>{{ deposit.welfare_amount|floatformat:"0" }}</td>
+              <td>{{ deposit.annual_subscription_amount|floatformat:"0" }}</td>
+              <td>{{ deposit.fine_amount|floatformat:"0" }}</td>
+              <td>{{ deposit.shares_amount|floatformat:"0" }}</td>
+              <td>
+                {% if deposit.status == 'APPROVED' %}
+                  <span class="badge bg-success">Approved</span>
+                {% elif deposit.status == 'REJECTED' %}
+                  <span class="badge bg-danger">Rejected</span>
+                {% else %}
+                  <span class="badge bg-warning text-dark">Pending</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if deposit.proof %}
+                <a data-bs-toggle="modal" data-bs-target="#proofModal{{ deposit.id }}">
+                  <img src="{{ deposit.proof.url }}" alt="Proof" class="img-thumbnail proof-thumb" title="Click to view">
+                </a>
+
+                <!-- Modal -->
+                <div class="modal fade proof-modal" id="proofModal{{ deposit.id }}" tabindex="-1" aria-hidden="true">
+                  <div class="modal-dialog modal-dialog-centered modal-lg">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h5 class="modal-title">Proof of Payment</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                      </div>
+                      <div class="modal-body text-center">
+                        <img src="{{ deposit.proof.url }}" class="img-fluid" alt="Full proof of payment">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {% else %}
+                  <span class="text-muted">No proof</span>
+                {% endif %}
+              </td>
+              <td>{{ deposit.date_submitted|date:"Y-m-d H:i" }}</td>
+              <td>{{ deposit.payment_date|date:"Y-m-d" }}</td>
+              <td>{{ deposit.payment_time|date:"H:i" }}</td>
+              <td>
+                {% if deposit.remarks %}
+                  <span class="remarks-preview" id="preview-{{ deposit.id }}">
+                    {{ deposit.remarks|truncatechars:30 }}
+                    <a href="javascript:void(0);" onclick="toggleRemarks({{ deposit.id }})">Read more</a>
+                  </span>
+                  <span class="d-none" id="full-{{ deposit.id }}">
+                    {{ deposit.remarks }}
+                    <a href="javascript:void(0);" onclick="toggleRemarks({{ deposit.id }})">Show less</a>
+                  </span>
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
+
+              <td>{{ deposit.submitted_by.username|default:"-" }}</td>
+
+            </tr>
+            {% endfor %}
+            {% else %}
+            <tr>
+              <td colspan="15" class="text-center text-muted py-4">
+                No contributions found for this savings account and filter.
+              </td>
+            </tr>
+            {% endif %}
+          </tbody>
+          <tfoot class="table-light">
+            <tr class="fw-bold">
+              <td colspan="2" class="text-end">Total Approved</td>
+              <td colspan="13">UGX {{ total_approved|floatformat:"0" }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.proof-modal').forEach(function (modalEl) {
+      if (modalEl.parentElement !== document.body) {
+        document.body.appendChild(modalEl);
+      }
+    });
+  });
+
+  function toggleRemarks(id) {
+    const preview = document.getElementById('preview-' + id);
+    const full = document.getElementById('full-' + id);
+
+    if (preview.classList.contains('d-none')) {
+      preview.classList.remove('d-none');
+      full.classList.add('d-none');
+    } else {
+      preview.classList.add('d-none');
+      full.classList.remove('d-none');
+    }
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-4">
+  <h3 class="text-center mb-4"><i class="bi bi-cash-coin"></i> Financial Reports</h3>
+
+  <h5>Shares</h5>
+  <div class="table-responsive">
+    <table class="table table-bordered table-hover table-sm">
+      <thead class="table-warning text-center">
+        <tr>
+          <th>#</th>
+          <th>Member</th>
+          <th>Amount</th>
+          <th>Date</th>
+          <th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for share in shares %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>{{ share.member.get_full_name|default:share.member.username }}</td>
+          <td>UGX {{ share.amount|floatformat:'0' }}</td>
+          <td>{{ share.contribution_date|date:"M d, Y" }}</td>
+          <td>{{ share.remarks|default:'-' }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-center">No shares recorded.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h5 class="mt-4">Annual Subscriptions</h5>
+  <div class="table-responsive">
+    <table class="table table-bordered table-hover table-sm">
+      <thead class="table-info text-center">
+        <tr>
+          <th>#</th>
+          <th>Member</th>
+          <th>Year</th>
+          <th>Amount</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for subscription in subscriptions %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>{{ subscription.member.get_full_name|default:subscription.member.username }}</td>
+          <td>{{ subscription.year }}</td>
+          <td>UGX {{ subscription.amount|floatformat:'0' }}</td>
+          <td>
+            {% if subscription.is_paid %}
+              <span class="badge text-bg-success">Paid</span>
+            {% else %}
+              <span class="badge text-bg-warning">Pending</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-center">No subscriptions recorded.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}
