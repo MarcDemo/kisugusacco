@@ -50,14 +50,26 @@ def manage_users(request):
         messages.error(request, "Access denied. Only the Chairman or Secretary can manage users.")
         return redirect(user_management_redirect(request.user))
 
+    search_query = (request.GET.get('q') or '').strip()
     users = (
         MemberProfile.objects
-        .exclude(id=request.user.id)
         .exclude(is_superuser=True)
         .prefetch_related('savings_accounts')
-        .order_by('username')
     )
-    return render(request, 'chairman/manage_users.html', {'users': users})
+    if search_query:
+        users = users.filter(
+            Q(username__icontains=search_query)
+            | Q(first_name__icontains=search_query)
+            | Q(last_name__icontains=search_query)
+            | Q(email__icontains=search_query)
+            | Q(role__icontains=search_query)
+            | Q(savings_accounts__label__icontains=search_query)
+        ).distinct()
+    users = users.order_by('username')
+    return render(request, 'chairman/manage_users.html', {
+        'users': users,
+        'search_query': search_query,
+    })
 
 @login_required
 def toggle_user_status(request, user_id):

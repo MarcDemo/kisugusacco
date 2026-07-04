@@ -38,6 +38,41 @@ class SecretaryUserManagementTests(TestCase):
             ['A', 'B'],
         )
 
+    def test_manage_users_includes_logged_in_secretary(self):
+        self.client.login(username='secretary', password='pass12345')
+
+        response = self.client.get(reverse('manage_users'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'secretary')
+        self.assertContains(response, 'You')
+
+    def test_manage_users_search_filters_by_name_and_account(self):
+        target = MemberProfile.objects.create_user(
+            username='markdemo',
+            password='pass12345',
+            role='MEMBER',
+            first_name='Mark',
+            last_name='Demo',
+            email='mark@example.com',
+        )
+        SavingsAccount.objects.create(owner=target, label='Kisugu Special')
+        MemberProfile.objects.create_user(
+            username='othermember',
+            password='pass12345',
+            role='MEMBER',
+            first_name='Other',
+            last_name='Member',
+        )
+        self.client.login(username='secretary', password='pass12345')
+
+        response = self.client.get(reverse('manage_users'), {'q': 'special'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'markdemo')
+        self.assertNotContains(response, 'othermember')
+        self.assertEqual(response.context['search_query'], 'special')
+
     def test_add_user_page_uses_account_label_builder(self):
         self.client.login(username='secretary', password='pass12345')
 
