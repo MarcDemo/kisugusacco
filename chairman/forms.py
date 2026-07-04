@@ -33,8 +33,8 @@ def parse_account_labels(raw_value):
         key = label.lower()
         if key in seen:
             raise forms.ValidationError('Savings account labels must be unique.')
-        if len(label) > 20:
-            raise forms.ValidationError('Savings account labels must be 20 characters or fewer.')
+        if len(label) > 100:
+            raise forms.ValidationError('Savings account labels must be 100 characters or fewer.')
         if not ACCOUNT_LABEL_RE.match(label):
             raise forms.ValidationError('Savings account labels can only contain letters, numbers, spaces, hyphens, underscores, or periods.')
         seen.add(key)

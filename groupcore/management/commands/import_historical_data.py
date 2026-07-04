@@ -247,8 +247,8 @@ class Command(BaseCommand):
             if not account_labels:
                 row_errors.append('account_labels is required')
             for label in account_labels:
-                if len(label) > 20:
-                    row_errors.append(f'account label "{label}" must be 20 characters or fewer')
+                if len(label) > 100:
+                    row_errors.append(f'account label "{label}" must be 100 characters or fewer')
                 if not ACCOUNT_LABEL_RE.match(label):
                     row_errors.append(f'account label "{label}" has invalid characters')
 
@@ -297,6 +297,9 @@ class Command(BaseCommand):
     def _validate_transactions(self, rows, planned_accounts, report_rows):
         payloads = []
         errors = []
+        if not rows:
+            return payloads, errors
+
         seen_references = set()
         statuses = {key for key, _label in DepositSubmission.STATUS_CHOICES}
         existing_references = {

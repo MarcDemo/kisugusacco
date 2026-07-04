@@ -208,6 +208,34 @@ class HistoricalDataImportCommandTests(TestCase):
             self.assertEqual(deposit.status, 'APPROVED')
             self.assertIn('CREATED_TRANSACTION', report_path.read_text(encoding='utf-8'))
 
+    def test_members_import_accepts_full_account_name_labels(self):
+        with TemporaryDirectory() as directory:
+            members_path = Path(directory) / 'members.csv'
+            report_path = Path(directory) / 'report.csv'
+            members_path.write_text(
+                '\n'.join([
+                    'username,first_name,last_name,email,phone_number,role,account_labels,is_active',
+                    'long_label_member,Long,Label,long@example.com,+256700000005,MEMBER,Kolyangha Martin Luther,true',
+                ]),
+                encoding='utf-8',
+            )
+
+            call_command(
+                'import_historical_data',
+                members=str(members_path),
+                report=str(report_path),
+                commit=True,
+            )
+
+            member = MemberProfile.objects.get(username='long_label_member')
+            self.assertTrue(
+                SavingsAccount.objects.filter(
+                    owner=member,
+                    label='Kolyangha Martin Luther',
+                ).exists()
+            )
+            self.assertIn('CREATED_MEMBER', report_path.read_text(encoding='utf-8'))
+
     def test_rerun_skips_duplicate_transactions_by_reference(self):
         with TemporaryDirectory() as directory:
             members_path, transactions_path = self._write_import_files(directory)

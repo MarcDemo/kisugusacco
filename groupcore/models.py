@@ -62,7 +62,7 @@ class GroupSettings(models.Model):
 
 class SavingsAccount(models.Model):
     owner = models.ForeignKey(MemberProfile, on_delete=models.CASCADE, related_name='savings_accounts')
-    label = models.CharField(max_length=20, help_text="e.g. A, B, C")
+    label = models.CharField(max_length=100, help_text="e.g. A, B, C, or an account/member name")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
