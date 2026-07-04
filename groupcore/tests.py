@@ -5,13 +5,14 @@ from tempfile import TemporaryDirectory
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.contrib.messages import get_messages
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
 
 from deposits.models import DepositSubmission
-from groupcore.models import MemberProfile, SavingsAccount
-from groupcore.week_cycle import current_saving_week
+from groupcore.models import GroupSettings, MemberProfile, SavingsAccount
+from groupcore.week_cycle import current_saving_week, first_monday_of_year
 from loans.models import LoanRequest
 
 
@@ -54,6 +55,95 @@ class RootUrlTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response['Location'], '/login/')
+
+
+class GroupSettingsSetupTests(TestCase):
+    def setUp(self):
+        self.treasurer = MemberProfile.objects.create_user(
+            username='treasurer',
+            password='pass12345',
+            role='TREASURER',
+        )
+        self.chairman = MemberProfile.objects.create_user(
+            username='chairman',
+            password='pass12345',
+            role='CHAIRMAN',
+        )
+        self.member = MemberProfile.objects.create_user(
+            username='member',
+            password='pass12345',
+            role='MEMBER',
+        )
+
+    def test_group_settings_defaults_to_first_monday_of_current_year(self):
+        self.client.login(username='treasurer', password='pass12345')
+
+        response = self.client.get(reverse('group_settings'))
+
+        expected_start = first_monday_of_year(timezone.localdate().year)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context['settings_exists'])
+        self.assertEqual(response.context['form'].initial['week_one_start'], expected_start)
+        self.assertEqual(response.context['saving_week'].cycle_start, expected_start)
+
+    def test_treasurer_can_create_group_settings(self):
+        self.client.login(username='treasurer', password='pass12345')
+        week_one_start = first_monday_of_year(timezone.localdate().year)
+
+        response = self.client.post(
+            reverse('group_settings'),
+            {'week_one_start': week_one_start.isoformat()},
+        )
+
+        self.assertRedirects(response, reverse('group_settings'))
+        self.assertEqual(GroupSettings.objects.count(), 1)
+        self.assertEqual(GroupSettings.get_active().week_one_start, week_one_start)
+
+    def test_chairman_can_update_group_settings(self):
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 5))
+        self.client.login(username='chairman', password='pass12345')
+
+        response = self.client.post(
+            reverse('group_settings'),
+            {'week_one_start': '2027-01-04'},
+        )
+
+        self.assertRedirects(response, reverse('group_settings'))
+        self.assertEqual(GroupSettings.objects.count(), 1)
+        self.assertEqual(GroupSettings.get_active().week_one_start, date(2027, 1, 4))
+
+    def test_member_cannot_access_group_settings(self):
+        self.client.login(username='member', password='pass12345')
+
+        response = self.client.get(reverse('group_settings'))
+
+        self.assertRedirects(response, reverse('member_dashboard'))
+
+    def test_group_settings_save_reuses_existing_record(self):
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 5))
+        GroupSettings.objects.create(week_one_start=date(2027, 1, 4))
+
+        self.assertEqual(GroupSettings.objects.count(), 1)
+        self.assertEqual(GroupSettings.get_active().week_one_start, date(2027, 1, 4))
+
+    def test_member_deposit_submission_has_friendly_message_when_cycle_missing(self):
+        self.client.login(username='member', password='pass12345')
+
+        response = self.client.get(reverse('submit_deposit'))
+
+        self.assertRedirects(response, reverse('member_dashboard'))
+        messages = [message.message for message in get_messages(response.wsgi_request)]
+        self.assertIn(
+            "The saving cycle has not been opened yet. Please contact the Treasurer.",
+            messages,
+        )
+
+    def test_chairman_deposit_submission_redirects_to_setup_when_cycle_missing(self):
+        self.client.login(username='chairman', password='pass12345')
+
+        response = self.client.get(reverse('submit_deposit'))
+
+        self.assertRedirects(response, reverse('group_settings'))
 
 
 class YearEndSettlementYearFilterTests(TestCase):

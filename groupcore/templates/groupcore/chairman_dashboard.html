@@ -137,6 +137,11 @@
       <a href="{% url 'chairman_expenditure_report' %}" class="btn btn-sm btn-outline-info">
         <i class="bi bi-receipt me-1"></i> Expenditures
       </a>
+      {% if request.user.is_chairman %}
+      <a href="{% url 'group_settings' %}" class="btn btn-sm btn-outline-success">
+        <i class="bi bi-calendar2-week me-1"></i> Group Settings
+      </a>
+      {% endif %}
     </div>
   </div>
 

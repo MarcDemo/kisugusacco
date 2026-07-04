@@ -3,7 +3,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
 from django.http import JsonResponse
 from .models import MemberProfile
-from .forms import MemberRegistrationForm
+from .forms import GroupSettingsForm, MemberRegistrationForm
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseForbidden
 from deposits.models import DepositSubmission
@@ -16,7 +16,7 @@ from documents.models import Document
 from .forms import ProfileForm
 from groupcore.models import GroupSettings
 from groupcore.reporting import merge_year_options, parse_report_year, years_from_dates
-from groupcore.week_cycle import current_saving_week
+from groupcore.week_cycle import current_saving_week, first_monday_of_year
 from datetime import date
 from loans.models import LoanRequest
 from decimal import Decimal
@@ -56,6 +56,10 @@ def _loan_interest_total(queryset):
 
 def _is_leadership(user):
     return user.is_chairman() or user.is_vice_chairman() or user.is_overseer()
+
+
+def _can_manage_group_settings(user):
+    return user.is_superuser or user.is_treasurer() or user.is_chairman()
 
 
 FUND_SOURCE_TO_TOTAL_KEY = {
@@ -292,6 +296,41 @@ def register_member(request):
     return render(request, 'groupcore/register.html', {'form': form})
 
 
+@login_required
+def group_settings(request):
+    if not _can_manage_group_settings(request.user):
+        messages.error(request, "Access denied.")
+        return redirect('member_dashboard')
+
+    today = timezone.localdate()
+    settings = GroupSettings.get_active()
+    suggested_week_one_start = first_monday_of_year(today.year)
+    display_settings = settings or GroupSettings(week_one_start=suggested_week_one_start)
+
+    if request.method == 'POST':
+        form = GroupSettingsForm(request.POST, instance=settings)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Group saving-cycle settings have been saved.")
+            return redirect('group_settings')
+    else:
+        form = GroupSettingsForm(instance=display_settings)
+
+    saving_week = current_saving_week(display_settings.week_one_start, today)
+    if request.user.is_treasurer():
+        back_url_name = 'treasurer_dashboard'
+    elif request.user.is_chairman():
+        back_url_name = 'chairman_dashboard'
+    else:
+        back_url_name = 'home'
+
+    return render(request, 'groupcore/group_settings.html', {
+        'form': form,
+        'settings_exists': settings is not None,
+        'suggested_week_one_start': suggested_week_one_start,
+        'saving_week': saving_week,
+        'back_url_name': back_url_name,
+    })
 
 
 @login_required
@@ -502,12 +541,12 @@ def mobilizer_dashboard(request):
         messages.error(request, "Access denied.")
         return redirect('login')
 
-    settings = GroupSettings.objects.first()
+    settings = GroupSettings.get_active()
     if not settings:
-        messages.error(request, "Group starting week is not set.")
+        messages.error(request, "The saving cycle has not been opened yet. Please contact the Treasurer.")
         return redirect('home')
 
-    saving_week = current_saving_week(settings.week_one_start, date.today())
+    saving_week = current_saving_week(settings.week_one_start, timezone.localdate())
     current_week_start = saving_week.week_start
 
     members = MemberProfile.objects.filter(is_superuser=False)
@@ -593,10 +632,10 @@ def chairman_dashboard(request):
     ]
 
     # Weekly payment data for chart
-    settings = GroupSettings.objects.first()
+    settings = GroupSettings.get_active()
     weekly_status = {"paid": 0, "unpaid": 0}
     if settings:
-        saving_week = current_saving_week(settings.week_one_start, date.today())
+        saving_week = current_saving_week(settings.week_one_start, timezone.localdate())
         current_week_start = saving_week.week_start
 
         for member in MemberProfile.objects.filter(is_superuser=False):

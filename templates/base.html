@@ -910,6 +910,11 @@
             </a>
           </li>
           <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'group_settings' %}active{% endif %}" href="{% url 'group_settings' %}">
+              <i class="bi bi-calendar2-week me-2"></i> Group Settings
+            </a>
+          </li>
+          <li class="nav-item">
             <a class="nav-link {% if request.resolver_match.url_name == 'list_assets' %}active{% endif %}" href="{% url 'list_assets' %}">
               <i class="bi bi-box-seam me-2"></i> View Assets
             </a>
@@ -938,6 +943,11 @@
           <li class="nav-item">
             <a class="nav-link {% if request.resolver_match.url_name == 'manage_users' or request.resolver_match.url_name == 'user_detail' or request.resolver_match.url_name == 'edit_user' %}active{% endif %}" href="{% url 'manage_users' %}">
               <i class="bi bi-person-gear me-2"></i> Manage Users
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'group_settings' %}active{% endif %}" href="{% url 'group_settings' %}">
+              <i class="bi bi-calendar2-week me-2"></i> Group Settings
             </a>
           </li>
           {% endif %}

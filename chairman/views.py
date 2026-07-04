@@ -13,6 +13,7 @@ from datetime import date, datetime
 from Assets_Expenditures.models import Asset, Expenditure
 from .forms import AddUserForm, EditUserForm
 from django.db.models import Q
+from django.utils import timezone
 from django.utils.timezone import now
 from django.db import transaction
 import calendar
@@ -284,12 +285,15 @@ def chairman_weekly_payment_status(request):
         messages.error(request, "Access denied.")
         return redirect('chairman_dashboard')
 
-    settings = GroupSettings.objects.first()
+    settings = GroupSettings.get_active()
     if not settings:
-        messages.error(request, "Group starting week is not set.")
+        if request.user.is_chairman() or request.user.is_superuser:
+            messages.error(request, "Open the saving cycle in Group Settings before checking current payments.")
+            return redirect('group_settings')
+        messages.error(request, "The saving cycle has not been opened yet. Please contact the Treasurer.")
         return redirect('chairman_dashboard')
 
-    saving_week = current_saving_week(settings.week_one_start, date.today())
+    saving_week = current_saving_week(settings.week_one_start, timezone.localdate())
     current_week_start = saving_week.week_start
 
     members = MemberProfile.objects.all()

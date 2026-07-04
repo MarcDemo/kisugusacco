@@ -20,5 +20,12 @@ class MemberProfileAdmin(UserAdmin):
 admin.site.register(MemberProfile, MemberProfileAdmin)
 
 
-admin.site.register(GroupSettings)
+@admin.register(GroupSettings)
+class GroupSettingsAdmin(admin.ModelAdmin):
+    list_display = ('week_one_start',)
+
+    def has_add_permission(self, request):
+        return not GroupSettings.objects.exists()
+
+
 admin.site.register(SavingsAccount)

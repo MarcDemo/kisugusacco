@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+    <div>
+      <h2 class="mb-1 text-success">
+        <i class="bi bi-calendar2-week me-2"></i>Group Settings
+      </h2>
+      <p class="text-muted mb-0">Set the official saving cycle used for current-week deposits and payment status.</p>
+    </div>
+    <a href="{% url back_url_name %}" class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i> Back to Dashboard
+    </a>
+  </div>
+
+  {% if not settings_exists %}
+  <div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+    <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+    <div>
+      <strong>The saving cycle is not open yet.</strong>
+      Save the Week 1 start date below before members can submit deposits.
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="row g-4">
+    <div class="col-lg-5">
+      <div class="card shadow-sm border-0">
+        <div class="card-header bg-success text-white">
+          <h5 class="mb-0"><i class="bi bi-sliders me-2"></i>Saving Cycle</h5>
+        </div>
+        <div class="card-body">
+          <form method="post" novalidate>
+            {% csrf_token %}
+            <div class="mb-3">
+              <label for="{{ form.week_one_start.id_for_label }}" class="form-label fw-semibold">Week 1 Start Date</label>
+              {{ form.week_one_start }}
+              {% if form.week_one_start.errors %}
+              <div class="text-danger small mt-1">{{ form.week_one_start.errors|join:", " }}</div>
+              {% endif %}
+              <div class="form-text">
+                Use the Monday that begins Week 1. The default for this year is {{ suggested_week_one_start|date:"l, d M Y" }}.
+              </div>
+            </div>
+
+            {% if form.non_field_errors %}
+            <div class="alert alert-danger py-2">{{ form.non_field_errors|join:", " }}</div>
+            {% endif %}
+
+            <button type="submit" class="btn btn-success">
+              <i class="bi bi-check-circle me-1"></i> Save Settings
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-header bg-light">
+          <h5 class="mb-0 text-success"><i class="bi bi-calendar-check me-2"></i>Current Saving Week Preview</h5>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="border rounded-3 p-3 h-100">
+                <div class="small text-muted">Week 1 Start</div>
+                <div class="fs-5 fw-bold">{{ saving_week.cycle_start|date:"l, d M Y" }}</div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="border rounded-3 p-3 h-100">
+                <div class="small text-muted">Saving Year</div>
+                <div class="fs-5 fw-bold">{{ saving_week.saving_year }}</div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="border rounded-3 p-3 h-100">
+                <div class="small text-muted">Current Week Number</div>
+                <div class="fs-5 fw-bold">Week {{ saving_week.week_number }}</div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="border rounded-3 p-3 h-100">
+                <div class="small text-muted">Current Week Starts</div>
+                <div class="fs-5 fw-bold">{{ saving_week.week_start|date:"l, d M Y" }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="alert alert-info mt-4 mb-0">
+            <i class="bi bi-info-circle me-1"></i>
+            Changing this setting does not edit imported or existing deposit records. It only changes how the system calculates the active week for new deposits and current-week reports.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

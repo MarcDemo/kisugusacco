@@ -2,7 +2,7 @@ import re
 
 from django import forms
 
-from .models import MemberProfile
+from .models import GroupSettings, MemberProfile
 
 
 NAME_RE = re.compile(r"^[A-Za-z\s'.-]*$")
@@ -68,3 +68,18 @@ class ProfileForm(PersonalFieldValidationMixin, forms.ModelForm):
             'next_of_kin_name': forms.TextInput(attrs={'data-validate': 'name'}),
             'next_of_kin_contact': forms.TextInput(attrs={'data-validate': 'phone'}),
         }
+
+
+class GroupSettingsForm(forms.ModelForm):
+    class Meta:
+        model = GroupSettings
+        fields = ['week_one_start']
+        widgets = {
+            'week_one_start': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+        }
+
+    def clean_week_one_start(self):
+        week_one_start = self.cleaned_data['week_one_start']
+        if week_one_start.weekday() != 0:
+            raise forms.ValidationError('Week 1 start must be a Monday.')
+        return week_one_start

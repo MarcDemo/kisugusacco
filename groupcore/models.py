@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
 
 
 
@@ -51,6 +52,22 @@ class MemberProfile(AbstractUser):
     
 class GroupSettings(models.Model):
     week_one_start = models.DateField(help_text="The date of the first week (Week 1)")
+
+    @classmethod
+    def get_active(cls):
+        return cls.objects.order_by('pk').first()
+
+    def clean(self):
+        if GroupSettings.objects.exclude(pk=self.pk).exists():
+            raise ValidationError("Only one group setting record is allowed.")
+
+    def save(self, *args, **kwargs):
+        if self.pk is None:
+            existing = GroupSettings.get_active()
+            if existing:
+                self.pk = existing.pk
+                kwargs.pop('force_insert', None)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Group Settings (Week 1 Start: {self.week_one_start})"

@@ -80,9 +80,12 @@ def submit_deposit(request):
     if not (request.user.is_member() or request.user.is_secretary() or request.user.is_mobilizer() or request.user.is_chairman()):
         return redirect('login')
 
-    settings = GroupSettings.objects.first()
-    if not settings:
-        messages.error(request, "Treasurer must set the starting week in Group Settings first.")
+    group_settings = GroupSettings.get_active()
+    if not group_settings:
+        if request.user.is_superuser or request.user.is_treasurer() or request.user.is_chairman():
+            messages.error(request, "Open the saving cycle in Group Settings before deposits can be submitted.")
+            return redirect('group_settings')
+        messages.error(request, "The saving cycle has not been opened yet. Please contact the Treasurer.")
         return redirect('member_dashboard')
 
     active_account = get_active_account(request, request.user)
@@ -90,7 +93,7 @@ def submit_deposit(request):
         messages.info(request, "Please select a savings account first.")
         return redirect('select_savings_account')
 
-    saving_week = current_saving_week(settings.week_one_start, date.today())
+    saving_week = current_saving_week(group_settings.week_one_start, timezone.localdate())
     current_week_start = saving_week.week_start
 
     if request.method == 'POST':
@@ -1029,12 +1032,15 @@ def current_week_payment_status(request):
         messages.error(request, "Access denied.")
         return redirect('member_dashboard')
 
-    settings = GroupSettings.objects.first()
-    if not settings:
-        messages.error(request, "Group starting week is not set.")
-        return redirect('treasurer_dashboard')
+    group_settings = GroupSettings.get_active()
+    if not group_settings:
+        if request.user.is_superuser or request.user.is_treasurer() or request.user.is_chairman():
+            messages.error(request, "Open the saving cycle in Group Settings before checking current payments.")
+            return redirect('group_settings')
+        messages.error(request, "The saving cycle has not been opened yet. Please contact the Treasurer.")
+        return redirect('member_dashboard')
 
-    saving_week = current_saving_week(settings.week_one_start, date.today())
+    saving_week = current_saving_week(group_settings.week_one_start, timezone.localdate())
     current_week_start = saving_week.week_start
 
     members = MemberProfile.objects.filter(is_superuser=False)
