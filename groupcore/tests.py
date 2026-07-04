@@ -11,6 +11,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from deposits.models import DepositSubmission
+from fines.models import Fine
 from groupcore.models import GroupSettings, MemberProfile, SavingsAccount
 from groupcore.week_cycle import current_saving_week, first_friday_of_year
 from loans.models import LoanRequest
@@ -144,6 +145,67 @@ class GroupSettingsSetupTests(TestCase):
         response = self.client.get(reverse('submit_deposit'))
 
         self.assertRedirects(response, reverse('group_settings'))
+
+
+class LeadershipAccountSelectionTests(TestCase):
+    def setUp(self):
+        GroupSettings.objects.create(week_one_start=first_friday_of_year(timezone.localdate().year))
+        self.secretary = MemberProfile.objects.create_user(
+            username='secretary',
+            password='pass12345',
+            role='SECRETARY',
+        )
+        SavingsAccount.objects.create(owner=self.secretary, label='A1')
+        SavingsAccount.objects.create(owner=self.secretary, label='A2')
+
+    def test_secretary_management_dashboard_does_not_require_account_selection(self):
+        self.client.login(username='secretary', password='pass12345')
+
+        response = self.client.get(reverse('secretary_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_secretary_member_feature_requires_account_selection(self):
+        self.client.login(username='secretary', password='pass12345')
+
+        response = self.client.get(reverse('submit_deposit'))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response['Location'].startswith(reverse('select_savings_account')))
+        self.assertIn(reverse('submit_deposit'), response['Location'])
+
+    def test_account_selection_returns_to_requested_member_feature(self):
+        self.client.login(username='secretary', password='pass12345')
+        account = SavingsAccount.objects.get(owner=self.secretary, label='A2')
+
+        response = self.client.post(
+            reverse('select_savings_account'),
+            {'account_id': account.id, 'next': reverse('my_contributions')},
+        )
+
+        self.assertRedirects(response, reverse('my_contributions'))
+
+
+class MemberWeekProgressTests(TestCase):
+    def setUp(self):
+        today = timezone.localdate()
+        self.week_one_start = first_friday_of_year(today.year)
+        GroupSettings.objects.create(week_one_start=self.week_one_start)
+        self.member = MemberProfile.objects.create_user(
+            username='member',
+            password='pass12345',
+            role='MEMBER',
+        )
+        self.account = SavingsAccount.objects.create(owner=self.member, label='A1')
+
+    def test_member_dashboard_reports_missing_due_weeks(self):
+        self.client.login(username='member', password='pass12345')
+
+        response = self.client.get(reverse('member_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['week_progress']['status'], 'Behind')
+        self.assertGreater(response.context['week_progress']['missing_weeks_count'], 0)
 
 
 class YearEndSettlementYearFilterTests(TestCase):
@@ -297,6 +359,39 @@ class HistoricalDataImportCommandTests(TestCase):
             self.assertEqual(deposit.amount, Decimal('21000.00'))
             self.assertEqual(deposit.status, 'APPROVED')
             self.assertIn('CREATED_TRANSACTION', report_path.read_text(encoding='utf-8'))
+
+    def test_commit_import_marks_matching_missed_week_fine_paid(self):
+        member = MemberProfile.objects.create_user(
+            username='jane_member',
+            password='pass12345',
+            role='MEMBER',
+        )
+        account = SavingsAccount.objects.create(owner=member, label='A1')
+        fine = Fine.objects.create(
+            member=member,
+            account=account,
+            fine_type='MISSED_WEEKLY_SAVING',
+            reference_week=date(2026, 6, 26),
+            reason='Failed to save for account A1 for week closing 2026-06-26',
+            amount=Decimal('2000.00'),
+            issued_by=self.treasurer,
+        )
+
+        with TemporaryDirectory() as directory:
+            members_path, transactions_path = self._write_import_files(directory)
+            report_path = Path(directory) / 'report.csv'
+
+            call_command(
+                'import_historical_data',
+                members=str(members_path),
+                transactions=str(transactions_path),
+                submitted_by='treasurer',
+                report=str(report_path),
+                commit=True,
+            )
+
+        fine.refresh_from_db()
+        self.assertTrue(fine.is_paid)
 
     def test_members_import_accepts_full_account_name_labels(self):
         with TemporaryDirectory() as directory:

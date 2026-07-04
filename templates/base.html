@@ -784,7 +784,7 @@
                 {% endif %}
               </span>
             </li>
-            {% if request.user.is_member and active_savings_account %}
+            {% if active_savings_account %}
             <li class="nav-item me-3">
               <span class="badge bg-light text-dark">
                 Account: {{ active_savings_account.label }}
@@ -1183,7 +1183,7 @@
 
   <!-- Main content -->
   <main id="main-content" role="main">
-    {% if request.user.is_authenticated and request.user.is_member and active_savings_account %}
+    {% if request.user.is_authenticated and active_savings_account %}
     <div class="alert alert-info d-flex justify-content-between align-items-center mb-3" role="alert">
       <div>
         <i class="bi bi-diagram-3 me-2"></i>

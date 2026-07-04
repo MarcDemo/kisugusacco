@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from deposits.models import DepositSubmission
+from fines.services import mark_deposit_week_fines_covered
 from groupcore.models import MemberProfile, SavingsAccount
 
 
@@ -520,6 +521,8 @@ class Command(BaseCommand):
 
         if deposits:
             DepositSubmission.objects.bulk_create(deposits)
+            for deposit in deposits:
+                mark_deposit_week_fines_covered(deposit)
 
     def _get_submitted_by(self, username):
         if not username:

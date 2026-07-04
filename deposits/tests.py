@@ -9,7 +9,8 @@ from openpyxl import load_workbook
 
 from deposits.models import DepositSubmission
 from groupcore.account_context import SESSION_KEY_ACTIVE_ACCOUNT
-from groupcore.models import MemberProfile, SavingsAccount
+from groupcore.models import GroupSettings, MemberProfile, SavingsAccount
+from groupcore.week_cycle import current_saving_week, first_friday_of_year
 
 
 class TreasurerReportYearFilterTests(TestCase):
@@ -334,3 +335,70 @@ class MyContributionsAccountExportTests(TestCase):
         self.assertEqual(response.status_code, 200)
         workbook = load_workbook(BytesIO(response.content), read_only=True)
         self.assertEqual(workbook.active['A12'].value, 0)
+
+
+class CurrentWeekStatusExportTests(TestCase):
+    def setUp(self):
+        self.week_one_start = first_friday_of_year(timezone.localdate().year)
+        GroupSettings.objects.create(week_one_start=self.week_one_start)
+        self.treasurer = MemberProfile.objects.create_user(
+            username='treasurer',
+            password='pass12345',
+            role='TREASURER',
+        )
+        self.member = MemberProfile.objects.create_user(
+            username='member',
+            password='pass12345',
+            role='MEMBER',
+            first_name='Test',
+            last_name='Member',
+        )
+        self.account = SavingsAccount.objects.create(owner=self.member, label='A1')
+        saving_week = current_saving_week(self.week_one_start, timezone.localdate())
+        DepositSubmission.objects.create(
+            member=self.member,
+            account=self.account,
+            submitted_by=self.member,
+            payment_week=saving_week.week_start,
+            starting_week=saving_week.week_start,
+            weeks_covered=1,
+            saving_amount=Decimal('50000.00'),
+            proof='proofs/test.jpg',
+            payment_date=saving_week.week_start,
+            payment_time=time(9, 0),
+            status='APPROVED',
+        )
+
+    def test_current_week_status_page_lists_account_level_statuses(self):
+        self.client.login(username='treasurer', password='pass12345')
+
+        response = self.client.get(reverse('current_week_status'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Paid Accounts')
+        self.assertContains(response, 'Test Member')
+        self.assertContains(response, 'A1')
+
+    def test_current_week_status_export_excel_includes_account_status(self):
+        self.client.login(username='treasurer', password='pass12345')
+
+        response = self.client.get(reverse('export_current_week_status', args=['excel']))
+
+        self.assertEqual(
+            response['Content-Type'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        workbook = load_workbook(BytesIO(response.content), read_only=True)
+        values = list(workbook.active.values)
+        flattened = [cell for row in values for cell in row]
+        self.assertIn('Test Member', flattened)
+        self.assertIn('A1', flattened)
+        self.assertIn('Paid', flattened)
+
+    def test_current_week_status_export_pdf_returns_pdf(self):
+        self.client.login(username='treasurer', password='pass12345')
+
+        response = self.client.get(reverse('export_current_week_status', args=['pdf']))
+
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertTrue(response['Content-Disposition'].endswith('.pdf"'))

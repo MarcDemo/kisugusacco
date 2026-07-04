@@ -12,5 +12,6 @@ urlpatterns = [
     path('treasurer/reports/<int:member_id>/<str:format>/', views.download_member_report, name='download_member_report'),
     path('deposits/treasurer/reports/all/<str:format>/', views.download_all_reports, name='download_all_reports'),
     path('treasurer/week-status/', views.current_week_payment_status, name='current_week_status'),
+    path('treasurer/week-status/export/<str:format>/', views.export_current_week_payment_status, name='export_current_week_status'),
 
 ]

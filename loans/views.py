@@ -84,7 +84,7 @@ def my_loans(request):
 @login_required
 def request_loan(request):
     active_account = get_active_account(request, request.user)
-    if request.user.is_member() and get_user_active_accounts(request.user).count() > 1 and not active_account:
+    if get_user_active_accounts(request.user).count() > 1 and not active_account:
         messages.info(request, 'Please select a savings account first.')
         return redirect('select_savings_account')
 

@@ -28,6 +28,7 @@ from django.utils.timezone import now
 from openpyxl.utils import get_column_letter
 from django.core.mail import send_mail
 from fines.models import Fine
+from fines.services import mark_deposit_week_fines_covered
 from groupcore.account_context import get_active_account, get_user_active_accounts
 from loans.models import LoanRepayment, LoanRequest
 from decimal import Decimal
@@ -89,7 +90,7 @@ def submit_deposit(request):
         return redirect('member_dashboard')
 
     active_account = get_active_account(request, request.user)
-    if request.user.is_member() and get_user_active_accounts(request.user).count() > 1 and not active_account:
+    if get_user_active_accounts(request.user).count() > 1 and not active_account:
         messages.info(request, "Please select a savings account first.")
         return redirect('select_savings_account')
 
@@ -210,6 +211,7 @@ def approve_deposit(request, deposit_id):
     deposit.reviewed_by = request.user
     deposit.date_reviewed = timezone.now()
     deposit.save()
+    cleared_fines = mark_deposit_week_fines_covered(deposit)
 
     if deposit.loan_repayment_amount and deposit.loan_repayment_amount > 0:
         allocated, unallocated = _apply_loan_repayment(
@@ -240,6 +242,8 @@ def approve_deposit(request, deposit_id):
         fail_silently=True,
     )
 
+    if cleared_fines:
+        messages.success(request, f"{cleared_fines} missed-week fine(s) were marked paid for this account/week.")
     messages.success(request, "Deposit approved and member notified by email.")
     return redirect('treasurer_dashboard')
 
@@ -671,6 +675,7 @@ def manage_deposits(request):
             )
             deposit.full_clean()
             deposit.save()
+            cleared_fines = mark_deposit_week_fines_covered(deposit)
 
             if deposit.loan_repayment_amount and deposit.loan_repayment_amount > 0:
                 allocated, unallocated = _apply_loan_repayment(
@@ -684,6 +689,8 @@ def manage_deposits(request):
                 if unallocated > 0:
                     messages.warning(request, f"UGX {unallocated:,.0f} could not be posted because no outstanding approved loan balance was found.")
 
+            if cleared_fines:
+                messages.success(request, f"{cleared_fines} missed-week fine(s) were marked paid for this account/week.")
             messages.success(request, f"Deposit for {member.username} added for week of {payment_week}.")
             return redirect('manage_deposits')
 
@@ -1020,92 +1027,189 @@ def download_all_reports(request, format):
     return HttpResponse("Invalid format", status=400)
     
 
-@login_required
-def current_week_payment_status(request):
-    if not (
-        request.user.is_treasurer()
-        or request.user.is_mobilizer()
-        or request.user.is_chairman()
-        or request.user.is_vice_chairman()
-        or request.user.is_overseer()
-    ):
-        messages.error(request, "Access denied.")
-        return redirect('member_dashboard')
+def _can_view_current_week_status(user):
+    return (
+        user.is_treasurer()
+        or user.is_mobilizer()
+        or user.is_chairman()
+        or user.is_vice_chairman()
+        or user.is_overseer()
+    )
 
+
+def _current_week_settings_redirect(request):
     group_settings = GroupSettings.get_active()
-    if not group_settings:
-        if request.user.is_superuser or request.user.is_treasurer() or request.user.is_chairman():
-            messages.error(request, "Open the saving cycle in Group Settings before checking current payments.")
-            return redirect('group_settings')
-        messages.error(request, "The saving cycle has not been opened yet. Please contact the Treasurer.")
-        return redirect('member_dashboard')
+    if group_settings:
+        return group_settings, None
+    if request.user.is_superuser or request.user.is_treasurer() or request.user.is_chairman():
+        messages.error(request, "Open the saving cycle in Group Settings before checking current payments.")
+        return None, redirect('group_settings')
+    messages.error(request, "The saving cycle has not been opened yet. Please contact the Treasurer.")
+    return None, redirect('member_dashboard')
 
+
+def _status_entry(member, account, has_paid):
+    return {
+        'member': member,
+        'member_name': member.get_full_name() or member.username,
+        'account': account,
+        'account_label': account.label if account else '-',
+        'has_paid': has_paid,
+        'status_label': 'Paid' if has_paid else 'Not Paid',
+    }
+
+
+def _current_week_payment_status_data(request, create_fines=False):
+    group_settings = GroupSettings.get_active()
     saving_week = current_saving_week(group_settings.week_one_start, timezone.localdate())
     current_week_start = saving_week.week_start
 
-    members = MemberProfile.objects.filter(is_superuser=False)
-    paid_members = []
-    unpaid_members = []
+    paid_entries = []
+    unpaid_entries = []
 
+    members = MemberProfile.objects.filter(is_superuser=False).order_by('username')
     for member in members:
-        member_accounts = list(SavingsAccount.objects.filter(owner=member, is_active=True))
+        member_accounts = list(SavingsAccount.objects.filter(owner=member, is_active=True).order_by('label'))
+        accounts_to_check = member_accounts or [None]
 
-        if not member_accounts:
-            has_paid = member.deposits.filter(
-                status='APPROVED',
-                payment_week=current_week_start,
-                account__isnull=True,
-            ).exists()
-            if has_paid:
-                paid_members.append(member)
+        for account in accounts_to_check:
+            deposit_filter = {
+                'status': 'APPROVED',
+                'payment_week': current_week_start,
+            }
+            if account:
+                deposit_filter['account'] = account
             else:
-                unpaid_members.append(member)
-                Fine.objects.get_or_create(
-                    member=member,
-                    account=None,
-                    fine_type='MISSED_WEEKLY_SAVING',
-                    reference_week=current_week_start,
-                    defaults={
-                        'reason': f'Failed to save for week closing {current_week_start}',
-                        'amount': 2000,
-                        'issued_by': request.user,
-                    }
-                )
-            continue
+                deposit_filter['account__isnull'] = True
 
-        member_paid = False
-        for account in member_accounts:
-            has_paid_for_account = member.deposits.filter(
-                status='APPROVED',
-                payment_week=current_week_start,
-                account=account,
-            ).exists()
+            has_paid = member.deposits.filter(**deposit_filter).exists()
+            entry = _status_entry(member, account, has_paid)
+            if has_paid:
+                paid_entries.append(entry)
+                continue
 
-            if not has_paid_for_account:
+            unpaid_entries.append(entry)
+            if create_fines:
+                account_note = f" for account {account.label}" if account else ""
                 Fine.objects.get_or_create(
                     member=member,
                     account=account,
                     fine_type='MISSED_WEEKLY_SAVING',
                     reference_week=current_week_start,
                     defaults={
-                        'reason': f'Failed to save for week closing {current_week_start}',
+                        'reason': f'Failed to save{account_note} for week closing {current_week_start}',
                         'amount': 2000,
                         'issued_by': request.user,
                     }
                 )
-            else:
-                member_paid = True
 
-        if member_paid:
-            paid_members.append(member)
-        else:
-            unpaid_members.append(member)
-
-    context = {
+    return {
         'current_week': current_week_start,
         'current_week_number': saving_week.week_number,
         'current_saving_year': saving_week.saving_year,
-        'paid_members': paid_members,
-        'unpaid_members': unpaid_members,
+        'paid_entries': paid_entries,
+        'unpaid_entries': unpaid_entries,
+        'all_entries': paid_entries + unpaid_entries,
     }
+
+
+def _current_week_status_filename(data, extension):
+    return f"current_week_payment_status_week_{data['current_week_number']}_{data['current_week'].strftime('%Y-%m-%d')}.{extension}"
+
+
+def _export_current_week_status_excel(data):
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="{_current_week_status_filename(data, "xlsx")}"'
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Current Payments'
+    ws['A1'] = f"Payment Status for Week {data['current_week_number']} Closing {data['current_week'].strftime('%Y-%m-%d')}"
+    ws['A1'].font = Font(size=14, bold=True)
+    ws.merge_cells('A1:E1')
+
+    headers = ['#', 'Member', 'Account', 'Status', 'Week Closing']
+    for column, header in enumerate(headers, start=1):
+        cell = ws.cell(row=3, column=column, value=header)
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = PatternFill(start_color='198754', end_color='198754', fill_type='solid')
+        cell.alignment = Alignment(horizontal='center')
+
+    for row_number, entry in enumerate(data['all_entries'], start=4):
+        ws.cell(row=row_number, column=1, value=row_number - 3)
+        ws.cell(row=row_number, column=2, value=entry['member_name'])
+        ws.cell(row=row_number, column=3, value=entry['account_label'])
+        ws.cell(row=row_number, column=4, value=entry['status_label'])
+        ws.cell(row=row_number, column=5, value=data['current_week'].strftime('%Y-%m-%d'))
+
+    for column_cells in ws.columns:
+        max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in column_cells)
+        ws.column_dimensions[get_column_letter(column_cells[0].column)].width = min(max_length + 3, 42)
+
+    wb.save(response)
+    return response
+
+
+def _export_current_week_status_pdf(data):
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{_current_week_status_filename(data, "pdf")}"'
+
+    doc = SimpleDocTemplate(response, pagesize=A4, leftMargin=30, rightMargin=30, topMargin=30, bottomMargin=30)
+    styles = getSampleStyleSheet()
+    elements = [
+        Paragraph(f"Payment Status for Week {data['current_week_number']}", styles['Title']),
+        Paragraph(f"Week Closing: {data['current_week'].strftime('%A, %d %b %Y')}", styles['Normal']),
+        Paragraph(f"Paid: {len(data['paid_entries'])} | Unpaid: {len(data['unpaid_entries'])}", styles['Normal']),
+        Spacer(1, 12),
+    ]
+
+    table_rows = [['#', 'Member', 'Account', 'Status']]
+    for index, entry in enumerate(data['all_entries'], start=1):
+        table_rows.append([index, entry['member_name'], entry['account_label'], entry['status_label']])
+    if len(table_rows) == 1:
+        table_rows.append(['-', 'No members found', '-', '-'])
+
+    table = Table(table_rows, repeatRows=1, colWidths=[35, 210, 120, 90])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#198754')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.lightgrey),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    elements.append(table)
+    doc.build(elements)
+    return response
+
+
+@login_required
+def export_current_week_payment_status(request, format):
+    if not _can_view_current_week_status(request.user):
+        messages.error(request, "Access denied.")
+        return redirect('member_dashboard')
+
+    _group_settings, redirect_response = _current_week_settings_redirect(request)
+    if redirect_response:
+        return redirect_response
+
+    data = _current_week_payment_status_data(request, create_fines=False)
+    if format == 'excel':
+        return _export_current_week_status_excel(data)
+    if format == 'pdf':
+        return _export_current_week_status_pdf(data)
+    return HttpResponse("Invalid format", status=400)
+
+
+@login_required
+def current_week_payment_status(request):
+    if not _can_view_current_week_status(request.user):
+        messages.error(request, "Access denied.")
+        return redirect('member_dashboard')
+
+    _group_settings, redirect_response = _current_week_settings_redirect(request)
+    if redirect_response:
+        return redirect_response
+
+    context = _current_week_payment_status_data(request, create_fines=True)
     return render(request, 'deposits/current_week_status.html', context)

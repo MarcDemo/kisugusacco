@@ -13,6 +13,7 @@
 
       <form method="post" class="row g-3">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next_url }}">
         <div class="col-12">
           <label for="account_id" class="form-label">Savings Account <span class="text-danger">*</span></label>
           <select name="account_id" id="account_id" class="form-select" required>

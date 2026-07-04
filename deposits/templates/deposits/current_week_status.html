@@ -5,9 +5,17 @@
     <h3 class="text-primary">
       <i class="bi bi-calendar-week me-2"></i> Payment Status for Week {{ current_week_number }} Closing {{ current_week|date:"l, d M Y" }}
     </h3>
-    <a href="{% url 'treasurer_dashboard' %}" class="btn btn-outline-secondary">
-      <i class="bi bi-arrow-left"></i> Back to Dashboard
-    </a>
+    <div class="d-flex gap-2 flex-wrap">
+      <a href="{% url 'export_current_week_status' 'pdf' %}" class="btn btn-outline-danger">
+        <i class="bi bi-file-earmark-pdf"></i> PDF
+      </a>
+      <a href="{% url 'export_current_week_status' 'excel' %}" class="btn btn-outline-success">
+        <i class="bi bi-file-earmark-excel"></i> Excel
+      </a>
+      <a href="{% url 'treasurer_dashboard' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Dashboard
+      </a>
+    </div>
   </div>
 
   <div class="row g-4">
@@ -15,14 +23,14 @@
     <div class="col-lg-6">
       <div class="card border-success shadow-sm h-100">
         <div class="card-header bg-success text-white">
-          <h5 class="mb-0"><i class="bi bi-check-circle-fill me-2"></i> Paid Members ({{ paid_members|length }})</h5>
+          <h5 class="mb-0"><i class="bi bi-check-circle-fill me-2"></i> Paid Accounts ({{ paid_entries|length }})</h5>
         </div>
         <div class="card-body p-0">
-          {% if paid_members %}
+          {% if paid_entries %}
             <ul class="list-group list-group-flush">
-              {% for member in paid_members %}
+              {% for item in paid_entries %}
                 <li class="list-group-item d-flex justify-content-between align-items-center">
-                  <span>{{ member.get_full_name|default:member.username }}</span>
+                  <span>{{ item.member_name }} <span class="text-muted small">({{ item.account_label }})</span></span>
                   <i class="bi bi-check-lg text-success fs-5"></i>
                 </li>
               {% endfor %}
@@ -38,14 +46,14 @@
     <div class="col-lg-6">
       <div class="card border-danger shadow-sm h-100">
         <div class="card-header bg-danger text-white">
-          <h5 class="mb-0"><i class="bi bi-x-circle-fill me-2"></i> Unpaid Members ({{ unpaid_members|length }})</h5>
+          <h5 class="mb-0"><i class="bi bi-x-circle-fill me-2"></i> Unpaid Accounts ({{ unpaid_entries|length }})</h5>
         </div>
         <div class="card-body p-0">
-          {% if unpaid_members %}
+          {% if unpaid_entries %}
             <ul class="list-group list-group-flush">
-              {% for member in unpaid_members %}
+              {% for item in unpaid_entries %}
                 <li class="list-group-item d-flex justify-content-between align-items-center">
-                  <span>{{ member.get_full_name|default:member.username }}</span>
+                  <span>{{ item.member_name }} <span class="text-muted small">({{ item.account_label }})</span></span>
                   <i class="bi bi-exclamation-circle text-danger fs-5"></i>
                 </li>
               {% endfor %}

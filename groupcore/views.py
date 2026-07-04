@@ -6,6 +6,8 @@ from .models import MemberProfile
 from .forms import GroupSettingsForm, MemberRegistrationForm
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseForbidden
+from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from deposits.models import DepositSubmission
 from django.utils import timezone
 from fines.models import Fine
@@ -17,7 +19,7 @@ from .forms import ProfileForm
 from groupcore.models import GroupSettings
 from groupcore.reporting import merge_year_options, parse_report_year, years_from_dates
 from groupcore.week_cycle import current_saving_week, first_friday_of_year
-from datetime import date
+from datetime import date, timedelta
 from loans.models import LoanRequest
 from decimal import Decimal
 import random
@@ -62,6 +64,17 @@ def _can_manage_group_settings(user):
     return user.is_superuser or user.is_treasurer() or user.is_chairman()
 
 
+def _safe_next_url(request, fallback='member_dashboard'):
+    next_url = request.POST.get('next') or request.GET.get('next')
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return next_url
+    return reverse(fallback)
+
+
 FUND_SOURCE_TO_TOTAL_KEY = {
     'SAVINGS': 'saving',
     'WELFARE': 'welfare',
@@ -103,6 +116,69 @@ def _fund_source_balances(queryset):
     }
 
 
+def _member_week_progress(member, active_account=None):
+    settings = GroupSettings.get_active()
+    if not settings:
+        return {
+            'cycle_open': False,
+            'status': 'Not opened',
+            'status_class': 'secondary',
+            'current_week_number': None,
+            'paid_weeks_count': 0,
+            'missing_weeks_count': 0,
+            'future_weeks_count': 0,
+            'first_missing_week': None,
+            'last_paid_week': None,
+            'message': 'The saving cycle has not been opened yet.',
+        }
+
+    saving_week = current_saving_week(settings.week_one_start, timezone.localdate())
+    deposits = DepositSubmission.objects.filter(
+        member=member,
+        status='APPROVED',
+        payment_week__year=saving_week.saving_year,
+    )
+    if active_account:
+        deposits = deposits.filter(account=active_account)
+
+    paid_weeks = set(deposits.values_list('payment_week', flat=True))
+    due_weeks = [
+        saving_week.cycle_start + timedelta(weeks=index)
+        for index in range(saving_week.week_number)
+    ]
+    missing_weeks = [week for week in due_weeks if week not in paid_weeks]
+    future_weeks = sorted(week for week in paid_weeks if week > saving_week.week_start)
+    paid_due_weeks = [week for week in due_weeks if week in paid_weeks]
+
+    if missing_weeks:
+        status = 'Behind'
+        status_class = 'danger'
+        message = f"Behind by {len(missing_weeks)} week(s)."
+    elif future_weeks:
+        status = 'Ahead'
+        status_class = 'success'
+        message = f"Ahead by {len(future_weeks)} week(s)."
+    else:
+        status = 'On track'
+        status_class = 'success'
+        message = 'All due weeks are covered.'
+
+    return {
+        'cycle_open': True,
+        'status': status,
+        'status_class': status_class,
+        'current_week_number': saving_week.week_number,
+        'current_week': saving_week.week_start,
+        'saving_year': saving_week.saving_year,
+        'paid_weeks_count': len(paid_due_weeks),
+        'missing_weeks_count': len(missing_weeks),
+        'future_weeks_count': len(future_weeks),
+        'first_missing_week': missing_weeks[0] if missing_weeks else None,
+        'last_paid_week': max(paid_weeks) if paid_weeks else None,
+        'message': message,
+    }
+
+
 def login_view(request):
     if request.method == 'POST':
         username = request.POST.get('username')
@@ -141,15 +217,16 @@ def login_view(request):
 @login_required
 def select_savings_account(request):
     accounts = get_user_active_accounts(request.user)
+    next_url = _safe_next_url(request)
 
     if accounts.count() == 0:
         messages.error(request, "No active savings account found. Please contact the treasurer.")
-        return redirect('member_dashboard')
+        return redirect(next_url)
 
     if accounts.count() == 1:
         only_account = accounts.first()
         request.session['active_account_id'] = only_account.id
-        return redirect('member_dashboard')
+        return redirect(next_url)
 
     if request.method == 'POST':
         account_id = request.POST.get('account_id')
@@ -158,9 +235,12 @@ def select_savings_account(request):
             return redirect('select_savings_account')
         set_active_account(request, account_id)
         messages.success(request, "Account context set successfully.")
-        return redirect('member_dashboard')
+        return redirect(next_url)
 
-    return render(request, 'groupcore/select_savings_account.html', {'accounts': accounts})
+    return render(request, 'groupcore/select_savings_account.html', {
+        'accounts': accounts,
+        'next_url': next_url,
+    })
 
 
 @login_required
@@ -395,7 +475,7 @@ def member_dashboard(request):
     member = request.user
     active_account = get_active_account(request, member)
 
-    if member.is_member() and get_user_active_accounts(member).count() > 1 and not active_account:
+    if get_user_active_accounts(member).count() > 1 and not active_account:
         messages.info(request, "Please select a savings account first.")
         return redirect('select_savings_account')
 
@@ -408,7 +488,8 @@ def member_dashboard(request):
     group_total_savings = approved_group_qs.aggregate(total=Sum('saving_amount'))['total'] or 0
 
     user_savings_total = approved_member_qs.aggregate(total=Sum('saving_amount'))['total'] or 0
-    weeks_paid = approved_member_qs.count()
+    week_progress = _member_week_progress(member, active_account)
+    weeks_paid = week_progress['paid_weeks_count'] if week_progress['cycle_open'] else approved_member_qs.values('payment_week').distinct().count()
 
     
     outstanding_fines_qs = Fine.objects.filter(member=member, is_paid=False)
@@ -461,6 +542,7 @@ def member_dashboard(request):
         'group_purpose_totals': group_purpose_totals,
         'active_account': active_account,
         'my_total_loan_interest': my_total_loan_interest,
+        'week_progress': week_progress,
     }
     return render(request, 'groupcore/member_dashboard.html', context)
 
