@@ -26,6 +26,7 @@ staticfiles/
 logs/
 backups/
 imports/
+imports*.zip
 
 # OS/editor files
 .DS_Store

@@ -282,3 +282,93 @@ class HistoricalDataImportCommandTests(TestCase):
             report_text = report_path.read_text(encoding='utf-8')
             self.assertIn('ERROR', report_text)
             self.assertIn('does not match amount sum', report_text)
+
+
+class UsernameUpdateCommandTests(TestCase):
+    def test_dry_run_does_not_change_username(self):
+        MemberProfile.objects.create_user(
+            username='kolyangha_martin_luther',
+            email='martin@example.com',
+            password='pass12345',
+        )
+        with TemporaryDirectory() as directory:
+            mapping_path = Path(directory) / 'mapping.csv'
+            report_path = Path(directory) / 'report.csv'
+            mapping_path.write_text(
+                '\n'.join([
+                    'old_username,new_username,email,name',
+                    'kolyangha_martin_luther,KolyanghaM,martin@example.com,Kolyangha Martin Luther',
+                ]),
+                encoding='utf-8',
+            )
+
+            call_command(
+                'update_usernames_from_csv',
+                file=str(mapping_path),
+                report=str(report_path),
+            )
+
+            self.assertTrue(MemberProfile.objects.filter(username='kolyangha_martin_luther').exists())
+            self.assertFalse(MemberProfile.objects.filter(username='KolyanghaM').exists())
+            self.assertIn('VALID_UPDATE', report_path.read_text(encoding='utf-8'))
+
+    def test_commit_updates_username(self):
+        MemberProfile.objects.create_user(
+            username='kolyangha_martin_luther',
+            email='martin@example.com',
+            password='pass12345',
+        )
+        with TemporaryDirectory() as directory:
+            mapping_path = Path(directory) / 'mapping.csv'
+            report_path = Path(directory) / 'report.csv'
+            mapping_path.write_text(
+                '\n'.join([
+                    'old_username,new_username,email,name',
+                    'kolyangha_martin_luther,KolyanghaM,martin@example.com,Kolyangha Martin Luther',
+                ]),
+                encoding='utf-8',
+            )
+
+            call_command(
+                'update_usernames_from_csv',
+                file=str(mapping_path),
+                report=str(report_path),
+                commit=True,
+            )
+
+            self.assertFalse(MemberProfile.objects.filter(username='kolyangha_martin_luther').exists())
+            self.assertTrue(MemberProfile.objects.filter(username='KolyanghaM').exists())
+            self.assertIn('UPDATED_USERNAME', report_path.read_text(encoding='utf-8'))
+
+    def test_conflicting_new_username_blocks_updates(self):
+        MemberProfile.objects.create_user(
+            username='kolyangha_martin_luther',
+            email='martin@example.com',
+            password='pass12345',
+        )
+        MemberProfile.objects.create_user(
+            username='KolyanghaM',
+            email='other@example.com',
+            password='pass12345',
+        )
+        with TemporaryDirectory() as directory:
+            mapping_path = Path(directory) / 'mapping.csv'
+            report_path = Path(directory) / 'report.csv'
+            mapping_path.write_text(
+                '\n'.join([
+                    'old_username,new_username,email,name',
+                    'kolyangha_martin_luther,KolyanghaM,martin@example.com,Kolyangha Martin Luther',
+                ]),
+                encoding='utf-8',
+            )
+
+            with self.assertRaises(CommandError):
+                call_command(
+                    'update_usernames_from_csv',
+                    file=str(mapping_path),
+                    report=str(report_path),
+                    commit=True,
+                )
+
+            self.assertTrue(MemberProfile.objects.filter(username='kolyangha_martin_luther').exists())
+            self.assertIn('already belongs to another user', report_path.read_text(encoding='utf-8'))
