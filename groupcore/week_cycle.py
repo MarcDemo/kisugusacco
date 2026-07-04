@@ -15,8 +15,8 @@ def _first_matching_weekday_on_or_after(start_day, weekday):
     return start_day + timedelta(days=days_until_weekday)
 
 
-def first_monday_of_year(year):
-    return _first_matching_weekday_on_or_after(date(year, 1, 1), 0)
+def first_friday_of_year(year):
+    return _first_matching_weekday_on_or_after(date(year, 1, 1), 4)
 
 
 def current_saving_week(week_one_start, today=None):

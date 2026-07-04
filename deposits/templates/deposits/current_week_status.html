@@ -3,7 +3,7 @@
 <div class="container py-5">
   <div class="d-flex justify-content-between align-items-center mb-4">
     <h3 class="text-primary">
-      <i class="bi bi-calendar-week me-2"></i> Payment Status for Week {{ current_week_number }} Starting {{ current_week|date:"l, d M Y" }}
+      <i class="bi bi-calendar-week me-2"></i> Payment Status for Week {{ current_week_number }} Closing {{ current_week|date:"l, d M Y" }}
     </h3>
     <a href="{% url 'treasurer_dashboard' %}" class="btn btn-outline-secondary">
       <i class="bi bi-arrow-left"></i> Back to Dashboard

@@ -105,7 +105,7 @@ Optional columns:
 - `remarks`
 - `proof_reference`
 
-Dates should be entered as `YYYY-MM-DD`. `payment_week` must be the Monday/week-start date used by the savings cycle. `payment_date` remains the real date the member paid.
+Dates should be entered as `YYYY-MM-DD`. `payment_week` must be the Friday saving-week closing date used by the group ledger. `payment_date` remains the real date the member paid.
 
 ## Duplicate Protection
 
@@ -118,7 +118,7 @@ The import blocks:
 - transactions for missing members/accounts
 - negative amounts
 - rows where `expected_total` does not match the amount breakdown
-- payment weeks that are not Monday/week-start dates
+- payment weeks that are not Friday saving-week closing dates
 
 ## Reports
 
@@ -134,4 +134,3 @@ The report CSV lists each source row as:
 - `ERROR`
 
 If any row has `ERROR`, the command refuses to write data until the source file is corrected.
-

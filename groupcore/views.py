@@ -16,7 +16,7 @@ from documents.models import Document
 from .forms import ProfileForm
 from groupcore.models import GroupSettings
 from groupcore.reporting import merge_year_options, parse_report_year, years_from_dates
-from groupcore.week_cycle import current_saving_week, first_monday_of_year
+from groupcore.week_cycle import current_saving_week, first_friday_of_year
 from datetime import date
 from loans.models import LoanRequest
 from decimal import Decimal
@@ -304,7 +304,7 @@ def group_settings(request):
 
     today = timezone.localdate()
     settings = GroupSettings.get_active()
-    suggested_week_one_start = first_monday_of_year(today.year)
+    suggested_week_one_start = first_friday_of_year(today.year)
     display_settings = settings or GroupSettings(week_one_start=suggested_week_one_start)
 
     if request.method == 'POST':

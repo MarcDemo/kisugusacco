@@ -350,8 +350,8 @@ class Command(BaseCommand):
                 )
 
             payment_week = self._parse_date(row.get('payment_week'), 'payment_week', row_errors)
-            if payment_week and payment_week.weekday() != 0:
-                row_errors.append('payment_week must be a Monday/week-start date')
+            if payment_week and payment_week.weekday() != 4:
+                row_errors.append('payment_week must be a Friday saving-week closing date')
             payment_date = self._parse_date(row.get('payment_date'), 'payment_date', row_errors)
             payment_time = self._parse_time(row.get('payment_time') or '00:00', 'payment_time', row_errors)
 
@@ -557,7 +557,7 @@ class Command(BaseCommand):
                 return datetime.strptime(value, date_format).date()
             except ValueError:
                 continue
-        errors.append(f'{field_name} must be a date like 2026-06-22')
+        errors.append(f'{field_name} must be a date like 2026-01-02')
         return None
 
     def _parse_time(self, value, field_name, errors):

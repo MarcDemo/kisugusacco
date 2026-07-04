@@ -40,7 +40,7 @@
               <div class="text-danger small mt-1">{{ form.week_one_start.errors|join:", " }}</div>
               {% endif %}
               <div class="form-text">
-                Use the Monday that begins Week 1. The default for this year is {{ suggested_week_one_start|date:"l, d M Y" }}.
+                Use the Friday closing date for Week 1. The default for this year is {{ suggested_week_one_start|date:"l, d M Y" }}.
               </div>
             </div>
 
@@ -65,7 +65,7 @@
           <div class="row g-3">
             <div class="col-md-6">
               <div class="border rounded-3 p-3 h-100">
-                <div class="small text-muted">Week 1 Start</div>
+                <div class="small text-muted">Week 1 Closing Date</div>
                 <div class="fs-5 fw-bold">{{ saving_week.cycle_start|date:"l, d M Y" }}</div>
               </div>
             </div>
@@ -83,7 +83,7 @@
             </div>
             <div class="col-md-6">
               <div class="border rounded-3 p-3 h-100">
-                <div class="small text-muted">Current Week Starts</div>
+                <div class="small text-muted">Current Week Closes</div>
                 <div class="fs-5 fw-bold">{{ saving_week.week_start|date:"l, d M Y" }}</div>
               </div>
             </div>

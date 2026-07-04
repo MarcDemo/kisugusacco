@@ -80,6 +80,6 @@ class GroupSettingsForm(forms.ModelForm):
 
     def clean_week_one_start(self):
         week_one_start = self.cleaned_data['week_one_start']
-        if week_one_start.weekday() != 0:
-            raise forms.ValidationError('Week 1 start must be a Monday.')
+        if week_one_start.weekday() != 4:
+            raise forms.ValidationError('Week 1 start must be a Friday.')
         return week_one_start

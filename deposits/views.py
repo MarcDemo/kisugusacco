@@ -1066,7 +1066,7 @@ def current_week_payment_status(request):
                     fine_type='MISSED_WEEKLY_SAVING',
                     reference_week=current_week_start,
                     defaults={
-                        'reason': f'Failed to save for week starting {current_week_start}',
+                        'reason': f'Failed to save for week closing {current_week_start}',
                         'amount': 2000,
                         'issued_by': request.user,
                     }
@@ -1088,7 +1088,7 @@ def current_week_payment_status(request):
                     fine_type='MISSED_WEEKLY_SAVING',
                     reference_week=current_week_start,
                     defaults={
-                        'reason': f'Failed to save for week starting {current_week_start}',
+                        'reason': f'Failed to save for week closing {current_week_start}',
                         'amount': 2000,
                         'issued_by': request.user,
                     }
