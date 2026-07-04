@@ -26,7 +26,7 @@ if [ "${RUN_PRE_DEPLOY_BACKUP:-0}" = "1" ]; then
 fi
 
 "$PYTHON_BIN" -m pip install --upgrade pip
-"$PYTHON_BIN" -m pip install -r requirements.txt
+"$PYTHON_BIN" -m pip install -r requirements-production.txt
 "$PYTHON_BIN" manage.py migrate --noinput
 "$PYTHON_BIN" manage.py collectstatic --noinput
 
@@ -38,4 +38,3 @@ else
 fi
 
 echo "Deployment completed."
-

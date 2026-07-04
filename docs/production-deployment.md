@@ -51,7 +51,7 @@ git pull --ff-only
 bash scripts/deploy_cpanel.sh
 ```
 
-The deploy script installs dependencies, runs migrations, collects static files, and restarts the app by touching `tmp/restart.txt`. If your cPanel app needs a different restart command, set `DJANGO_RESTART_COMMAND` in `.env`.
+The deploy script installs `requirements-production.txt`, runs migrations, collects static files, and restarts the app by touching `tmp/restart.txt`. If your cPanel app needs a different restart command, set `DJANGO_RESTART_COMMAND` in `.env`.
 
 ## Weekly Backups
 
@@ -89,6 +89,7 @@ For the first deployment, leave it as `0` until the MySQL database exists and `.
 
 - `.env` exists on the server and is not committed to Git.
 - `db.sqlite3` is not committed and is not copied to the server.
+- Server dependencies are installed with `python -m pip install -r requirements-production.txt`.
 - Production MySQL database is empty before first real-data launch.
 - `python manage.py migrate` succeeds on production.
 - `python manage.py createsuperuser` has been run.

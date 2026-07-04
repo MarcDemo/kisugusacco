@@ -1,0 +1,12 @@
+# Minimal dependencies for the hosted Django application.
+# Keep desktop/dev-only packages such as PyQt, Qt tools, Flask, and Playwright out of production.
+Django==6.0.4
+crispy-bootstrap5==2024.2
+django-crispy-forms==2.1
+django-widget-tweaks==1.5.0
+mysqlclient==2.2.4
+openpyxl==3.1.5
+Pillow==10.1.0
+python-dotenv==1.0.1
+reportlab==4.2.2
+whitenoise==6.8.2
