@@ -48,6 +48,14 @@ class SavingWeekCycleTests(SimpleTestCase):
         self.assertEqual(saving_week.week_number, 1)
 
 
+class RootUrlTests(SimpleTestCase):
+    def test_root_redirects_to_login(self):
+        response = self.client.get('/')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], '/login/')
+
+
 class YearEndSettlementYearFilterTests(TestCase):
     def setUp(self):
         self.current_year = timezone.localdate().year
