@@ -1,7 +1,24 @@
+from datetime import timedelta
+
+from django.utils import timezone
+
 from .models import Fine
 
 
-def mark_missed_saving_fines_covered(member, account, payment_week):
+def missed_saving_fines_can_be_created(week_closing_date, today=None):
+    if not week_closing_date:
+        return False
+    today = today or timezone.localdate()
+    return today > week_closing_date + timedelta(days=2)
+
+
+def deposit_was_paid_within_grace(deposit):
+    if not deposit.payment_week or not deposit.payment_date:
+        return False
+    return deposit.payment_date <= deposit.payment_week + timedelta(days=2)
+
+
+def delete_missed_saving_fines_covered(member, account, payment_week):
     if not member or not payment_week:
         return 0
 
@@ -9,20 +26,20 @@ def mark_missed_saving_fines_covered(member, account, payment_week):
         member=member,
         fine_type='MISSED_WEEKLY_SAVING',
         reference_week=payment_week,
-        is_paid=False,
     )
     if account:
         fines = fines.filter(account=account)
     else:
         fines = fines.filter(account__isnull=True)
 
-    return fines.update(is_paid=True)
+    deleted_count, _deleted_by_model = fines.delete()
+    return deleted_count
 
 
-def mark_deposit_week_fines_covered(deposit):
-    if deposit.status != 'APPROVED':
+def delete_deposit_week_missed_saving_fines(deposit):
+    if deposit.status != 'APPROVED' or not deposit_was_paid_within_grace(deposit):
         return 0
-    return mark_missed_saving_fines_covered(
+    return delete_missed_saving_fines_covered(
         member=deposit.member,
         account=deposit.account,
         payment_week=deposit.payment_week,

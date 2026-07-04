@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q, Sum
 from django.contrib import messages
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 from .forms import FineForm
 from groupcore.account_context import get_active_account
 
@@ -80,4 +81,19 @@ def mark_fine_paid(request, fine_id):
     fine.save(update_fields=['is_paid'])
 
     messages.success(request, f"Marked fine for {fine.member.username} as paid.")
+    return redirect('manage_fines')
+
+
+@login_required
+@require_POST
+def delete_fine(request, fine_id):
+    if not request.user.is_treasurer():
+        messages.error(request, "Access denied.")
+        return redirect('member_dashboard')
+
+    fine = get_object_or_404(Fine, id=fine_id)
+    member_username = fine.member.username
+    fine.delete()
+
+    messages.success(request, f"Deleted fine for {member_username}.")
     return redirect('manage_fines')

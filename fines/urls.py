@@ -6,4 +6,5 @@ urlpatterns = [
     path('manage/', views.manage_fines, name='manage_fines'),
     path('add/', views.add_fine, name='add_fine'),
     path('mark-paid/<int:fine_id>/', views.mark_fine_paid, name='mark_fine_paid'),
+    path('delete/<int:fine_id>/', views.delete_fine, name='delete_fine'),
 ]

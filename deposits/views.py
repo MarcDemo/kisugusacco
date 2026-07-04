@@ -22,13 +22,13 @@ from reportlab.lib.styles import getSampleStyleSheet
 import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as ExcelImage
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import os
 from django.utils.timezone import now
 from openpyxl.utils import get_column_letter
 from django.core.mail import send_mail
 from fines.models import Fine
-from fines.services import mark_deposit_week_fines_covered
+from fines.services import delete_deposit_week_missed_saving_fines, missed_saving_fines_can_be_created
 from groupcore.account_context import get_active_account, get_user_active_accounts
 from loans.models import LoanRepayment, LoanRequest
 from decimal import Decimal
@@ -211,7 +211,7 @@ def approve_deposit(request, deposit_id):
     deposit.reviewed_by = request.user
     deposit.date_reviewed = timezone.now()
     deposit.save()
-    cleared_fines = mark_deposit_week_fines_covered(deposit)
+    cleared_fines = delete_deposit_week_missed_saving_fines(deposit)
 
     if deposit.loan_repayment_amount and deposit.loan_repayment_amount > 0:
         allocated, unallocated = _apply_loan_repayment(
@@ -243,7 +243,7 @@ def approve_deposit(request, deposit_id):
     )
 
     if cleared_fines:
-        messages.success(request, f"{cleared_fines} missed-week fine(s) were marked paid for this account/week.")
+        messages.success(request, f"{cleared_fines} missed-week fine(s) were cleared for this account/week.")
     messages.success(request, "Deposit approved and member notified by email.")
     return redirect('treasurer_dashboard')
 
@@ -675,7 +675,7 @@ def manage_deposits(request):
             )
             deposit.full_clean()
             deposit.save()
-            cleared_fines = mark_deposit_week_fines_covered(deposit)
+            cleared_fines = delete_deposit_week_missed_saving_fines(deposit)
 
             if deposit.loan_repayment_amount and deposit.loan_repayment_amount > 0:
                 allocated, unallocated = _apply_loan_repayment(
@@ -690,7 +690,7 @@ def manage_deposits(request):
                     messages.warning(request, f"UGX {unallocated:,.0f} could not be posted because no outstanding approved loan balance was found.")
 
             if cleared_fines:
-                messages.success(request, f"{cleared_fines} missed-week fine(s) were marked paid for this account/week.")
+                messages.success(request, f"{cleared_fines} missed-week fine(s) were cleared for this account/week.")
             messages.success(request, f"Deposit for {member.username} added for week of {payment_week}.")
             return redirect('manage_deposits')
 
@@ -1063,6 +1063,8 @@ def _current_week_payment_status_data(request, create_fines=False):
     group_settings = GroupSettings.get_active()
     saving_week = current_saving_week(group_settings.week_one_start, timezone.localdate())
     current_week_start = saving_week.week_start
+    fines_can_be_created = create_fines and missed_saving_fines_can_be_created(current_week_start)
+    grace_ends_on = current_week_start + timedelta(days=2)
 
     paid_entries = []
     unpaid_entries = []
@@ -1089,7 +1091,7 @@ def _current_week_payment_status_data(request, create_fines=False):
                 continue
 
             unpaid_entries.append(entry)
-            if create_fines:
+            if fines_can_be_created:
                 account_note = f" for account {account.label}" if account else ""
                 Fine.objects.get_or_create(
                     member=member,
@@ -1110,6 +1112,8 @@ def _current_week_payment_status_data(request, create_fines=False):
         'paid_entries': paid_entries,
         'unpaid_entries': unpaid_entries,
         'all_entries': paid_entries + unpaid_entries,
+        'fines_can_be_created': fines_can_be_created,
+        'grace_ends_on': grace_ends_on,
     }
 
 

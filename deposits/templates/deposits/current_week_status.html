@@ -18,6 +18,14 @@
     </div>
   </div>
 
+  {% if unpaid_entries and not fines_can_be_created %}
+  <div class="alert alert-info">
+    <i class="bi bi-info-circle me-1"></i>
+    Missed-week fines for this Friday closing week will only be generated after Sunday closes
+    (from Monday after {{ grace_ends_on|date:"l, d M Y" }}).
+  </div>
+  {% endif %}
+
   <div class="row g-4">
     <!-- Paid Members -->
     <div class="col-lg-6">

@@ -154,11 +154,15 @@
                         <td>{% if fine.issued_by %}{{ fine.issued_by.username }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
                         <td>{{ fine.date_issued|date:"Y-m-d" }}</td>
                         <td>
+                            <div class="d-flex gap-2 flex-wrap">
                             {% if not fine.is_paid %}
                                 <a class="btn btn-sm btn-outline-success" href="{% url 'mark_fine_paid' fine.id %}">Mark Paid</a>
-                            {% else %}
-                                <span class="text-muted">Closed</span>
                             {% endif %}
+                                <form method="post" action="{% url 'delete_fine' fine.id %}" onsubmit="return confirm('Delete this fine permanently?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                     {% empty %}

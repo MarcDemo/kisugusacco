@@ -291,7 +291,7 @@ class HistoricalDataImportCommandTests(TestCase):
             role='TREASURER',
         )
 
-    def _write_import_files(self, directory, expected_total='21000'):
+    def _write_import_files(self, directory, expected_total='21000', payment_date='2026-06-26'):
         members_path = Path(directory) / 'members.csv'
         transactions_path = Path(directory) / 'transactions.csv'
         members_path.write_text(
@@ -309,7 +309,7 @@ class HistoricalDataImportCommandTests(TestCase):
                     'loan_repayment_amount,expected_total,status,remarks,proof_reference'
                 ),
                 (
-                    'OLD-001,jane_member,A1,2026-06-26,2026-06-26,09:30,'
+                    f'OLD-001,jane_member,A1,2026-06-26,{payment_date},09:30,'
                     f'20000,1000,0,0,0,0,{expected_total},APPROVED,Historical import,proofs/old-001.jpg'
                 ),
             ]),
@@ -360,7 +360,7 @@ class HistoricalDataImportCommandTests(TestCase):
             self.assertEqual(deposit.status, 'APPROVED')
             self.assertIn('CREATED_TRANSACTION', report_path.read_text(encoding='utf-8'))
 
-    def test_commit_import_marks_matching_missed_week_fine_paid(self):
+    def test_commit_import_deletes_matching_missed_week_fine_paid_in_time(self):
         member = MemberProfile.objects.create_user(
             username='jane_member',
             password='pass12345',
@@ -390,8 +390,43 @@ class HistoricalDataImportCommandTests(TestCase):
                 commit=True,
             )
 
+        self.assertFalse(Fine.objects.filter(id=fine.id).exists())
+
+    def test_commit_import_keeps_matching_missed_week_fine_when_paid_late(self):
+        member = MemberProfile.objects.create_user(
+            username='jane_member',
+            password='pass12345',
+            role='MEMBER',
+        )
+        account = SavingsAccount.objects.create(owner=member, label='A1')
+        fine = Fine.objects.create(
+            member=member,
+            account=account,
+            fine_type='MISSED_WEEKLY_SAVING',
+            reference_week=date(2026, 6, 26),
+            reason='Failed to save for account A1 for week closing 2026-06-26',
+            amount=Decimal('2000.00'),
+            issued_by=self.treasurer,
+        )
+
+        with TemporaryDirectory() as directory:
+            members_path, transactions_path = self._write_import_files(
+                directory,
+                payment_date='2026-06-29',
+            )
+            report_path = Path(directory) / 'report.csv'
+
+            call_command(
+                'import_historical_data',
+                members=str(members_path),
+                transactions=str(transactions_path),
+                submitted_by='treasurer',
+                report=str(report_path),
+                commit=True,
+            )
+
         fine.refresh_from_db()
-        self.assertTrue(fine.is_paid)
+        self.assertFalse(fine.is_paid)
 
     def test_members_import_accepts_full_account_name_labels(self):
         with TemporaryDirectory() as directory:

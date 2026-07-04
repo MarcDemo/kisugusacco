@@ -1,6 +1,7 @@
 from datetime import date, time
 from decimal import Decimal
 from io import BytesIO
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.urls import reverse
@@ -8,9 +9,10 @@ from django.utils import timezone
 from openpyxl import load_workbook
 
 from deposits.models import DepositSubmission
+from fines.models import Fine
 from groupcore.account_context import SESSION_KEY_ACTIVE_ACCOUNT
 from groupcore.models import GroupSettings, MemberProfile, SavingsAccount
-from groupcore.week_cycle import current_saving_week, first_friday_of_year
+from groupcore.week_cycle import current_saving_week
 
 
 class TreasurerReportYearFilterTests(TestCase):
@@ -339,7 +341,9 @@ class MyContributionsAccountExportTests(TestCase):
 
 class CurrentWeekStatusExportTests(TestCase):
     def setUp(self):
-        self.week_one_start = first_friday_of_year(timezone.localdate().year)
+        self.today = date(2026, 7, 5)
+        self.monday_after_grace = date(2026, 7, 6)
+        self.week_one_start = date(2026, 1, 2)
         GroupSettings.objects.create(week_one_start=self.week_one_start)
         self.treasurer = MemberProfile.objects.create_user(
             username='treasurer',
@@ -354,7 +358,15 @@ class CurrentWeekStatusExportTests(TestCase):
             last_name='Member',
         )
         self.account = SavingsAccount.objects.create(owner=self.member, label='A1')
-        saving_week = current_saving_week(self.week_one_start, timezone.localdate())
+        self.unpaid_member = MemberProfile.objects.create_user(
+            username='unpaid_member',
+            password='pass12345',
+            role='MEMBER',
+            first_name='Late',
+            last_name='Member',
+        )
+        self.unpaid_account = SavingsAccount.objects.create(owner=self.unpaid_member, label='B1')
+        saving_week = current_saving_week(self.week_one_start, self.today)
         DepositSubmission.objects.create(
             member=self.member,
             account=self.account,
@@ -372,17 +384,44 @@ class CurrentWeekStatusExportTests(TestCase):
     def test_current_week_status_page_lists_account_level_statuses(self):
         self.client.login(username='treasurer', password='pass12345')
 
-        response = self.client.get(reverse('current_week_status'))
+        with patch('deposits.views.timezone.localdate', return_value=self.today):
+            response = self.client.get(reverse('current_week_status'))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Paid Accounts')
         self.assertContains(response, 'Test Member')
         self.assertContains(response, 'A1')
 
+    def test_current_week_status_does_not_create_fines_before_monday_after_grace(self):
+        self.client.login(username='treasurer', password='pass12345')
+
+        with patch('deposits.views.timezone.localdate', return_value=self.today):
+            response = self.client.get(reverse('current_week_status'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Late Member')
+        self.assertEqual(Fine.objects.count(), 0)
+
+    def test_current_week_status_creates_fines_after_sunday_closes(self):
+        self.client.login(username='treasurer', password='pass12345')
+
+        with patch('deposits.views.timezone.localdate', return_value=self.monday_after_grace):
+            response = self.client.get(reverse('current_week_status'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            Fine.objects.filter(
+                member=self.unpaid_member,
+                account=self.unpaid_account,
+                fine_type='MISSED_WEEKLY_SAVING',
+            ).exists()
+        )
+
     def test_current_week_status_export_excel_includes_account_status(self):
         self.client.login(username='treasurer', password='pass12345')
 
-        response = self.client.get(reverse('export_current_week_status', args=['excel']))
+        with patch('deposits.views.timezone.localdate', return_value=self.today):
+            response = self.client.get(reverse('export_current_week_status', args=['excel']))
 
         self.assertEqual(
             response['Content-Type'],
@@ -398,7 +437,8 @@ class CurrentWeekStatusExportTests(TestCase):
     def test_current_week_status_export_pdf_returns_pdf(self):
         self.client.login(username='treasurer', password='pass12345')
 
-        response = self.client.get(reverse('export_current_week_status', args=['pdf']))
+        with patch('deposits.views.timezone.localdate', return_value=self.today):
+            response = self.client.get(reverse('export_current_week_status', args=['pdf']))
 
         self.assertEqual(response['Content-Type'], 'application/pdf')
         self.assertTrue(response['Content-Disposition'].endswith('.pdf"'))
