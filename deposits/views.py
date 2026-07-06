@@ -109,6 +109,7 @@ def submit_deposit(request):
             saving_amount = form.cleaned_data.get('saving_amount') or 0
             welfare_amount = form.cleaned_data.get('welfare_amount') or 0
             annual_subscription_amount = form.cleaned_data.get('annual_subscription_amount') or 0
+            membership_amount = form.cleaned_data.get('membership_amount') or 0
             fine_amount = form.cleaned_data.get('fine_amount') or 0
             shares_amount = form.cleaned_data.get('shares_amount') or 0
             loan_repayment_amount = form.cleaned_data.get('loan_repayment_amount') or 0
@@ -125,6 +126,7 @@ def submit_deposit(request):
                 saving_amount=saving_amount,
                 welfare_amount=welfare_amount,
                 annual_subscription_amount=annual_subscription_amount,
+                membership_amount=membership_amount,
                 fine_amount=fine_amount,
                 shares_amount=shares_amount,
                 loan_repayment_amount=loan_repayment_amount,
@@ -307,6 +309,7 @@ def _approved_deposit_totals(queryset):
         saving=Sum('saving_amount'),
         welfare=Sum('welfare_amount'),
         annual_subscription=Sum('annual_subscription_amount'),
+        membership=Sum('membership_amount'),
         fine=Sum('fine_amount'),
         shares=Sum('shares_amount'),
         loan_repayment=Sum('loan_repayment_amount'),
@@ -318,6 +321,7 @@ def _approved_deposit_totals(queryset):
             'saving',
             'welfare',
             'annual_subscription',
+            'membership',
             'fine',
             'shares',
             'loan_repayment',
@@ -406,6 +410,7 @@ def _my_contributions_detail_rows(deposits):
             deposit.saving_amount,
             deposit.welfare_amount,
             deposit.annual_subscription_amount,
+            deposit.membership_amount,
             deposit.fine_amount,
             deposit.shares_amount,
             deposit.loan_repayment_amount,
@@ -449,12 +454,13 @@ def _export_my_contributions_pdf(user, active_account, contribution_data, deposi
     ]
 
     summary_data = [
-        ['Approved Total', 'Saving', 'Welfare', 'Annual', 'Fine', 'Shares', 'Loan Repayment'],
+        ['Approved Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Loan Repayment'],
         [
             _money(totals['total']),
             _money(totals['saving']),
             _money(totals['welfare']),
             _money(totals['annual_subscription']),
+            _money(totals['membership']),
             _money(totals['fine']),
             _money(totals['shares']),
             _money(totals['loan_repayment']),
@@ -473,7 +479,7 @@ def _export_my_contributions_pdf(user, active_account, contribution_data, deposi
     elements.append(Spacer(1, 12))
 
     detail_headers = [
-        'Saving Week', 'Account', 'Total', 'Saving', 'Welfare', 'Annual', 'Fine',
+        'Saving Week', 'Account', 'Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine',
         'Shares', 'Loan Repay', 'Status', 'Payment Date', 'Payment Time',
         'Submitted By', 'Remarks', 'Proof Ref',
     ]
@@ -482,7 +488,7 @@ def _export_my_contributions_pdf(user, active_account, contribution_data, deposi
         detail_rows.append([
             row[0], row[1], _money(row[2]), _money(row[3]), _money(row[4]),
             _money(row[5]), _money(row[6]), _money(row[7]), _money(row[8]),
-            row[9], row[10], row[11], row[12], row[13], row[14],
+            _money(row[9]), row[10], row[11], row[12], row[13], row[14], row[15],
         ])
     if not detail_rows:
         detail_rows = [['No matching deposits'] + [''] * (len(detail_headers) - 1)]
@@ -490,7 +496,7 @@ def _export_my_contributions_pdf(user, active_account, contribution_data, deposi
     detail_table = Table(
         [detail_headers] + detail_rows,
         repeatRows=1,
-        colWidths=[58, 42, 50, 45, 45, 45, 40, 42, 52, 48, 58, 48, 58, 76, 96],
+        colWidths=[54, 40, 46, 42, 42, 42, 48, 38, 40, 50, 44, 54, 46, 54, 66, 82],
     )
     detail_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e8f5ee')),
@@ -520,7 +526,7 @@ def _export_my_contributions_excel(user, active_account, contribution_data, depo
     meta = _my_contributions_report_meta(user, active_account, contribution_data)
     totals = contribution_data['approved_totals']
 
-    ws.merge_cells('A1:O1')
+    ws.merge_cells('A1:P1')
     ws['A1'] = f"Financial Report for {meta['member_name']}"
     ws['A1'].font = Font(size=14, bold=True)
     ws['A1'].alignment = Alignment(horizontal='center')
@@ -538,7 +544,7 @@ def _export_my_contributions_excel(user, active_account, contribution_data, depo
 
     summary_start = 10
     ws.cell(row=summary_start, column=1, value='Approved Totals').font = Font(bold=True)
-    summary_headers = ['Total', 'Saving', 'Welfare', 'Annual', 'Fine', 'Shares', 'Loan Repayment']
+    summary_headers = ['Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Loan Repayment']
     for column, header in enumerate(summary_headers, start=1):
         cell = ws.cell(row=summary_start + 1, column=column, value=header)
         cell.font = Font(bold=True, color='FFFFFF')
@@ -548,6 +554,7 @@ def _export_my_contributions_excel(user, active_account, contribution_data, depo
         totals['saving'],
         totals['welfare'],
         totals['annual_subscription'],
+        totals['membership'],
         totals['fine'],
         totals['shares'],
         totals['loan_repayment'],
@@ -558,7 +565,7 @@ def _export_my_contributions_excel(user, active_account, contribution_data, depo
     detail_start = summary_start + 5
     ws.cell(row=detail_start, column=1, value='Deposit Details').font = Font(bold=True)
     headers = [
-        'Saving Week', 'Account', 'Total', 'Saving', 'Welfare', 'Annual', 'Fine',
+        'Saving Week', 'Account', 'Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine',
         'Shares', 'Loan Repayment', 'Status', 'Payment Date', 'Payment Time',
         'Submitted By', 'Remarks', 'Proof Reference',
     ]
@@ -646,6 +653,7 @@ def manage_deposits(request):
             saving_amount = form.cleaned_data.get('saving_amount') or 0
             welfare_amount = form.cleaned_data.get('welfare_amount') or 0
             annual_subscription_amount = form.cleaned_data.get('annual_subscription_amount') or 0
+            membership_amount = form.cleaned_data.get('membership_amount') or 0
             fine_amount = form.cleaned_data.get('fine_amount') or 0
             shares_amount = form.cleaned_data.get('shares_amount') or 0
             loan_repayment_amount = form.cleaned_data.get('loan_repayment_amount') or 0
@@ -662,6 +670,7 @@ def manage_deposits(request):
                 saving_amount=saving_amount,
                 welfare_amount=welfare_amount,
                 annual_subscription_amount=annual_subscription_amount,
+                membership_amount=membership_amount,
                 fine_amount=fine_amount,
                 shares_amount=shares_amount,
                 loan_repayment_amount=loan_repayment_amount,
@@ -720,6 +729,7 @@ def treasurer_reports(request):
         total_saving = approved_deposits.aggregate(Sum('saving_amount'))['saving_amount__sum'] or 0
         total_welfare = approved_deposits.aggregate(Sum('welfare_amount'))['welfare_amount__sum'] or 0
         total_annual = approved_deposits.aggregate(Sum('annual_subscription_amount'))['annual_subscription_amount__sum'] or 0
+        total_membership = approved_deposits.aggregate(Sum('membership_amount'))['membership_amount__sum'] or 0
         total_fine = approved_deposits.aggregate(Sum('fine_amount'))['fine_amount__sum'] or 0
         total_shares = approved_deposits.aggregate(Sum('shares_amount'))['shares_amount__sum'] or 0
         total_interest = _loan_interest_total(
@@ -734,6 +744,7 @@ def treasurer_reports(request):
             'total_saving': total_saving,
             'total_welfare': total_welfare,
             'total_annual': total_annual,
+            'total_membership': total_membership,
             'total_fine': total_fine,
             'total_shares': total_shares,
             'total_interest': total_interest,
@@ -771,7 +782,7 @@ def download_member_report(request, member_id, format):
 
         # Table header
         data = [
-            ['#', 'Week', 'Total', 'Saving', 'Welfare', 'Annual', 'Fine', 'Shares', 'Date Submitted', 'Payment Date', 'Payment Time', 'Remarks']
+            ['#', 'Week', 'Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Date Submitted', 'Payment Date', 'Payment Time', 'Remarks']
         ]
 
         # Table rows
@@ -783,6 +794,7 @@ def download_member_report(request, member_id, format):
                 f"{deposit.saving_amount:,.0f}",
                 f"{deposit.welfare_amount:,.0f}",
                 f"{deposit.annual_subscription_amount:,.0f}",
+                f"{deposit.membership_amount:,.0f}",
                 f"{deposit.fine_amount:,.0f}",
                 f"{deposit.shares_amount:,.0f}",
                 deposit.date_submitted.strftime('%Y-%m-%d'),
@@ -792,7 +804,7 @@ def download_member_report(request, member_id, format):
             ])
 
         # Table styling
-        table = Table(data, colWidths=[20, 55, 52, 50, 50, 50, 45, 45, 60, 55, 48, 70])
+        table = Table(data, colWidths=[18, 50, 48, 42, 42, 42, 52, 38, 38, 56, 50, 44, 62])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4CAF50")),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -815,7 +827,7 @@ def download_member_report(request, member_id, format):
         ws.title = "Member Contributions"
 
         full_name = member.get_full_name() or member.username
-        ws.merge_cells('A1:L1')
+        ws.merge_cells('A1:M1')
         ws['A1'] = f"Contribution Report for {full_name} - {selected_year}"
         ws['A1'].font = Font(size=14, bold=True)
         ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
@@ -829,7 +841,7 @@ def download_member_report(request, member_id, format):
             ws.add_image(img, 'F1')
 
         # Define headers
-        headers = ['#', 'Week', 'Total (UGX)', 'Saving', 'Welfare', 'Annual', 'Fine', 'Shares', 'Date Submitted', 'Payment Date', 'Payment Time', 'Remarks']
+        headers = ['#', 'Week', 'Total (UGX)', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Date Submitted', 'Payment Date', 'Payment Time', 'Remarks']
         ws.append(headers)
 
         # Header styling
@@ -860,6 +872,7 @@ def download_member_report(request, member_id, format):
                 float(deposit.saving_amount),
                 float(deposit.welfare_amount),
                 float(deposit.annual_subscription_amount),
+                float(deposit.membership_amount),
                 float(deposit.fine_amount),
                 float(deposit.shares_amount),
                 deposit.date_submitted.strftime('%Y-%m-%d'),
@@ -880,7 +893,7 @@ def download_member_report(request, member_id, format):
         ws.cell(row=last_data_row + 1, column=3, value=total_amount).font = Font(bold=True)
 
         # Footer with generated timestamp
-        ws.merge_cells(start_row=last_data_row + 3, start_column=1, end_row=last_data_row + 3, end_column=12)
+        ws.merge_cells(start_row=last_data_row + 3, start_column=1, end_row=last_data_row + 3, end_column=13)
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
         footer_cell = ws.cell(row=last_data_row + 3, column=1)
         footer_cell.value = f"Generated on: {timestamp}"
@@ -922,7 +935,7 @@ def download_all_reports(request, format):
                 continue
 
             elements.append(Paragraph(f"Member: {member.get_full_name() or member.username}", styles['Heading3']))
-            data = [['Week', 'Total', 'Saving', 'Welfare', 'Annual', 'Fine', 'Shares', 'Payment Date', 'Payment Time']]
+            data = [['Week', 'Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Payment Date', 'Payment Time']]
             total_amount = 0
 
             for dep in deposits:
@@ -932,6 +945,7 @@ def download_all_reports(request, format):
                     f"{dep.saving_amount:,.0f}",
                     f"{dep.welfare_amount:,.0f}",
                     f"{dep.annual_subscription_amount:,.0f}",
+                    f"{dep.membership_amount:,.0f}",
                     f"{dep.fine_amount:,.0f}",
                     f"{dep.shares_amount:,.0f}",
                     dep.payment_date.strftime('%Y-%m-%d'),
@@ -939,8 +953,8 @@ def download_all_reports(request, format):
                 ])
                 total_amount += dep.amount
 
-            data.append(['TOTAL', f"{total_amount:,.0f}", '', '', '', '', '', '', ''])
-            table = Table(data, colWidths=[58, 56, 54, 54, 54, 46, 46, 62, 56])
+            data.append(['TOTAL', f"{total_amount:,.0f}", '', '', '', '', '', '', '', ''])
+            table = Table(data, colWidths=[54, 50, 48, 48, 48, 56, 42, 42, 58, 52])
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
                 ('GRID', (0, 0), (-1, -1), 1, colors.grey),
@@ -962,14 +976,14 @@ def download_all_reports(request, format):
         ws = wb.active
         ws.title = f"Contributions {selected_year}"
 
-        ws.merge_cells('A1:J1')
+        ws.merge_cells('A1:K1')
         ws['A1'] = f"Group Contribution Report (All Members) - {selected_year}"
         ws['A1'].font = Font(size=14, bold=True)
         ws['A1'].alignment = Alignment(horizontal='center')
 
         ws.append(["Generated on:", now().strftime('%Y-%m-%d %H:%M')])
         ws.append([])
-        ws.append(["Member", "Week", "Total (UGX)", "Saving", "Welfare", "Annual", "Fine", "Shares", 'Payment Date', 'Payment Time'])
+        ws.append(["Member", "Week", "Total (UGX)", "Saving", "Welfare", "Annual", "Membership", "Fine", "Shares", 'Payment Date', 'Payment Time'])
 
         for member in members:
             deposits = member.deposits.filter(
@@ -986,6 +1000,7 @@ def download_all_reports(request, format):
                     float(dep.saving_amount),
                     float(dep.welfare_amount),
                     float(dep.annual_subscription_amount),
+                    float(dep.membership_amount),
                     float(dep.fine_amount),
                     float(dep.shares_amount),
                     dep.payment_date.strftime('%Y-%m-%d'),
@@ -998,6 +1013,7 @@ def download_all_reports(request, format):
                     f"TOTAL for {member.get_full_name() or member.username}",
                     "",
                     total_amount,
+                    "",
                     "",
                     "",
                     "",

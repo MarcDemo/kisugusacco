@@ -9,6 +9,7 @@
     <span class="badge text-bg-primary">Saving</span>
     <span class="badge text-bg-success">Welfare</span>
     <span class="badge text-bg-warning text-dark">Annual</span>
+    <span class="badge text-bg-secondary">Membership</span>
     <span class="badge text-bg-danger">Fine</span>
     <span class="badge text-bg-info text-dark">Shares</span>
     <span class="badge text-bg-secondary">Interest</span>
@@ -46,6 +47,7 @@
           <th>Saving</th>
           <th>Welfare</th>
           <th>Annual</th>
+          <th>Membership</th>
           <th>Fine</th>
           <th>Shares</th>
           <th>Interest</th>
@@ -61,6 +63,7 @@
               <td>UGX {{ row.total_saving|default:0|floatformat:"0" }}</td>
               <td>UGX {{ row.total_welfare|default:0|floatformat:"0" }}</td>
               <td>UGX {{ row.total_annual|default:0|floatformat:"0" }}</td>
+              <td>UGX {{ row.total_membership|default:0|floatformat:"0" }}</td>
               <td>UGX {{ row.total_fine|default:0|floatformat:"0" }}</td>
               <td>UGX {{ row.total_shares|default:0|floatformat:"0" }}</td>
               <td>UGX {{ row.total_interest|default:0|floatformat:"0" }}</td>
@@ -76,7 +79,7 @@
               </tr>
           {% empty %}
               <tr>
-            <td colspan="10" class="text-center text-muted">No members found.</td>
+            <td colspan="11" class="text-center text-muted">No members found.</td>
               </tr>
           {% endfor %}
           </tbody>

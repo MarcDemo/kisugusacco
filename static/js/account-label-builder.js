@@ -1,6 +1,6 @@
 (function () {
   const allowedAccountLabel = /^[A-Za-z0-9 _.-]+$/;
-  const maxLabelLength = 20;
+  const maxLabelLength = 100;
 
   function normalizeLabel(value) {
     return (value || '').trim().replace(/\s+/g, ' ');
@@ -84,7 +84,7 @@
         }
 
         if (label.length > maxLabelLength) {
-          setError(entryInput, errorElement, 'Savings account labels must be 20 characters or fewer.');
+          setError(entryInput, errorElement, 'Savings account labels must be 100 characters or fewer.');
           entryInput.focus();
           return false;
         }

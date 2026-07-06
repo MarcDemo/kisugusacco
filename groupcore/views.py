@@ -35,6 +35,7 @@ def _deposit_purpose_totals(queryset):
         saving=Sum('saving_amount'),
         welfare=Sum('welfare_amount'),
         annual_subscription=Sum('annual_subscription_amount'),
+        membership=Sum('membership_amount'),
         fine=Sum('fine_amount'),
         shares=Sum('shares_amount'),
         total=Sum('amount'),
@@ -43,6 +44,7 @@ def _deposit_purpose_totals(queryset):
         'saving': totals.get('saving') or Decimal('0'),
         'welfare': totals.get('welfare') or Decimal('0'),
         'annual_subscription': totals.get('annual_subscription') or Decimal('0'),
+        'membership': totals.get('membership') or Decimal('0'),
         'fine': totals.get('fine') or Decimal('0'),
         'shares': totals.get('shares') or Decimal('0'),
         'total': totals.get('total') or Decimal('0'),
@@ -80,6 +82,7 @@ FUND_SOURCE_TO_TOTAL_KEY = {
     'WELFARE': 'welfare',
     'FINES': 'fine',
     'ANNUAL_SUBSCRIPTIONS': 'annual_subscription',
+    'MEMBERSHIP': 'membership',
     'SHARES': 'shares',
 }
 
@@ -690,6 +693,7 @@ def chairman_dashboard(request):
     total_welfare = source_balances['collected']['WELFARE']
     total_fine_deposits = source_balances['collected']['FINES']
     total_annual_subscriptions = source_balances['collected']['ANNUAL_SUBSCRIPTIONS']
+    total_membership = source_balances['collected']['MEMBERSHIP']
     total_shares = source_balances['collected']['SHARES']
 
     total_documents = Document.objects.count()
@@ -707,6 +711,7 @@ def chairman_dashboard(request):
         {'title': 'Welfare (UGX)', 'count': f"{total_welfare:,}", 'color': 'warning'},
         {'title': 'Fines (UGX)', 'count': f"{total_fine_deposits:,}", 'color': 'danger'},
         {'title': 'Annual Subs (UGX)', 'count': f"{total_annual_subscriptions:,}", 'color': 'primary'},
+        {'title': 'Membership Fees (UGX)', 'count': f"{total_membership:,}", 'color': 'secondary'},
         {'title': 'Shares (UGX)', 'count': f"{total_shares:,}", 'color': 'secondary'},
         {'title': 'Documents', 'count': total_documents, 'color': 'secondary'},
         {'title': 'Assets', 'count': total_assets, 'color': 'dark'},
@@ -752,6 +757,7 @@ def chairman_dashboard(request):
         "total_welfare": total_welfare,
         "total_fines": total_fine_deposits,
         "total_annual_subscriptions": total_annual_subscriptions,
+        "total_membership": total_membership,
         "total_shares": total_shares,
         "total_documents": total_documents,
         "total_expenditures": total_expenditures,

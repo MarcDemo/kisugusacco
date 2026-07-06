@@ -65,24 +65,31 @@
               {% if accounts %}
                 <div class="mb-3">
                   {% for account in accounts %}
-                    <div class="form-check form-switch mb-2" data-existing-account-label="{{ account.label }}">
-                      <input
-                        class="form-check-input"
-                        type="checkbox"
-                        role="switch"
-                        id="account_{{ account.id }}"
-                        name="active_accounts"
-                        value="{{ account.id }}"
-                        {% if account.is_active %}checked{% endif %}
-                      >
-                      <label class="form-check-label" for="account_{{ account.id }}">
-                        Account {{ account.label }}
-                        {% if account.is_active %}
-                          <span class="badge bg-success ms-1">Active</span>
-                        {% else %}
-                          <span class="badge bg-secondary ms-1">Inactive</span>
-                        {% endif %}
-                      </label>
+                    <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2" data-existing-account-label="{{ account.label }}">
+                      <div class="form-check form-switch mb-0">
+                        <input
+                          class="form-check-input"
+                          type="checkbox"
+                          role="switch"
+                          id="account_{{ account.id }}"
+                          name="active_accounts"
+                          value="{{ account.id }}"
+                          {% if account.is_active %}checked{% endif %}
+                        >
+                        <label class="form-check-label" for="account_{{ account.id }}">
+                          Account {{ account.label }}
+                          {% if account.is_active %}
+                            <span class="badge bg-success ms-1">Active</span>
+                          {% else %}
+                            <span class="badge bg-secondary ms-1">Inactive</span>
+                          {% endif %}
+                        </label>
+                      </div>
+                      {% if linked_account_count > 1 %}
+                        <a href="{% url 'make_account_independent' account.id %}" class="btn btn-sm btn-outline-primary">
+                          <i class="bi bi-box-arrow-up-right me-1"></i> Make Independent
+                        </a>
+                      {% endif %}
                     </div>
                   {% endfor %}
                 </div>
@@ -98,7 +105,7 @@
                     type="text"
                     id="edit-user-account-label-entry"
                     class="form-control"
-                    maxlength="20"
+                    maxlength="100"
                     data-account-label-entry
                     data-validate="account"
                     autocomplete="off"

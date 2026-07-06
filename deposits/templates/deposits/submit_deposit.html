@@ -139,6 +139,13 @@
                   <div class="text-danger small mt-1">{{ form.annual_subscription_amount.errors|join:", " }}</div>
                   {% endif %}
                 </div>
+                <div class="col-md-3 col-6 purpose-box" data-purpose="membership">
+                  <label for="id_membership_amount" class="form-label small">Membership (UGX)</label>
+                  {{ form.membership_amount|add_class:"form-control purpose-amount" }}
+                  {% if form.membership_amount.errors %}
+                  <div class="text-danger small mt-1">{{ form.membership_amount.errors|join:", " }}</div>
+                  {% endif %}
+                </div>
                 <div class="col-md-3 col-6 purpose-box" data-purpose="fine">
                   <label for="id_fine_amount" class="form-label small">Fine (UGX)</label>
                   {{ form.fine_amount|add_class:"form-control purpose-amount" }}
@@ -161,7 +168,7 @@
                   {% endif %}
                 </div>
               </div>
-              {% if form.saving_amount.errors or form.welfare_amount.errors or form.annual_subscription_amount.errors or form.fine_amount.errors or form.shares_amount.errors or form.loan_repayment_amount.errors %}
+              {% if form.saving_amount.errors or form.welfare_amount.errors or form.annual_subscription_amount.errors or form.membership_amount.errors or form.fine_amount.errors or form.shares_amount.errors or form.loan_repayment_amount.errors %}
               <div class="text-danger small mt-1">Please correct the amounts above.</div>
               {% endif %}
               {% if form.non_field_errors %}

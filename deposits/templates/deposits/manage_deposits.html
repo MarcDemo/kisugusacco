@@ -56,6 +56,7 @@
               <th>Saving</th>
               <th>Welfare</th>
               <th>Annual</th>
+              <th>Membership</th>
               <th>Fine</th>
               <th>Shares</th>
               <th>Loan Repayment</th>
@@ -84,6 +85,7 @@
               <td>{{ deposit.saving_amount|floatformat:"0" }}</td>
               <td>{{ deposit.welfare_amount|floatformat:"0" }}</td>
               <td>{{ deposit.annual_subscription_amount|floatformat:"0" }}</td>
+              <td>{{ deposit.membership_amount|floatformat:"0" }}</td>
               <td>{{ deposit.fine_amount|floatformat:"0" }}</td>
               <td>{{ deposit.shares_amount|floatformat:"0" }}</td>
               <td>{{ deposit.loan_repayment_amount|floatformat:"0" }}</td>
@@ -257,6 +259,13 @@
                 {{ form.annual_subscription_amount|add_class:"form-control dd-purpose-amount" }}
                 {% if form.annual_subscription_amount.errors %}
                 <div class="text-danger small mt-1">{{ form.annual_subscription_amount.errors|join:", " }}</div>
+                {% endif %}
+              </div>
+              <div class="col-md-3 col-6 dd-purpose-box" data-purpose="membership">
+                <label for="id_membership_amount" class="form-label small">Membership (UGX)</label>
+                {{ form.membership_amount|add_class:"form-control dd-purpose-amount" }}
+                {% if form.membership_amount.errors %}
+                <div class="text-danger small mt-1">{{ form.membership_amount.errors|join:", " }}</div>
                 {% endif %}
               </div>
               <div class="col-md-3 col-6 dd-purpose-box" data-purpose="fine">

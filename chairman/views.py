@@ -8,14 +8,16 @@ from deposits.models import DepositSubmission
 from fines.models import Fine
 from documents.models import Document
 from incomes.models import ShareContribution, AnnualSubscription
+from loans.models import LoanRequest
 from django.conf import settings
 from datetime import date, datetime
 from Assets_Expenditures.models import Asset, Expenditure
-from .forms import AddUserForm, EditUserForm
+from .forms import AddUserForm, EditUserForm, MakeAccountIndependentForm
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.timezone import now
 from django.db import transaction
+import re
 import calendar
 from calendar import month_name
 from django.http import HttpResponse
@@ -39,6 +41,23 @@ def user_management_redirect(user):
     if user.is_authenticated and user.is_chairman():
         return 'chairman_dashboard'
     return 'member_dashboard'
+
+
+def suggested_username_from_account_label(label):
+    tokens = re.findall(r'[A-Za-z0-9]+', label or '')
+    if not tokens:
+        base = 'Member'
+    else:
+        first = tokens[0][:1].upper() + tokens[0][1:].lower()
+        second_initial = tokens[1][:1].upper() if len(tokens) > 1 else ''
+        base = f'{first}{second_initial}'
+
+    username = base
+    suffix = 2
+    while MemberProfile.objects.filter(username__iexact=username).exists():
+        username = f'{base}{suffix}'
+        suffix += 1
+    return username
 
 
 def is_leadership(user):
@@ -119,7 +138,10 @@ def user_detail(request, user_id):
         pk=user_id,
         is_superuser=False,
     )
-    return render(request, 'chairman/user_detail.html', {'managed_user': user})
+    return render(request, 'chairman/user_detail.html', {
+        'managed_user': user,
+        'linked_account_count': user.savings_accounts.count(),
+    })
 
 
 @login_required
@@ -155,6 +177,63 @@ def edit_user(request, user_id):
         'form': form,
         'managed_user': user,
         'accounts': accounts,
+        'linked_account_count': len(accounts),
+    })
+
+
+@login_required
+def make_account_independent(request, account_id):
+    if not can_manage_users(request.user):
+        messages.error(request, "Access denied. Only the Chairman or Secretary can make accounts independent.")
+        return redirect(user_management_redirect(request.user))
+
+    account = get_object_or_404(
+        SavingsAccount.objects.select_related('owner'),
+        pk=account_id,
+    )
+    linked_account_count = account.owner.savings_accounts.count()
+    if linked_account_count <= 1:
+        messages.error(request, "This savings account is already the only account under its member.")
+        return redirect('user_detail', user_id=account.owner_id)
+
+    initial = {
+        'username': suggested_username_from_account_label(account.label),
+        'full_name': account.label,
+        'role': 'MEMBER',
+    }
+    if request.method == 'POST':
+        form = MakeAccountIndependentForm(request.POST, account=account)
+        if form.is_valid():
+            with transaction.atomic():
+                locked_account = SavingsAccount.objects.select_for_update().select_related('owner').get(pk=account.pk)
+                old_owner = locked_account.owner
+                if old_owner.savings_accounts.count() <= 1:
+                    messages.error(request, "This savings account is already independent.")
+                    return redirect('user_detail', user_id=old_owner.id)
+
+                new_member = form.save()
+                locked_account.owner = new_member
+                locked_account.is_active = True
+                locked_account.save(update_fields=['owner', 'is_active'])
+
+                DepositSubmission.objects.filter(account=locked_account).update(member=new_member)
+                Fine.objects.filter(account=locked_account).update(member=new_member)
+                ShareContribution.objects.filter(account=locked_account).update(member=new_member)
+                LoanRequest.objects.filter(account=locked_account).update(member=new_member)
+
+            messages.success(
+                request,
+                f'Savings account "{locked_account.label}" is now independent under {new_member.username}.',
+            )
+            return redirect('user_detail', user_id=new_member.id)
+    else:
+        form = MakeAccountIndependentForm(account=account, initial=initial)
+
+    return render(request, 'chairman/make_account_independent.html', {
+        'form': form,
+        'account': account,
+        'linked_owner': account.owner,
+        'linked_account_count': linked_account_count,
     })
 
 
@@ -213,7 +292,7 @@ def chairman_deposit_report(request):
         ]
 
         # Table header
-        data = [['#', 'Member', 'Saving Week', 'Total', 'Saving', 'Welfare', 'Annual', 'Fine', 'Shares', 'Payment Date', 'Status']]
+        data = [['#', 'Member', 'Saving Week', 'Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Payment Date', 'Status']]
 
         # Table rows
         for i, dep in enumerate(export_qs, 1):
@@ -225,6 +304,7 @@ def chairman_deposit_report(request):
                 f"{dep.saving_amount:,.0f}",
                 f"{dep.welfare_amount:,.0f}",
                 f"{dep.annual_subscription_amount:,.0f}",
+                f"{dep.membership_amount:,.0f}",
                 f"{dep.fine_amount:,.0f}",
                 f"{dep.shares_amount:,.0f}",
                 dep.payment_date.strftime('%Y-%m-%d') if dep.payment_date else '-',
@@ -232,7 +312,7 @@ def chairman_deposit_report(request):
             ])
 
         # Table styling
-        table = Table(data, colWidths=[20, 70, 44, 42, 42, 42, 36, 36, 50, 45, 45])
+        table = Table(data, colWidths=[18, 62, 42, 38, 38, 38, 36, 48, 34, 36, 44, 40])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4CAF50")),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),

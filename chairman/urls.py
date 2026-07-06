@@ -5,6 +5,7 @@ urlpatterns = [
     path('chairman/users/', views.manage_users, name='manage_users'),
     path('chairman/users/<int:user_id>/', views.user_detail, name='user_detail'),
     path('chairman/users/<int:user_id>/edit/', views.edit_user, name='edit_user'),
+    path('chairman/accounts/<int:account_id>/make-independent/', views.make_account_independent, name='make_account_independent'),
     path('chairman/users/toggle/<int:user_id>/', views.toggle_user_status, name='toggle_user_status'),
     path('chairman/add-user/', views.add_user, name='add_user'),
     path('chairman/reports/deposits/', views.chairman_deposit_report, name='chairman_deposit_report'),

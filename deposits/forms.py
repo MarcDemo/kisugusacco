@@ -11,6 +11,7 @@ PURPOSE_CHOICES = [
     ('saving', 'Saving'),
     ('welfare', 'Welfare'),
     ('annual_subscription', 'Annual Subscription'),
+    ('membership', 'Membership'),
     ('fine', 'Fine'),
     ('shares', 'Shares'),
     ('loan_repayment', 'Loan Repayment'),
@@ -20,6 +21,7 @@ PURPOSE_AMOUNT_FIELDS = {
     'saving': 'saving_amount',
     'welfare': 'welfare_amount',
     'annual_subscription': 'annual_subscription_amount',
+    'membership': 'membership_amount',
     'fine': 'fine_amount',
     'shares': 'shares_amount',
     'loan_repayment': 'loan_repayment_amount',
@@ -59,6 +61,11 @@ class DepositSubmissionForm(forms.ModelForm):
         label="Annual Subscription",
         widget=forms.NumberInput(attrs={'placeholder': '0', 'min': '0', 'step': '100'}),
     )
+    membership_amount = forms.DecimalField(
+        min_value=0, required=False, initial=Decimal('0.00'),
+        label="Membership",
+        widget=forms.NumberInput(attrs={'placeholder': '0', 'min': '0', 'step': '100'}),
+    )
     fine_amount = forms.DecimalField(
         min_value=0, required=False, initial=Decimal('0.00'),
         label="Fine",
@@ -79,7 +86,7 @@ class DepositSubmissionForm(forms.ModelForm):
         model = DepositSubmission
         fields = [
             'account', 'payment_date', 'payment_time',
-            'saving_amount', 'welfare_amount', 'annual_subscription_amount', 'fine_amount', 'shares_amount', 'loan_repayment_amount',
+            'saving_amount', 'welfare_amount', 'annual_subscription_amount', 'membership_amount', 'fine_amount', 'shares_amount', 'loan_repayment_amount',
             'proof', 'remarks',
         ]
 
@@ -107,6 +114,8 @@ class DepositSubmissionForm(forms.ModelForm):
                 initial_purposes.append('welfare')
             if (self.instance.annual_subscription_amount or Decimal('0.00')) > 0:
                 initial_purposes.append('annual_subscription')
+            if (self.instance.membership_amount or Decimal('0.00')) > 0:
+                initial_purposes.append('membership')
             if (self.instance.fine_amount or Decimal('0.00')) > 0:
                 initial_purposes.append('fine')
             if (self.instance.shares_amount or Decimal('0.00')) > 0:
@@ -193,6 +202,11 @@ class DirectDepositForm(forms.ModelForm):
         label="Annual Subscription",
         widget=forms.NumberInput(attrs={'placeholder': '0', 'min': '0', 'step': '100'}),
     )
+    membership_amount = forms.DecimalField(
+        min_value=0, required=False, initial=Decimal('0.00'),
+        label="Membership",
+        widget=forms.NumberInput(attrs={'placeholder': '0', 'min': '0', 'step': '100'}),
+    )
     fine_amount = forms.DecimalField(
         min_value=0, required=False, initial=Decimal('0.00'),
         label="Fine",
@@ -213,7 +227,7 @@ class DirectDepositForm(forms.ModelForm):
         model = DepositSubmission
         fields = [
             'member', 'account', 'payment_week', 'payment_date', 'payment_time',
-            'saving_amount', 'welfare_amount', 'annual_subscription_amount', 'fine_amount', 'shares_amount', 'loan_repayment_amount',
+            'saving_amount', 'welfare_amount', 'annual_subscription_amount', 'membership_amount', 'fine_amount', 'shares_amount', 'loan_repayment_amount',
             'proof', 'remarks',
         ]
 
@@ -240,6 +254,8 @@ class DirectDepositForm(forms.ModelForm):
                 initial_purposes.append('welfare')
             if (self.instance.annual_subscription_amount or Decimal('0.00')) > 0:
                 initial_purposes.append('annual_subscription')
+            if (self.instance.membership_amount or Decimal('0.00')) > 0:
+                initial_purposes.append('membership')
             if (self.instance.fine_amount or Decimal('0.00')) > 0:
                 initial_purposes.append('fine')
             if (self.instance.shares_amount or Decimal('0.00')) > 0:

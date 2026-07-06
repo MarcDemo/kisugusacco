@@ -24,6 +24,7 @@ class DepositSubmission(models.Model):
     saving_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     welfare_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     annual_subscription_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    membership_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     fine_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     shares_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     loan_repayment_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
@@ -62,6 +63,7 @@ class DepositSubmission(models.Model):
             (self.saving_amount or Decimal('0.00')) +
             (self.welfare_amount or Decimal('0.00')) +
             (self.annual_subscription_amount or Decimal('0.00')) +
+            (self.membership_amount or Decimal('0.00')) +
             (self.fine_amount or Decimal('0.00')) +
             (self.shares_amount or Decimal('0.00')) +
             (self.loan_repayment_amount or Decimal('0.00'))
@@ -75,6 +77,7 @@ class DepositSubmission(models.Model):
             (self.saving_amount or Decimal('0.00')) +
             (self.welfare_amount or Decimal('0.00')) +
             (self.annual_subscription_amount or Decimal('0.00')) +
+            (self.membership_amount or Decimal('0.00')) +
             (self.fine_amount or Decimal('0.00')) +
             (self.shares_amount or Decimal('0.00')) +
             (self.loan_repayment_amount or Decimal('0.00'))
@@ -103,6 +106,8 @@ class DepositSubmission(models.Model):
             breakdown['Welfare'] = self.welfare_amount
         if self.annual_subscription_amount:
             breakdown['Annual Subscription'] = self.annual_subscription_amount
+        if self.membership_amount:
+            breakdown['Membership'] = self.membership_amount
         if self.fine_amount:
             breakdown['Fine'] = self.fine_amount
         if self.shares_amount:

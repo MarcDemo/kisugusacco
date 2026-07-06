@@ -6,7 +6,10 @@ from django.urls import reverse
 from django.utils import timezone
 
 from deposits.models import DepositSubmission
+from fines.models import Fine
 from groupcore.models import MemberProfile, SavingsAccount
+from incomes.models import ShareContribution
+from loans.models import LoanRequest
 
 
 class SecretaryUserManagementTests(TestCase):
@@ -131,6 +134,117 @@ class SecretaryUserManagementTests(TestCase):
         self.assertEqual(member.first_name, 'Edited')
         self.assertTrue(SavingsAccount.objects.get(owner=member, label='A').is_active)
         self.assertTrue(SavingsAccount.objects.get(owner=member, label='B').is_active)
+
+    def test_secretary_can_make_linked_account_independent_with_history(self):
+        owner = MemberProfile.objects.create_user(
+            username='household',
+            password='pass12345',
+            role='MEMBER',
+        )
+        SavingsAccount.objects.create(owner=owner, label='Othieno Moses')
+        account = SavingsAccount.objects.create(owner=owner, label='Sarah Othieno')
+        deposit = DepositSubmission.objects.create(
+            member=owner,
+            account=account,
+            submitted_by=self.secretary,
+            payment_week=date(2026, 1, 2),
+            starting_week=date(2026, 1, 2),
+            weeks_covered=1,
+            saving_amount=Decimal('50000.00'),
+            proof='proofs/test.jpg',
+            payment_date=date(2026, 1, 2),
+            payment_time=time(9, 0),
+            status='APPROVED',
+        )
+        fine = Fine.objects.create(
+            member=owner,
+            account=account,
+            fine_type='MISSED_WEEKLY_SAVING',
+            reference_week=date(2026, 1, 2),
+            reason='Late weekly saving',
+            amount=Decimal('2000.00'),
+            issued_by=self.secretary,
+        )
+        share = ShareContribution.objects.create(
+            member=owner,
+            account=account,
+            amount=Decimal('100000.00'),
+            recorded_by=self.secretary,
+        )
+        loan = LoanRequest.objects.create(
+            member=owner,
+            account=account,
+            principal=Decimal('100000.00'),
+            status=LoanRequest.STATUS_PENDING,
+        )
+
+        self.client.login(username='secretary', password='pass12345')
+        response = self.client.post(reverse('make_account_independent', args=[account.id]), {
+            'username': 'SarahO',
+            'full_name': 'Sarah Othieno',
+            'phone_number': '+256 700 000001',
+            'email': 'sarah@example.com',
+            'password': 'memberpass123',
+            'role': 'MEMBER',
+        }, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        new_member = MemberProfile.objects.get(username='SarahO')
+        account.refresh_from_db()
+        deposit.refresh_from_db()
+        fine.refresh_from_db()
+        share.refresh_from_db()
+        loan.refresh_from_db()
+        self.assertEqual(account.owner, new_member)
+        self.assertEqual(deposit.member, new_member)
+        self.assertEqual(fine.member, new_member)
+        self.assertEqual(share.member, new_member)
+        self.assertEqual(loan.member, new_member)
+        self.assertEqual(owner.savings_accounts.count(), 1)
+        self.assertContains(response, 'SarahO')
+
+    def test_make_independent_rejects_duplicate_email(self):
+        owner = MemberProfile.objects.create_user(
+            username='household',
+            password='pass12345',
+            role='MEMBER',
+        )
+        SavingsAccount.objects.create(owner=owner, label='Othieno Moses')
+        account = SavingsAccount.objects.create(owner=owner, label='Sarah Othieno')
+        MemberProfile.objects.create_user(
+            username='existing',
+            password='pass12345',
+            email='sarah@example.com',
+        )
+
+        self.client.login(username='secretary', password='pass12345')
+        response = self.client.post(reverse('make_account_independent', args=[account.id]), {
+            'username': 'SarahO',
+            'full_name': 'Sarah Othieno',
+            'phone_number': '+256 700 000001',
+            'email': 'sarah@example.com',
+            'password': 'memberpass123',
+            'role': 'MEMBER',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'A user with this email address already exists.')
+        account.refresh_from_db()
+        self.assertEqual(account.owner, owner)
+
+    def test_single_account_cannot_be_made_independent(self):
+        owner = MemberProfile.objects.create_user(
+            username='single',
+            password='pass12345',
+            role='MEMBER',
+        )
+        account = SavingsAccount.objects.create(owner=owner, label='Single Account')
+
+        self.client.login(username='secretary', password='pass12345')
+        response = self.client.get(reverse('make_account_independent', args=[account.id]), follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'already the only account')
 
 
 class ChairmanDepositReportYearFilterTests(TestCase):

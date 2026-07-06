@@ -160,3 +160,74 @@ class EditUserForm(AccountLabelMixin, forms.ModelForm):
             user.save()
             self.save_new_accounts(user)
         return user
+
+
+class MakeAccountIndependentForm(forms.Form):
+    username = forms.CharField(
+        max_length=150,
+        widget=forms.TextInput(attrs={'data-validate': 'username'}),
+    )
+    full_name = forms.CharField(
+        max_length=150,
+        widget=forms.TextInput(attrs={'data-validate': 'name'}),
+    )
+    phone_number = forms.CharField(
+        max_length=20,
+        required=False,
+        widget=forms.TextInput(attrs={'data-validate': 'phone'}),
+    )
+    email = forms.EmailField(
+        required=False,
+        widget=forms.EmailInput(attrs={'data-validate': 'email'}),
+    )
+    password = forms.CharField(widget=forms.PasswordInput)
+    role = forms.ChoiceField(choices=MemberProfile.ROLE_CHOICES, initial='MEMBER')
+
+    def __init__(self, *args, account=None, **kwargs):
+        self.account = account
+        initial = kwargs.setdefault('initial', {})
+        if account:
+            initial.setdefault('full_name', account.label)
+        initial.setdefault('role', 'MEMBER')
+        super().__init__(*args, **kwargs)
+
+    def clean_username(self):
+        username = (self.cleaned_data.get('username') or '').strip()
+        if MemberProfile.objects.filter(username__iexact=username).exists():
+            raise forms.ValidationError('A user with this username already exists.')
+        return username
+
+    def clean_full_name(self):
+        full_name = ' '.join((self.cleaned_data.get('full_name') or '').split())
+        if not full_name:
+            raise forms.ValidationError('Full name is required.')
+        if not NAME_RE.match(full_name):
+            raise forms.ValidationError('Full name contains invalid characters.')
+        return full_name
+
+    def clean_phone_number(self):
+        value = self.cleaned_data.get('phone_number') or ''
+        if not PHONE_RE.match(value):
+            raise forms.ValidationError('Phone number contains invalid characters.')
+        return value
+
+    def clean_email(self):
+        email = (self.cleaned_data.get('email') or '').strip()
+        if email and MemberProfile.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError('A user with this email address already exists.')
+        return email
+
+    def save(self):
+        full_name = self.cleaned_data['full_name']
+        first_name, separator, last_name = full_name.partition(' ')
+        user = MemberProfile(
+            username=self.cleaned_data['username'],
+            first_name=first_name,
+            last_name=last_name if separator else '',
+            email=self.cleaned_data.get('email') or '',
+            phone_number=self.cleaned_data.get('phone_number') or '',
+            role=self.cleaned_data.get('role') or 'MEMBER',
+        )
+        user.set_password(self.cleaned_data['password'])
+        user.save()
+        return user

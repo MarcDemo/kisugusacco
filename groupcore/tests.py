@@ -1,3 +1,4 @@
+import csv
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
@@ -502,6 +503,98 @@ class HistoricalDataImportCommandTests(TestCase):
             report_text = report_path.read_text(encoding='utf-8')
             self.assertIn('ERROR', report_text)
             self.assertIn('does not match amount sum', report_text)
+
+
+class SavingsWorkbookPreparationCommandTests(SimpleTestCase):
+    def _write_members_csv(self, directory):
+        members_path = Path(directory) / 'members.csv'
+        members_path.write_text(
+            '\n'.join([
+                'username,first_name,last_name,email,phone_number,role,account_labels,is_active',
+                'jane_user,Jane,Member,jane@example.com,+256700000001,MEMBER,Member Jane,true',
+                'joe_user,Joe,Member,joe@example.com,+256700000002,MEMBER,Member Joe,true',
+            ]),
+            encoding='utf-8',
+        )
+        return members_path
+
+    def _write_savings_workbook(self, directory):
+        from openpyxl import Workbook
+
+        workbook_path = Path(directory) / 'savings.xlsx'
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = 'January'
+
+        headers = ['Saving', 'Fine', 'Welfare', 'Shares', 'Membership', 'Annual Subscription']
+        worksheet.cell(row=1, column=3, value=date(2026, 1, 2))
+        worksheet.cell(row=1, column=9, value=date(2026, 1, 9))
+        worksheet.cell(row=2, column=1, value='S/No')
+        worksheet.cell(row=2, column=2, value='Name')
+        for index, header in enumerate(headers):
+            worksheet.cell(row=2, column=3 + index, value=header)
+            worksheet.cell(row=2, column=9 + index, value=header)
+
+        worksheet.cell(row=3, column=1, value=1)
+        worksheet.cell(row=3, column=2, value='Jane Member')
+        worksheet.cell(row=3, column=3, value=20000)
+        worksheet.cell(row=3, column=4, value=2000)
+        worksheet.cell(row=3, column=5, value=1000)
+
+        worksheet.cell(row=4, column=1, value=2)
+        worksheet.cell(row=4, column=2, value='Member Joe')
+        worksheet.cell(row=4, column=3, value=20000)
+        worksheet.cell(row=4, column=7, value=10000)
+
+        worksheet.cell(row=5, column=1, value=3)
+        worksheet.cell(row=5, column=2, value='Unknown Person')
+        worksheet.cell(row=5, column=3, value=20000)
+
+        worksheet.cell(row=3, column=9, value=50000)
+
+        summary = workbook.create_sheet('Summary')
+        summary.cell(row=1, column=1, value='Summary should be ignored')
+        workbook.save(workbook_path)
+        return workbook_path
+
+    def test_prepare_savings_workbook_writes_import_ready_rows_and_review(self):
+        with TemporaryDirectory() as directory:
+            members_path = self._write_members_csv(directory)
+            workbook_path = self._write_savings_workbook(directory)
+            transactions_path = Path(directory) / 'transactions.csv'
+            review_path = Path(directory) / 'review.csv'
+            mapping_review_path = Path(directory) / 'mapping.csv'
+
+            call_command(
+                'prepare_savings_workbook_import',
+                workbook=str(workbook_path),
+                members=str(members_path),
+                transactions=str(transactions_path),
+                review=str(review_path),
+                mapping_review=str(mapping_review_path),
+                cutoff_date='2026-01-05',
+            )
+
+            with transactions_path.open(newline='', encoding='utf-8') as handle:
+                transactions = list(csv.DictReader(handle))
+            self.assertEqual(len(transactions), 2)
+            transaction = transactions[0]
+            self.assertEqual(transaction['username'], 'jane_user')
+            self.assertEqual(transaction['account_label'], 'Member Jane')
+            self.assertEqual(transaction['payment_week'], '2026-01-02')
+            self.assertEqual(transaction['payment_date'], '2026-01-05')
+            self.assertEqual(transaction['expected_total'], '23000')
+            membership_transaction = transactions[1]
+            self.assertEqual(membership_transaction['username'], 'joe_user')
+            self.assertEqual(membership_transaction['account_label'], 'Member Joe')
+            self.assertEqual(membership_transaction['membership_amount'], '10000')
+            self.assertEqual(membership_transaction['expected_total'], '30000')
+
+            review_text = review_path.read_text(encoding='utf-8')
+            self.assertIn('READY', review_text)
+            self.assertIn('SKIPPED_UNCONFIRMED_ACCOUNT_MATCH', review_text)
+            self.assertIn('SKIPPED_FUTURE_WEEK', review_text)
+            self.assertIn('Jane Member', mapping_review_path.read_text(encoding='utf-8'))
 
 
 class UsernameUpdateCommandTests(TestCase):

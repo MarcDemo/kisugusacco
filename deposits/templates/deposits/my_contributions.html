@@ -30,6 +30,7 @@
     <span class="badge text-bg-primary">Saving</span>
     <span class="badge text-bg-success">Welfare</span>
     <span class="badge text-bg-warning text-dark">Annual</span>
+    <span class="badge text-bg-secondary">Membership</span>
     <span class="badge text-bg-danger">Fine</span>
     <span class="badge text-bg-info text-dark">Shares</span>
   </div>
@@ -92,6 +93,7 @@
               <th>Saving</th>
               <th>Welfare</th>
               <th>Annual</th>
+              <th>Membership</th>
               <th>Fine</th>
               <th>Shares</th>
               <th>Status</th>
@@ -113,6 +115,7 @@
               <td>{{ deposit.saving_amount|floatformat:"0" }}</td>
               <td>{{ deposit.welfare_amount|floatformat:"0" }}</td>
               <td>{{ deposit.annual_subscription_amount|floatformat:"0" }}</td>
+              <td>{{ deposit.membership_amount|floatformat:"0" }}</td>
               <td>{{ deposit.fine_amount|floatformat:"0" }}</td>
               <td>{{ deposit.shares_amount|floatformat:"0" }}</td>
               <td>
@@ -172,7 +175,7 @@
             {% endfor %}
             {% else %}
             <tr>
-              <td colspan="15" class="text-center text-muted py-4">
+              <td colspan="16" class="text-center text-muted py-4">
                 No contributions found for this savings account and filter.
               </td>
             </tr>
@@ -181,7 +184,7 @@
           <tfoot class="table-light">
             <tr class="fw-bold">
               <td colspan="2" class="text-end">Total Approved</td>
-              <td colspan="13">UGX {{ total_approved|floatformat:"0" }}</td>
+              <td colspan="14">UGX {{ total_approved|floatformat:"0" }}</td>
             </tr>
           </tfoot>
         </table>

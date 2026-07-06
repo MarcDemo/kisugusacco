@@ -93,6 +93,7 @@ Amount columns:
 - `saving_amount`
 - `welfare_amount`
 - `annual_subscription_amount`
+- `membership_amount`
 - `fine_amount`
 - `shares_amount`
 - `loan_repayment_amount`

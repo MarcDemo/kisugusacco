@@ -11,6 +11,7 @@ class Expenditure(models.Model):
         ('WELFARE', 'Welfare'),
         ('FINES', 'Fines'),
         ('ANNUAL_SUBSCRIPTIONS', 'Annual Subscriptions'),
+        ('MEMBERSHIP', 'Membership Fees'),
         ('SHARES', 'Shares'),
     ]
     description = models.TextField()

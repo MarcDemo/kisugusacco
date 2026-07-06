@@ -20,6 +20,7 @@
     <span class="badge text-bg-primary">Saving</span>
     <span class="badge text-bg-success">Welfare</span>
     <span class="badge text-bg-warning text-dark">Annual</span>
+    <span class="badge text-bg-secondary">Membership</span>
     <span class="badge text-bg-danger">Fine</span>
     <span class="badge text-bg-info text-dark">Shares</span>
   </div>
@@ -71,6 +72,7 @@
           <th>Saving</th>
           <th>Welfare</th>
           <th>Annual</th>
+          <th>Membership</th>
           <th>Fine</th>
           <th>Shares</th>
           <th>Payment Date</th>
@@ -88,6 +90,7 @@
           <td>{{ deposit.saving_amount|floatformat:"0" }}</td>
           <td>{{ deposit.welfare_amount|floatformat:"0" }}</td>
           <td>{{ deposit.annual_subscription_amount|floatformat:"0" }}</td>
+          <td>{{ deposit.membership_amount|floatformat:"0" }}</td>
           <td>{{ deposit.fine_amount|floatformat:"0" }}</td>
           <td>{{ deposit.shares_amount|floatformat:"0" }}</td>
           <td>{{ deposit.payment_date }}</td>
@@ -103,7 +106,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="12" class="text-center">No deposits found.</td></tr>
+        <tr><td colspan="13" class="text-center">No deposits found.</td></tr>
         {% endfor %}
       </tbody>
     </table>

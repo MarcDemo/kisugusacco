@@ -118,10 +118,12 @@
   <div class="mob-card p-3 mb-4">
     <h6 class="mb-3 text-secondary">Current Week Collection Split</h6>
     <div class="row g-3">
-      <div class="col-md-3 col-6"><small class="text-muted">Saving</small><div class="fw-bold">UGX {{ current_week_purpose_totals.saving|floatformat:"0" }}</div></div>
-      <div class="col-md-3 col-6"><small class="text-muted">Welfare</small><div class="fw-bold">UGX {{ current_week_purpose_totals.welfare|floatformat:"0" }}</div></div>
-      <div class="col-md-3 col-6"><small class="text-muted">Annual Subscription</small><div class="fw-bold">UGX {{ current_week_purpose_totals.annual_subscription|floatformat:"0" }}</div></div>
-      <div class="col-md-3 col-6"><small class="text-muted">Fine Payments</small><div class="fw-bold">UGX {{ current_week_purpose_totals.fine|floatformat:"0" }}</div></div>
+      <div class="col-md-2 col-6"><small class="text-muted">Saving</small><div class="fw-bold">UGX {{ current_week_purpose_totals.saving|floatformat:"0" }}</div></div>
+      <div class="col-md-2 col-6"><small class="text-muted">Welfare</small><div class="fw-bold">UGX {{ current_week_purpose_totals.welfare|floatformat:"0" }}</div></div>
+      <div class="col-md-2 col-6"><small class="text-muted">Annual Subscription</small><div class="fw-bold">UGX {{ current_week_purpose_totals.annual_subscription|floatformat:"0" }}</div></div>
+      <div class="col-md-2 col-6"><small class="text-muted">Membership</small><div class="fw-bold">UGX {{ current_week_purpose_totals.membership|floatformat:"0" }}</div></div>
+      <div class="col-md-2 col-6"><small class="text-muted">Fine Payments</small><div class="fw-bold">UGX {{ current_week_purpose_totals.fine|floatformat:"0" }}</div></div>
+      <div class="col-md-2 col-6"><small class="text-muted">Shares</small><div class="fw-bold">UGX {{ current_week_purpose_totals.shares|floatformat:"0" }}</div></div>
     </div>
   </div>
 

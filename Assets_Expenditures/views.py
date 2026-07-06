@@ -16,6 +16,7 @@ SOURCE_FIELD_MAP = {
     'WELFARE': 'welfare_amount',
     'FINES': 'fine_amount',
     'ANNUAL_SUBSCRIPTIONS': 'annual_subscription_amount',
+    'MEMBERSHIP': 'membership_amount',
     'SHARES': 'shares_amount',
 }
 
