@@ -81,6 +81,17 @@ class FinancialRecordsViewTests(TestCase):
         self.assertEqual(response.context['summary_totals']['saving'], Decimal('30000'))
         self.assertEqual(response.context['summary_totals']['welfare'], Decimal('1000'))
 
+    def test_financial_records_allow_historical_deposits_without_submitter(self):
+        self.previous_deposit.submitted_by = None
+        self.previous_deposit.import_reference = 'historical-previous-deposit'
+        self.previous_deposit.save(update_fields=['submitted_by', 'import_reference'])
+        self.client.login(username='treasurer', password='pass12345')
+
+        response = self.client.get(reverse('other_income_list'), {'year': self.previous_year})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Historical Import')
+
     def test_regular_member_cannot_view_treasurer_financial_records(self):
         self.client.login(username='member', password='pass12345')
 

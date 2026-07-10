@@ -221,7 +221,13 @@
                   <span class="badge text-bg-primary">Live Entry</span>
                 {% endif %}
               </td>
-              <td>{{ deposit.submitted_by.get_full_name|default:deposit.submitted_by.username|default:"-" }}</td>
+              <td>
+                {% if deposit.submitted_by %}
+                  {{ deposit.submitted_by.get_full_name|default:deposit.submitted_by.username }}
+                {% else %}
+                  -
+                {% endif %}
+              </td>
               <td>{{ deposit.remarks|default:"-" }}</td>
             </tr>
           {% empty %}
@@ -262,7 +268,13 @@
                 <td>{{ share.account.label|default:"-" }}</td>
                 <td class="amount-cell">UGX {{ share.amount|floatformat:"0"|intcomma }}</td>
                 <td>{{ share.remarks|default:"-" }}</td>
-                <td>{{ share.recorded_by.get_full_name|default:share.recorded_by.username|default:"-" }}</td>
+                <td>
+                  {% if share.recorded_by %}
+                    {{ share.recorded_by.get_full_name|default:share.recorded_by.username }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
               </tr>
             {% empty %}
               <tr>
@@ -300,7 +312,13 @@
                   {% endif %}
                 </td>
                 <td>{{ subscription.paid_on|default:"-" }}</td>
-                <td>{{ subscription.recorded_by.get_full_name|default:subscription.recorded_by.username|default:"-" }}</td>
+                <td>
+                  {% if subscription.recorded_by %}
+                    {{ subscription.recorded_by.get_full_name|default:subscription.recorded_by.username }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
               </tr>
             {% empty %}
               <tr>
