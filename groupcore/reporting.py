@@ -18,6 +18,7 @@ def years_from_dates(queryset, field_name):
     return [
         year_start.year
         for year_start in queryset.dates(field_name, 'year', order='DESC')
+        if year_start is not None
     ]
 
 

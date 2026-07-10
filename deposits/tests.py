@@ -13,6 +13,7 @@ from fines.models import Fine
 from groupcore.account_context import SESSION_KEY_ACTIVE_ACCOUNT
 from groupcore.models import GroupSettings, MemberProfile, SavingsAccount
 from groupcore.week_cycle import current_saving_week
+from loans.models import LoanRequest
 
 
 class TreasurerReportYearFilterTests(TestCase):
@@ -83,6 +84,21 @@ class TreasurerReportYearFilterTests(TestCase):
         self.assertEqual(row['total_saving'], Decimal('50000'))
         self.assertEqual(row['total_amount'], Decimal('50000'))
         self.assertEqual(row['total_weeks'], 1)
+
+    def test_treasurer_report_ignores_approved_loans_without_approval_date_in_year_options(self):
+        LoanRequest.objects.create(
+            member=self.member,
+            principal=Decimal('100000.00'),
+            monthly_interest_rate=Decimal('2.00'),
+            status=LoanRequest.STATUS_APPROVED,
+            approved_on=None,
+        )
+        self.client.login(username='treasurer', password='pass12345')
+
+        response = self.client.get(reverse('treasurer_reports'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(self.current_year, response.context['years'])
 
     def test_member_export_filenames_include_selected_year(self):
         pdf_response = self.client.get(
