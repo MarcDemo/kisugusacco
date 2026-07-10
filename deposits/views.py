@@ -78,7 +78,15 @@ def _apply_loan_repayment(member, account, repayment_amount, paid_on, recorded_b
 
 @login_required
 def submit_deposit(request):
-    if not (request.user.is_member() or request.user.is_secretary() or request.user.is_mobilizer() or request.user.is_chairman()):
+    if not (
+        request.user.is_member()
+        or request.user.is_secretary()
+        or request.user.is_mobilizer()
+        or request.user.is_chairman()
+        or request.user.is_vice_chairman()
+        or request.user.is_overseer()
+        or request.user.is_treasurer()
+    ):
         return redirect('login')
 
     group_settings = GroupSettings.get_active()

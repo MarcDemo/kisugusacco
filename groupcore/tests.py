@@ -151,11 +151,17 @@ class GroupSettingsSetupTests(TestCase):
 class LeadershipAccountSelectionTests(TestCase):
     def setUp(self):
         GroupSettings.objects.create(week_one_start=first_friday_of_year(timezone.localdate().year))
+        self.treasurer = MemberProfile.objects.create_user(
+            username='treasurer',
+            password='pass12345',
+            role='TREASURER',
+        )
         self.secretary = MemberProfile.objects.create_user(
             username='secretary',
             password='pass12345',
             role='SECRETARY',
         )
+        SavingsAccount.objects.create(owner=self.treasurer, label='T1')
         SavingsAccount.objects.create(owner=self.secretary, label='A1')
         SavingsAccount.objects.create(owner=self.secretary, label='A2')
 
@@ -174,6 +180,22 @@ class LeadershipAccountSelectionTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response['Location'].startswith(reverse('select_savings_account')))
         self.assertIn(reverse('submit_deposit'), response['Location'])
+
+    def test_treasurer_can_access_personal_deposit_submission(self):
+        self.client.login(username='treasurer', password='pass12345')
+
+        response = self.client.get(reverse('submit_deposit'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'deposits/submit_deposit.html')
+
+    def test_treasurer_mobile_deposit_shortcut_opens_deposit_management(self):
+        self.client.login(username='treasurer', password='pass12345')
+
+        response = self.client.get(reverse('treasurer_dashboard'))
+
+        self.assertContains(response, f'href="{reverse("manage_deposits")}"')
+        self.assertContains(response, '<i class="bi bi-clipboard-check"></i><span>Deposits</span>', html=True)
 
     def test_account_selection_returns_to_requested_member_feature(self):
         self.client.login(username='secretary', password='pass12345')

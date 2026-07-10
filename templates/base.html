@@ -1244,9 +1244,15 @@
       </a>
     {% endif %}
 
-    <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'submit_deposit' %}active{% endif %}" href="{% url 'submit_deposit' %}">
-      <i class="bi bi-wallet2"></i><span>Deposit</span>
-    </a>
+    {% if request.user.is_treasurer %}
+      <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'manage_deposits' %}active{% endif %}" href="{% url 'manage_deposits' %}">
+        <i class="bi bi-clipboard-check"></i><span>Deposits</span>
+      </a>
+    {% else %}
+      <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'submit_deposit' %}active{% endif %}" href="{% url 'submit_deposit' %}">
+        <i class="bi bi-wallet2"></i><span>Deposit</span>
+      </a>
+    {% endif %}
     <a class="mobile-bottom-nav__link {% if request.resolver_match.url_name == 'request_loan' or request.resolver_match.url_name == 'my_loans' or request.resolver_match.url_name == 'loan_statuses' or request.resolver_match.url_name == 'pending_loans' or request.resolver_match.url_name == 'guarantor_requests' or request.resolver_match.url_name == 'guarantor_request_detail' %}active{% endif %}" href="{% url 'my_loans' %}">
       <i class="bi bi-bank"></i><span>Loans</span>
     </a>
