@@ -1,78 +1,316 @@
 {% extends 'base.html' %}
+{% load humanize %}
+
 {% block content %}
-<div class="container py-4">
-  <h2 class="mb-4 text-success"><i class="bi bi-cash-stack me-2"></i> Financial Records</h2>
+<style>
+  .finance-shell {
+    max-width: 1440px;
+  }
 
-  <a href="{% url 'add_income' %}" class="btn btn-sm btn-primary mb-3">
-    <i class="bi bi-plus-circle me-1"></i> Add Share / Subscription
-  </a>
+  .finance-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
 
-  <h5 class="mt-3">Share Contributions</h5>
-  <div class="table-responsive mb-4">
-    <table class="table table-bordered table-striped mb-0 align-middle">
-      <thead class="table-light">
-        <tr>
-          <th>Date</th>
-          <th>Member</th>
-          <th>Account</th>
-          <th>Amount</th>
-          <th>Remarks</th>
-          <th>Recorded By</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for share in shares %}
-          <tr>
-            <td>{{ share.contribution_date }}</td>
-            <td>{{ share.member.get_full_name|default:share.member.username }}</td>
-            <td>{{ share.account.label|default:"-" }}</td>
-            <td>UGX {{ share.amount|floatformat:"0" }}</td>
-            <td>{{ share.remarks|default:"-" }}</td>
-            <td>{{ share.recorded_by.get_full_name|default:share.recorded_by.username }}</td>
-          </tr>
-        {% empty %}
-          <tr>
-            <td colspan="6" class="text-center text-muted">No other income recorded.</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 0.85rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .summary-tile {
+    border: 1px solid #dbeee2;
+    border-radius: 8px;
+    padding: 1rem;
+    background: linear-gradient(180deg, #f8fffb, #ffffff);
+  }
+
+  .summary-label {
+    color: #5f6f66;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .summary-value {
+    color: #0b3d20;
+    font-size: 1.25rem;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-top: 0.35rem;
+  }
+
+  .section-card {
+    border: 1px solid #dbeee2;
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+    margin-bottom: 1.25rem;
+  }
+
+  .section-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.9rem 1rem;
+    background: #eaf7ef;
+    color: #0b3d20;
+    border-bottom: 1px solid #dbeee2;
+  }
+
+  .section-title h5 {
+    margin: 0;
+    font-weight: 800;
+  }
+
+  .finance-table {
+    min-width: 1320px;
+  }
+
+  .finance-table th {
+    white-space: nowrap;
+    color: #0b3d20;
+  }
+
+  .finance-table td {
+    vertical-align: middle;
+  }
+
+  .amount-cell {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .muted-note {
+    color: #64756b;
+    font-size: 0.92rem;
+  }
+
+  @media (max-width: 767.98px) {
+    .finance-header {
+      display: block;
+    }
+
+    .finance-header form,
+    .finance-header .btn {
+      width: 100%;
+    }
+
+    .summary-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+</style>
+
+<div class="container py-4 finance-shell">
+  <div class="finance-header">
+    <div>
+      <h2 class="mb-1 text-success"><i class="bi bi-cash-stack me-2"></i> Financial Records</h2>
+      <div class="muted-note">Official approved deposits for saving year {{ selected_year }}.</div>
+    </div>
+
+    <div class="d-flex flex-wrap align-items-end gap-2">
+      <form method="get" class="d-flex flex-wrap align-items-end gap-2">
+        <div>
+          <label for="record-year" class="form-label small text-muted mb-1">Saving Year</label>
+          <select id="record-year" name="year" class="form-select form-select-sm">
+            {% for year in years %}
+              <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-funnel me-1"></i> View
+        </button>
+      </form>
+
+      {% if request.user.is_treasurer %}
+        <a href="{% url 'add_income' %}" class="btn btn-success btn-sm">
+          <i class="bi bi-plus-circle me-1"></i> Add Manual Record
+        </a>
+      {% endif %}
+    </div>
   </div>
 
-  <h5>Annual Subscriptions</h5>
-  <div class="table-responsive">
-    <table class="table table-bordered table-striped align-middle">
-      <thead class="table-light">
-        <tr>
-          <th>Member</th>
-          <th>Year</th>
-          <th>Amount</th>
-          <th>Status</th>
-          <th>Paid On</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for subscription in subscriptions %}
+  <div class="summary-grid">
+    <div class="summary-tile">
+      <div class="summary-label">Grand Total</div>
+      <div class="summary-value">UGX {{ summary_totals.total|floatformat:"0"|intcomma }}</div>
+    </div>
+    <div class="summary-tile">
+      <div class="summary-label">Saving</div>
+      <div class="summary-value">UGX {{ summary_totals.saving|floatformat:"0"|intcomma }}</div>
+    </div>
+    <div class="summary-tile">
+      <div class="summary-label">Welfare</div>
+      <div class="summary-value">UGX {{ summary_totals.welfare|floatformat:"0"|intcomma }}</div>
+    </div>
+    <div class="summary-tile">
+      <div class="summary-label">Annual</div>
+      <div class="summary-value">UGX {{ summary_totals.annual|floatformat:"0"|intcomma }}</div>
+    </div>
+    <div class="summary-tile">
+      <div class="summary-label">Membership</div>
+      <div class="summary-value">UGX {{ summary_totals.membership|floatformat:"0"|intcomma }}</div>
+    </div>
+    <div class="summary-tile">
+      <div class="summary-label">Fines</div>
+      <div class="summary-value">UGX {{ summary_totals.fine|floatformat:"0"|intcomma }}</div>
+    </div>
+    <div class="summary-tile">
+      <div class="summary-label">Shares</div>
+      <div class="summary-value">UGX {{ summary_totals.shares|floatformat:"0"|intcomma }}</div>
+    </div>
+    <div class="summary-tile">
+      <div class="summary-label">Loan Repayments</div>
+      <div class="summary-value">UGX {{ summary_totals.loan_repayment|floatformat:"0"|intcomma }}</div>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <div class="section-title">
+      <h5><i class="bi bi-journal-check me-2"></i> Approved Deposit Records</h5>
+      <span class="badge text-bg-success">{{ summary_totals.record_count }} record{{ summary_totals.record_count|pluralize }}</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-bordered table-hover mb-0 finance-table">
+        <thead class="table-light">
           <tr>
-            <td>{{ subscription.member.get_full_name|default:subscription.member.username }}</td>
-            <td>{{ subscription.year }}</td>
-            <td>UGX {{ subscription.amount|floatformat:"0" }}</td>
-            <td>
-              {% if subscription.is_paid %}
-                <span class="badge bg-success">Paid</span>
-              {% else %}
-                <span class="badge bg-warning text-dark">Pending</span>
-              {% endif %}
-            </td>
-            <td>{{ subscription.paid_on|default:"-" }}</td>
+            <th>Saving Week</th>
+            <th>Payment Date</th>
+            <th>Member</th>
+            <th>Account</th>
+            <th class="amount-cell">Saving</th>
+            <th class="amount-cell">Welfare</th>
+            <th class="amount-cell">Annual</th>
+            <th class="amount-cell">Membership</th>
+            <th class="amount-cell">Fine</th>
+            <th class="amount-cell">Shares</th>
+            <th class="amount-cell">Loan Repayment</th>
+            <th class="amount-cell">Total</th>
+            <th>Source</th>
+            <th>Submitted By</th>
+            <th>Remarks</th>
           </tr>
-        {% empty %}
-          <tr>
-            <td colspan="5" class="text-center text-muted">No subscriptions recorded.</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for deposit in financial_deposits %}
+            <tr>
+              <td>{{ deposit.payment_week|date:"M d, Y" }}</td>
+              <td>{{ deposit.payment_date|date:"M d, Y" }}</td>
+              <td>{{ deposit.member.get_full_name|default:deposit.member.username }}</td>
+              <td>{{ deposit.account.label|default:"-" }}</td>
+              <td class="amount-cell">{{ deposit.saving_amount|floatformat:"0"|intcomma }}</td>
+              <td class="amount-cell">{{ deposit.welfare_amount|floatformat:"0"|intcomma }}</td>
+              <td class="amount-cell">{{ deposit.annual_subscription_amount|floatformat:"0"|intcomma }}</td>
+              <td class="amount-cell">{{ deposit.membership_amount|floatformat:"0"|intcomma }}</td>
+              <td class="amount-cell">{{ deposit.fine_amount|floatformat:"0"|intcomma }}</td>
+              <td class="amount-cell">{{ deposit.shares_amount|floatformat:"0"|intcomma }}</td>
+              <td class="amount-cell">{{ deposit.loan_repayment_amount|floatformat:"0"|intcomma }}</td>
+              <td class="amount-cell fw-bold">UGX {{ deposit.amount|floatformat:"0"|intcomma }}</td>
+              <td>
+                {% if deposit.import_reference %}
+                  <span class="badge text-bg-secondary">Historical Import</span>
+                {% else %}
+                  <span class="badge text-bg-primary">Live Entry</span>
+                {% endif %}
+              </td>
+              <td>{{ deposit.submitted_by.get_full_name|default:deposit.submitted_by.username|default:"-" }}</td>
+              <td>{{ deposit.remarks|default:"-" }}</td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="15" class="text-center text-muted py-4">No approved financial records found for {{ selected_year }}.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <div class="section-title">
+      <h5><i class="bi bi-archive me-2"></i> Manual / Legacy Records</h5>
+      <span class="muted-note">Shown separately because the approved deposits above are the official totals.</span>
+    </div>
+
+    <div class="p-3">
+      <h6 class="fw-bold text-success">Share Contributions</h6>
+      <div class="table-responsive mb-4">
+        <table class="table table-bordered table-striped mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Date</th>
+              <th>Member</th>
+              <th>Account</th>
+              <th class="amount-cell">Amount</th>
+              <th>Remarks</th>
+              <th>Recorded By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for share in shares %}
+              <tr>
+                <td>{{ share.contribution_date }}</td>
+                <td>{{ share.member.get_full_name|default:share.member.username }}</td>
+                <td>{{ share.account.label|default:"-" }}</td>
+                <td class="amount-cell">UGX {{ share.amount|floatformat:"0"|intcomma }}</td>
+                <td>{{ share.remarks|default:"-" }}</td>
+                <td>{{ share.recorded_by.get_full_name|default:share.recorded_by.username|default:"-" }}</td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="6" class="text-center text-muted">No manual share records for {{ selected_year }}.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h6 class="fw-bold text-success">Annual Subscriptions</h6>
+      <div class="table-responsive">
+        <table class="table table-bordered table-striped align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Member</th>
+              <th>Year</th>
+              <th class="amount-cell">Amount</th>
+              <th>Status</th>
+              <th>Paid On</th>
+              <th>Recorded By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for subscription in subscriptions %}
+              <tr>
+                <td>{{ subscription.member.get_full_name|default:subscription.member.username }}</td>
+                <td>{{ subscription.year }}</td>
+                <td class="amount-cell">UGX {{ subscription.amount|floatformat:"0"|intcomma }}</td>
+                <td>
+                  {% if subscription.is_paid %}
+                    <span class="badge bg-success">Paid</span>
+                  {% else %}
+                    <span class="badge bg-warning text-dark">Pending</span>
+                  {% endif %}
+                </td>
+                <td>{{ subscription.paid_on|default:"-" }}</td>
+                <td>{{ subscription.recorded_by.get_full_name|default:subscription.recorded_by.username|default:"-" }}</td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="6" class="text-center text-muted">No manual subscription records for {{ selected_year }}.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}

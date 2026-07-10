@@ -1,6 +1,11 @@
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
+from django.db.models import Sum
+
+from deposits.models import DepositSubmission
+from groupcore.reporting import merge_year_options, parse_report_year, years_from_dates
+
 from .models import ShareContribution, AnnualSubscription
 from .forms import ShareContributionForm, AnnualSubscriptionForm
 
@@ -8,9 +13,55 @@ from .forms import ShareContributionForm, AnnualSubscriptionForm
 
 @login_required
 def income_list(request):
-    shares = ShareContribution.objects.select_related('member', 'account').order_by('-contribution_date')
-    subscriptions = AnnualSubscription.objects.select_related('member').order_by('-year', 'member__username')
+    if not (request.user.is_treasurer() or request.user.is_chairman()):
+        messages.error(request, "Access denied.")
+        return redirect('member_dashboard')
+
+    selected_year = parse_report_year(request.GET.get('year'))
+    approved_deposits_base = DepositSubmission.objects.filter(status='APPROVED')
+    years = merge_year_options(
+        years_from_dates(approved_deposits_base, 'payment_week'),
+        years_from_dates(ShareContribution.objects.all(), 'contribution_date'),
+        AnnualSubscription.objects.values_list('year', flat=True).distinct(),
+        selected_year=selected_year,
+    )
+
+    financial_deposits = (
+        approved_deposits_base
+        .filter(payment_week__year=selected_year)
+        .select_related('member', 'account', 'submitted_by')
+        .order_by('-payment_week', 'member__username', 'account__label', '-id')
+    )
+    raw_totals = financial_deposits.aggregate(
+        total=Sum('amount'),
+        saving=Sum('saving_amount'),
+        welfare=Sum('welfare_amount'),
+        annual=Sum('annual_subscription_amount'),
+        membership=Sum('membership_amount'),
+        fine=Sum('fine_amount'),
+        shares=Sum('shares_amount'),
+        loan_repayment=Sum('loan_repayment_amount'),
+    )
+    summary_totals = {key: value or 0 for key, value in raw_totals.items()}
+    summary_totals['record_count'] = financial_deposits.count()
+
+    shares = (
+        ShareContribution.objects
+        .select_related('member', 'account', 'recorded_by')
+        .filter(contribution_date__year=selected_year)
+        .order_by('-contribution_date')
+    )
+    subscriptions = (
+        AnnualSubscription.objects
+        .select_related('member', 'recorded_by')
+        .filter(year=selected_year)
+        .order_by('-year', 'member__username')
+    )
     return render(request, 'incomes/income_list.html', {
+        'financial_deposits': financial_deposits,
+        'selected_year': selected_year,
+        'years': years,
+        'summary_totals': summary_totals,
         'shares': shares,
         'subscriptions': subscriptions,
     })
