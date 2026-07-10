@@ -40,15 +40,15 @@
     }
 
     .bg-slideshow .slide:nth-child(1) {
-      background-image: url("{% static 'images/saving group (1).jpg' %}");
+      background-image: url("{% static 'images/login-bg-1.webp' %}");
       animation-delay: 0s;
     }
     .bg-slideshow .slide:nth-child(2) {
-      background-image: url("{% static 'images/plant saving (1).jpg' %}");
+      background-image: url("{% static 'images/login-bg-2.webp' %}");
       animation-delay: 6s;
     }
     .bg-slideshow .slide:nth-child(3) {
-      background-image: url("{% static 'images/saving 2.png' %}");
+      background-image: url("{% static 'images/login-bg-3.webp' %}");
       animation-delay: 12s;
     }
 
@@ -161,6 +161,16 @@
         padding: 1rem 0.75rem;
       }
 
+      .bg-slideshow .slide:nth-child(1) {
+        background-image: url("{% static 'images/login-bg-1-mobile.webp' %}");
+      }
+      .bg-slideshow .slide:nth-child(2) {
+        background-image: url("{% static 'images/login-bg-2-mobile.webp' %}");
+      }
+      .bg-slideshow .slide:nth-child(3) {
+        background-image: url("{% static 'images/login-bg-3-mobile.webp' %}");
+      }
+
       .glass-card {
         max-width: 100%;
         padding: 1.5rem 1.25rem;
@@ -211,13 +221,6 @@
       }
     }
 
-    /* Ensure high-quality background image for high-density displays */
-    @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-      body, html {
-        background-image: url("{% static 'images/land_savings.webp' %}");
-        background-size: cover;
-      }
-    }
   </style>
 </head>
 <body>
