@@ -280,14 +280,14 @@
             <td>{% if loan.account %}<span class="badge rounded-pill" style="background:#e0e7ff;color:#3730a3;">Acct {{ loan.account.label }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
             <td class="fw-semibold">UGX {{ loan.principal|floatformat:'0' }}</td>
             <td><span class="badge text-bg-light border">{{ loan.monthly_interest_rate }}%</span></td>
-            <td>{{ loan.duration_months }} mo</td>
+            <td>{% if loan.duration_months %}{{ loan.duration_months }} mo{% else %}<span class="text-muted">—</span>{% endif %}</td>
             <td>
               {% if loan.overdue_months_as_of %}
                 <span class="badge rounded-pill" style="background:#ffe4e6;color:#9f1239;">{{ loan.overdue_months_as_of }} mo</span>
               {% else %}<span class="text-muted small">—</span>{% endif %}
             </td>
             <td>{% if loan.overdue_interest_as_of %}UGX {{ loan.overdue_interest_as_of|floatformat:'0' }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
-            <td>UGX {{ loan.total_repayment|floatformat:'0' }}</td>
+            <td>{% if loan.duration_months %}UGX {{ loan.total_repayment|floatformat:'0' }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
             <td class="fw-semibold text-danger">UGX {{ loan.total_due_as_of|floatformat:'0' }}</td>
             <td class="text-success fw-semibold">UGX {{ loan.amount_paid|floatformat:'0' }}</td>
             <td class="fw-bold">UGX {{ loan.outstanding_balance|floatformat:'0' }}</td>

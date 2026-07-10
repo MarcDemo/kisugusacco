@@ -25,7 +25,7 @@
         <tr>
           <td>{{ approval.loan.member.get_full_name|default:approval.loan.member.username }}</td>
           <td>UGX {{ approval.loan.principal|floatformat:'0' }}</td>
-          <td>{{ approval.loan.duration_months }} months</td>
+          <td>{% if approval.loan.duration_months %}{{ approval.loan.duration_months }} months{% else %}<span class="text-muted">—</span>{% endif %}</td>
           <td>
             {% if approval.status == 'APPROVED' %}
               <span class="badge text-bg-success">Approved</span>

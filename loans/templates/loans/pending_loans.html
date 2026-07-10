@@ -25,7 +25,7 @@
           <td>{{ loan.member.get_full_name|default:loan.member.username }}</td>
           <td>UGX {{ loan.principal|floatformat:'0' }}</td>
           <td>{{ loan.monthly_interest_rate }}%</td>
-          <td>{{ loan.duration_months }}</td>
+          <td>{% if loan.duration_months %}{{ loan.duration_months }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
           <td>
             {% if loan.status == 'PENDING_GUARANTOR' %}
               <span class="badge text-bg-secondary">Awaiting Guarantors' Approval</span>

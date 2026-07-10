@@ -25,7 +25,7 @@ class LoanRequest(models.Model):
     account = models.ForeignKey(SavingsAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name='loan_requests')
     principal = models.DecimalField(max_digits=12, decimal_places=2)
     monthly_interest_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('2.00'))
-    duration_months = models.PositiveIntegerField(default=1)
+    duration_months = models.PositiveIntegerField(null=True, blank=True)
     purpose = models.TextField(blank=True, null=True)
 
     treasurer_approved_by = models.ForeignKey(MemberProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name='treasurer_approved_loans')
@@ -36,11 +36,20 @@ class LoanRequest(models.Model):
     requested_on = models.DateTimeField(auto_now_add=True)
     approved_on = models.DateTimeField(null=True, blank=True)
     remarks = models.TextField(blank=True, null=True)
+    import_reference = models.CharField(
+        max_length=120,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="Unique source reference used to prevent duplicate historical loan imports.",
+    )
+    import_batch = models.CharField(max_length=120, blank=True, null=True)
+    imported_at = models.DateTimeField(blank=True, null=True)
 
     def clean(self):
         if self.principal <= 0:
             raise ValidationError({'principal': 'Loan amount must be greater than zero.'})
-        if self.duration_months <= 0:
+        if self.duration_months is not None and self.duration_months <= 0:
             raise ValidationError({'duration_months': 'Duration must be at least one month.'})
         if self.account_id and self.member_id and self.account.owner_id != self.member_id:
             raise ValidationError({'account': 'Selected account does not belong to this member.'})
@@ -48,6 +57,8 @@ class LoanRequest(models.Model):
     @property
     def monthly_repayment(self):
         """Reducing balance (EMI) formula: P * r / (1 - (1+r)^-n)"""
+        if not self.duration_months:
+            return None
         r = self.monthly_interest_rate / Decimal('100.00')
         n = self.duration_months
         if r == 0 or n == 0:
@@ -57,10 +68,14 @@ class LoanRequest(models.Model):
 
     @property
     def total_repayment(self):
+        if not self.duration_months:
+            return None
         return self.monthly_repayment * Decimal(self.duration_months)
 
     @property
     def total_interest(self):
+        if not self.duration_months:
+            return self.accrued_interest_as_of
         return self.total_repayment - self.principal
 
     def _accrual_anchor_date(self):
@@ -161,7 +176,7 @@ class LoanRequest(models.Model):
         }
 
     def overdue_months_as_of(self, as_of_date=None):
-        if self.status != 'APPROVED':
+        if self.status != 'APPROVED' or not self.duration_months:
             return 0
         as_of_date = as_of_date or timezone.now().date()
         months_elapsed = self._elapsed_full_months(self._accrual_anchor_date(), as_of_date)
@@ -337,6 +352,15 @@ class LoanRepayment(models.Model):
         related_name='recorded_loan_repayments',
     )
     notes = models.CharField(max_length=255, blank=True)
+    import_reference = models.CharField(
+        max_length=120,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="Unique source reference used to prevent duplicate historical repayment imports.",
+    )
+    import_batch = models.CharField(max_length=120, blank=True, null=True)
+    imported_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

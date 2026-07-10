@@ -28,6 +28,7 @@ class LoanRequestForm(forms.ModelForm):
         user = kwargs.pop('user', None)
         self.user = user
         super().__init__(*args, **kwargs)
+        self.fields['duration_months'].required = True
         if user:
             self.fields['account'].queryset = SavingsAccount.objects.filter(owner=user, is_active=True)
             self.fields['guarantors'].queryset = (

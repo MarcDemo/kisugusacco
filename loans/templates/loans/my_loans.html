@@ -20,9 +20,9 @@
         <tr>
           <td>{{ loan.requested_on|date:'Y-m-d H:i' }}</td>
           <td>{{ loan.monthly_interest_rate }}% p.m.</td>
-          <td>{{ loan.duration_months }} months</td>
-          <td>UGX {{ loan.monthly_repayment|floatformat:'0' }}</td>
-          <td>UGX {{ loan.total_repayment|floatformat:'0' }}</td>
+          <td>{% if loan.duration_months %}{{ loan.duration_months }} months{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td>{% if loan.duration_months %}UGX {{ loan.monthly_repayment|floatformat:'0' }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td>{% if loan.duration_months %}UGX {{ loan.total_repayment|floatformat:'0' }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
           <td>
             {% if loan.status == 'APPROVED' %}
               <span class="badge text-bg-success">Approved</span>

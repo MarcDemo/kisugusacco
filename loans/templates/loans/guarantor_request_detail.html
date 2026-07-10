@@ -28,7 +28,7 @@
             </div>
             <div class="col-md-4">
               <div class="text-muted small">Duration</div>
-              <div class="fw-semibold">{{ loan.duration_months }} months</div>
+              <div class="fw-semibold">{% if loan.duration_months %}{{ loan.duration_months }} months{% else %}—{% endif %}</div>
             </div>
             <div class="col-12">
               <div class="text-muted small">Purpose</div>
