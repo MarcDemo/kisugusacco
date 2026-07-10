@@ -1,3 +1,6 @@
+import logging
+
+from django.conf import settings as django_settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
@@ -27,6 +30,9 @@ from django.core.mail import send_mail
 import random, datetime
 from django.core.mail import EmailMultiAlternatives
 from groupcore.account_context import get_active_account, get_user_active_accounts, set_active_account
+
+
+logger = logging.getLogger(__name__)
 
 
 # Create your views here.
@@ -289,9 +295,20 @@ def forgot_password(request):
             </html>
             """
 
-            email_msg = EmailMultiAlternatives(subject, text_content, settings.DEFAULT_FROM_EMAIL, [email])
+            email_msg = EmailMultiAlternatives(subject, text_content, django_settings.DEFAULT_FROM_EMAIL, [email])
             email_msg.attach_alternative(html_content, "text/html")
-            email_msg.send()
+            try:
+                email_msg.send()
+            except Exception:
+                logger.exception("Failed to send password reset email to %s", email)
+                request.session.pop('reset_email', None)
+                request.session.pop('reset_code', None)
+                request.session.pop('reset_expiry', None)
+                messages.error(
+                    request,
+                    "We could not send the verification code right now. Please contact the Treasurer or try again later.",
+                )
+                return render(request, 'groupcore/forgot_password.html')
 
             messages.success(request, "A verification code has been sent to your email.")
             return redirect('verify_code')
