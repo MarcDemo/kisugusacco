@@ -151,7 +151,7 @@ def submit_deposit(request):
                 "Regards,\n"
                 "Land Investment Group"
             )
-            from_email = "info.landinvestmentgroup@gmail.com"
+            from_email = settings.DEFAULT_FROM_EMAIL
             recipient_list = [request.user.email]
 
             send_mail(subject, message, from_email, recipient_list, fail_silently=False)
@@ -174,7 +174,7 @@ def submit_deposit(request):
                 send_mail(
                     subject_treasurer,
                     message_treasurer,
-                    "info.landinvestmentgroup@gmail.com",
+                    settings.DEFAULT_FROM_EMAIL,
                     treasurer_emails,
                     fail_silently=False
                 )

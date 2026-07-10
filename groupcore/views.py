@@ -289,7 +289,7 @@ def forgot_password(request):
             </html>
             """
 
-            email_msg = EmailMultiAlternatives(subject, text_content, 'info.landinvestmentgroup@gmail.com', [email])
+            email_msg = EmailMultiAlternatives(subject, text_content, settings.DEFAULT_FROM_EMAIL, [email])
             email_msg.attach_alternative(html_content, "text/html")
             email_msg.send()
 
