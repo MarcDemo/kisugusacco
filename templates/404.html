@@ -1,0 +1,197 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Page Not Found | Kisugu SACCO</title>
+  <link rel="icon" type="image/x-icon" href="{% static 'images/favicon1.ico' %}" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
+  <style>
+    :root {
+      --forest-900: #07331c;
+      --forest-700: #166534;
+      --forest-600: #1f7a3f;
+      --ink: #14211a;
+      --muted: #5e6c64;
+      --panel: rgba(255, 255, 255, 0.93);
+      --line: rgba(22, 101, 52, 0.18);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+    }
+
+    body {
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(120deg, rgba(7, 51, 28, 0.78), rgba(20, 33, 26, 0.42)),
+        url("{% static 'images/login-bg-1.webp' %}") center / cover fixed;
+    }
+
+    .page {
+      min-height: 100svh;
+      display: grid;
+      place-items: center;
+      padding: 2rem;
+    }
+
+    .not-found {
+      width: min(100%, 720px);
+      padding: clamp(1.5rem, 4vw, 3rem);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: 0 24px 70px rgba(7, 51, 28, 0.28);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      color: var(--forest-700);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-size: 0.82rem;
+    }
+
+    h1 {
+      margin: 0;
+      color: var(--forest-900);
+      font-size: clamp(4.2rem, 14vw, 8rem);
+      line-height: 0.9;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 1rem 0 0;
+      font-size: clamp(1.6rem, 4vw, 2.45rem);
+      line-height: 1.12;
+      color: var(--forest-900);
+    }
+
+    p {
+      max-width: 58ch;
+      margin: 1rem 0 0;
+      color: var(--muted);
+      font-size: 1.05rem;
+      line-height: 1.65;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.85rem;
+      margin-top: 1.75rem;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.55rem;
+      min-height: 46px;
+      padding: 0.8rem 1.15rem;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      text-decoration: none;
+      font-weight: 700;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+
+    .button-primary {
+      background: var(--forest-700);
+      color: #fff;
+      box-shadow: 0 10px 22px rgba(22, 101, 52, 0.22);
+    }
+
+    .button-primary:hover {
+      background: var(--forest-600);
+      transform: translateY(-1px);
+      box-shadow: 0 14px 28px rgba(22, 101, 52, 0.27);
+    }
+
+    .button-secondary {
+      color: var(--forest-900);
+      border-color: var(--line);
+      background: rgba(255, 255, 255, 0.58);
+    }
+
+    .button-secondary:hover {
+      background: #fff;
+      transform: translateY(-1px);
+    }
+
+    .path {
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line);
+      color: #6c7a72;
+      font-size: 0.9rem;
+      word-break: break-word;
+    }
+
+    @media (max-width: 640px) {
+      body {
+        background-image:
+          linear-gradient(120deg, rgba(7, 51, 28, 0.8), rgba(20, 33, 26, 0.48)),
+          url("{% static 'images/login-bg-1-mobile.webp' %}");
+      }
+
+      .page {
+        align-items: start;
+        padding: 1rem;
+      }
+
+      .not-found {
+        margin-top: 2rem;
+        border-radius: 14px;
+      }
+
+      .actions,
+      .button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="not-found" aria-labelledby="page-title">
+      <div class="eyebrow">
+        <i class="bi bi-compass"></i>
+        Kisugu SACCO
+      </div>
+      <h1>404</h1>
+      <h2 id="page-title">This page could not be found.</h2>
+      <p>
+        The link may be outdated, mistyped, or no longer available. You can return home and continue from the secure login page.
+      </p>
+      <div class="actions">
+        <a class="button button-primary" href="{% url 'home' %}">
+          <i class="bi bi-house-door"></i>
+          Return Home
+        </a>
+        <a class="button button-secondary" href="javascript:history.back()">
+          <i class="bi bi-arrow-left"></i>
+          Go Back
+        </a>
+      </div>
+      {% if request.path %}
+        <div class="path">Requested path: {{ request.path }}</div>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>
