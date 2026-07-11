@@ -2,6 +2,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.db.models import Sum
+from django.core.paginator import Paginator
 
 from deposits.models import DepositSubmission
 from groupcore.reporting import merge_year_options, parse_report_year, years_from_dates
@@ -44,6 +45,7 @@ def income_list(request):
     )
     summary_totals = {key: value or 0 for key, value in raw_totals.items()}
     summary_totals['record_count'] = financial_deposits.count()
+    financial_deposits = Paginator(financial_deposits, 10).get_page(request.GET.get('page'))
 
     shares = (
         ShareContribution.objects

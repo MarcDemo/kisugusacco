@@ -99,3 +99,23 @@ class FinancialRecordsViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response['Location'], reverse('member_dashboard'))
+
+    def test_financial_records_are_paginated_ten_per_page(self):
+        for day in range(3, 14):
+            self._deposit(
+                payment_week=date(self.current_year, 1, day),
+                payment_date=date(self.current_year, 1, day),
+                saving_amount=Decimal('1000'),
+            )
+        self.client.login(username='treasurer', password='pass12345')
+
+        first_page = self.client.get(reverse('other_income_list'))
+        second_page = self.client.get(reverse('other_income_list'), {'page': 2})
+
+        self.assertEqual(len(first_page.context['financial_deposits']), 10)
+        self.assertEqual(first_page.context['financial_deposits'].paginator.count, 12)
+        self.assertEqual(len(second_page.context['financial_deposits']), 2)
+        self.assertContains(
+            first_page,
+            f'?year={self.current_year}&amp;page=2',
+        )
