@@ -1,19 +1,155 @@
-from datetime import date, time
+from datetime import date, time, timedelta
 from decimal import Decimal
 from io import BytesIO
 from unittest.mock import patch
 
 from django.test import TestCase
+from django.http import QueryDict
 from django.urls import reverse
 from django.utils import timezone
 from openpyxl import load_workbook
 
 from deposits.models import DepositSubmission
+from deposits.forms import DepositSubmissionForm, DirectDepositForm
 from fines.models import Fine
 from groupcore.account_context import SESSION_KEY_ACTIVE_ACCOUNT
 from groupcore.models import GroupSettings, MemberProfile, SavingsAccount
 from groupcore.week_cycle import current_saving_week
 from loans.models import LoanRequest
+
+
+class VariableWeeklySavingsAllocationTests(TestCase):
+    def setUp(self):
+        today = timezone.localdate()
+        first_day = date(today.year, 1, 1)
+        first_friday = first_day + timedelta(days=(4 - first_day.weekday()) % 7)
+        GroupSettings.objects.create(week_one_start=first_friday)
+        self.saving_week = current_saving_week(first_friday, today)
+        self.treasurer = MemberProfile.objects.create_user(
+            username='variable-treasurer', password='pass12345', role='TREASURER'
+        )
+        self.member = MemberProfile.objects.create_user(
+            username='variable-member', password='pass12345', role='MEMBER'
+        )
+        self.account = SavingsAccount.objects.create(owner=self.member, label='A')
+
+    def direct_data(self, weeks, amounts, amount_received=None):
+        data = QueryDict('', mutable=True)
+        data.update({
+            'member': str(self.member.id),
+            'account': str(self.account.id),
+            'payment_date': timezone.localdate().isoformat(),
+            'payment_time': '10:00',
+        })
+        data.setlist('selected_purposes', ['saving'])
+        data.setlist('selected_weeks', [week.isoformat() for week in weeks])
+        for week, amount in zip(weeks, amounts):
+            data[f'week_amount_{week.isoformat()}'] = str(amount)
+        if amount_received is not None:
+            data['amount_received'] = str(amount_received)
+        return data
+
+    def test_each_boundary_and_midrange_weekly_amount_is_valid(self):
+        week = self.saving_week.cycle_start
+        for amount in (10000, 30000, 50000):
+            with self.subTest(amount=amount):
+                form = DirectDepositForm(self.direct_data([week], [amount], amount))
+                self.assertTrue(form.is_valid(), form.errors)
+                self.assertEqual(form.cleaned_data['weekly_allocations'], [(week, Decimal(amount))])
+
+    def test_below_minimum_and_above_maximum_are_rejected(self):
+        week = self.saving_week.cycle_start
+        for amount in (9999, 50001):
+            with self.subTest(amount=amount):
+                form = DirectDepositForm(self.direct_data([week], [amount], amount))
+                self.assertFalse(form.is_valid())
+                self.assertIn('selected_weeks', form.errors)
+
+    def test_treasurer_can_allocate_different_amounts_to_multiple_weeks(self):
+        weeks = [self.saving_week.cycle_start, self.saving_week.cycle_start + timedelta(weeks=1)]
+        data = self.direct_data(weeks, [20000, 10000], 30000)
+        post_data = data.dict()
+        post_data['selected_purposes'] = ['saving']
+        post_data['selected_weeks'] = [week.isoformat() for week in weeks]
+        self.client.login(username=self.treasurer.username, password='pass12345')
+
+        response = self.client.post(reverse('manage_deposits'), post_data)
+
+        self.assertEqual(response.status_code, 302, response.context['form'].errors if response.context else '')
+        self.assertRedirects(response, reverse('manage_deposits'))
+        saved = list(DepositSubmission.objects.filter(member=self.member).order_by('payment_week'))
+        self.assertEqual([item.saving_amount for item in saved], [Decimal('20000'), Decimal('10000')])
+        self.assertEqual(sum((item.amount for item in saved), Decimal('0')), Decimal('30000'))
+
+    def test_paid_week_is_locked_and_duplicate_selection_is_rejected(self):
+        week = self.saving_week.cycle_start
+        DepositSubmission.objects.create(
+            member=self.member, account=self.account, submitted_by=self.treasurer,
+            payment_week=week, saving_amount=Decimal('10000'),
+            payment_date=week, payment_time=time(9, 0), status='APPROVED',
+        )
+        locked_form = DirectDepositForm(self.direct_data([week], [30000], 30000))
+        self.assertFalse(locked_form.is_valid())
+        self.assertContainsError(locked_form, 'already paid and locked')
+
+        duplicate_data = self.direct_data([week + timedelta(weeks=1)] * 2, [10000, 10000], 20000)
+        duplicate_form = DirectDepositForm(duplicate_data)
+        self.assertFalse(duplicate_form.is_valid())
+        self.assertContainsError(duplicate_form, 'Select each week only once')
+
+    def assertContainsError(self, form, text):
+        self.assertIn(text, str(form.errors))
+
+    def test_member_form_enforces_same_range_and_pending_lock(self):
+        week = self.saving_week.week_start
+        base = QueryDict('', mutable=True)
+        base.update({
+            'account': str(self.account.id), 'payment_date': timezone.localdate().isoformat(),
+            'payment_time': '10:00', 'saving_amount': '10000',
+        })
+        base.setlist('selected_purposes', ['saving'])
+        valid = DepositSubmissionForm(base, user=self.member, payment_week=week)
+        self.assertTrue(valid.is_valid(), valid.errors)
+
+        too_low = base.copy()
+        too_low['saving_amount'] = '9999'
+        self.assertFalse(DepositSubmissionForm(too_low, user=self.member, payment_week=week).is_valid())
+
+        DepositSubmission.objects.create(
+            member=self.member, account=self.account, submitted_by=self.member,
+            payment_week=week, saving_amount=Decimal('10000'),
+            payment_date=week, payment_time=time(9, 0), status='PENDING',
+        )
+        locked = DepositSubmissionForm(base, user=self.member, payment_week=week)
+        self.assertFalse(locked.is_valid())
+        self.assertContainsError(locked, 'already paid or awaiting approval')
+
+    def test_manage_page_and_status_api_expose_week_allocations_and_locking(self):
+        week = self.saving_week.cycle_start
+        DepositSubmission.objects.create(
+            member=self.member, account=self.account, submitted_by=self.treasurer,
+            payment_week=week, saving_amount=Decimal('10000'),
+            payment_date=week, payment_time=time(9, 0), status='APPROVED',
+        )
+        self.client.login(username=self.treasurer.username, password='pass12345')
+
+        page = self.client.get(reverse('manage_deposits'))
+        api = self.client.get(reverse('treasurer_week_options'), {
+            'member': self.member.id, 'account': self.account.id,
+        })
+
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'UGX 10,000–50,000')
+        self.assertContains(page, 'week_amount_')
+        self.assertEqual(api.status_code, 200)
+        week_status = next(item for item in api.json()['weeks'] if item['date'] == week.isoformat())
+        self.assertTrue(week_status['paid'])
+
+    def test_unallocated_received_amount_is_rejected(self):
+        week = self.saving_week.cycle_start
+        form = DirectDepositForm(self.direct_data([week], [10000], 30000))
+        self.assertFalse(form.is_valid())
+        self.assertContainsError(form, 'overpayment')
 
 
 class TreasurerReportYearFilterTests(TestCase):

@@ -8,6 +8,7 @@ urlpatterns = [
     path('my-contributions/', views.my_contributions, name='my_contributions'),
     path('my-contributions/export/<str:format>/', views.export_my_contributions, name='export_my_contributions'),
     path('treasurer/deposits/', views.manage_deposits, name='manage_deposits'),
+    path('treasurer/week-options/', views.treasurer_week_options, name='treasurer_week_options'),
     path('treasurer/reports/', views.treasurer_reports, name='treasurer_reports'),
     path('treasurer/reports/<int:member_id>/<str:format>/', views.download_member_report, name='download_member_report'),
     path('deposits/treasurer/reports/all/<str:format>/', views.download_all_reports, name='download_all_reports'),

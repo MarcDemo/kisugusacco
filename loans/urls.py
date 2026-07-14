@@ -10,5 +10,6 @@ urlpatterns = [
     path('repayment/<int:loan_id>/record/', views.record_loan_repayment, name='record_loan_repayment'),
     path('pending/', views.pending_loans, name='pending_loans'),
     path('approve/<int:loan_id>/', views.approve_loan, name='approve_loan'),
+    path('override/<int:loan_id>/', views.override_loan_approval, name='override_loan_approval'),
     path('reject/<int:loan_id>/', views.reject_loan, name='reject_loan'),
 ]

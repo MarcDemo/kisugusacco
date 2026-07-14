@@ -143,7 +143,7 @@
                         <td>{{ fine.member.username }}</td>
                         <td>{% if fine.account %}{{ fine.account.label }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
                         <td class="reason-col" title="{{ fine.reason }}">{{ fine.reason }}</td>
-                        <td>UGX {{ fine.amount|floatformat:"0" }}</td>
+                        <td>UGX {{ fine.amount|floatformat:"0" }}{% if fine.amount_paid %}<div class="small text-muted">UGX {{ fine.outstanding_amount|floatformat:"0" }} left</div>{% endif %}</td>
                         <td>
                             {% if fine.is_paid %}
                                 <span class="badge text-bg-success">Paid</span>

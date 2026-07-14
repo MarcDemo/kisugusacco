@@ -33,7 +33,7 @@ class LoanRequestForm(forms.ModelForm):
             self.fields['account'].queryset = SavingsAccount.objects.filter(owner=user, is_active=True)
             self.fields['guarantors'].queryset = (
                 MemberProfile.objects
-                .filter(is_active=True, is_superuser=False)
+                .filter(is_active=True, is_superuser=False, role='MEMBER')
                 .exclude(id=user.id)
                 .order_by('username')
             )
@@ -56,6 +56,9 @@ class LoanRequestForm(forms.ModelForm):
 
         if self.user and any(guarantor.id == self.user.id for guarantor in guarantors):
             raise forms.ValidationError('You cannot select yourself as a guarantor.')
+
+        if any(guarantor.role != 'MEMBER' for guarantor in guarantors):
+            raise forms.ValidationError('Leadership and management users cannot act as guarantors.')
 
         return guarantors
 

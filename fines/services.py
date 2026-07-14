@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from django.utils import timezone
+from django.db.models import Q
 
 from .models import Fine
 
@@ -37,10 +38,25 @@ def delete_missed_saving_fines_covered(member, account, payment_week):
 
 
 def delete_deposit_week_missed_saving_fines(deposit):
-    if deposit.status != 'APPROVED' or not deposit_was_paid_within_grace(deposit):
-        return 0
-    return delete_missed_saving_fines_covered(
-        member=deposit.member,
-        account=deposit.account,
-        payment_week=deposit.payment_week,
+    # Kept as a compatibility shim. Late fines are independent financial
+    # obligations and must never be deleted when savings are paid.
+    return 0
+
+
+def allocate_fine_payment(member, account, amount):
+    """Apply a fine payment oldest-first and preserve partial balances."""
+    remaining = amount
+    applied = 0
+    account_filter = Q(account=account)
+    if account is not None:
+        account_filter |= Q(account__isnull=True)
+    fines = Fine.objects.filter(account_filter, member=member, is_paid=False).order_by(
+        'reference_week', 'date_issued', 'id'
     )
+    for fine in fines:
+        if remaining <= 0:
+            break
+        used = fine.apply_payment(remaining)
+        applied += used
+        remaining -= used
+    return applied, remaining

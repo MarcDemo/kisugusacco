@@ -870,6 +870,11 @@
             </a>
           </li>
           <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'manage_users' or request.resolver_match.url_name == 'treasurer_member_preview' %}active{% endif %}" href="{% url 'manage_users' %}">
+              <i class="bi bi-people me-2"></i> Manage Users & Preview
+            </a>
+          </li>
+          <li class="nav-item">
             <a class="nav-link {% if request.resolver_match.url_name == 'manage_deposits' %}active{% endif %}" href="{% url 'manage_deposits' %}">
               <i class="bi bi-clipboard-check me-2"></i> Manage Deposits
             </a>

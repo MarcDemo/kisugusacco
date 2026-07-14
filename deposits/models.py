@@ -30,7 +30,7 @@ class DepositSubmission(models.Model):
     loan_repayment_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     # Total amount (auto-computed as the sum of per-purpose amounts)
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    proof = models.ImageField(upload_to='proofs/')
+    proof = models.ImageField(upload_to='proofs/', blank=True, null=True)
     remarks = models.TextField(blank=True, null=True)
     import_reference = models.CharField(
         max_length=120,

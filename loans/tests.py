@@ -10,7 +10,7 @@ from openpyxl import Workbook
 
 from groupcore.models import MemberProfile, SavingsAccount
 from deposits.models import DepositSubmission
-from loans.models import LoanGuarantorApproval, LoanRepayment, LoanRequest
+from loans.models import LoanApprovalAudit, LoanGuarantorApproval, LoanRepayment, LoanRequest
 from messaging.models import MessageRecipient
 
 
@@ -289,3 +289,25 @@ class HistoricalLoanImportCommandTests(TestCase):
             self.assertEqual(LoanRepayment.objects.count(), 3)
             self.assertEqual(DepositSubmission.objects.filter(loan_repayment_amount__gt=0).count(), 3)
             self.assertIn('SKIPPED_DUPLICATE', report_path.read_text(encoding='utf-8'))
+
+
+class TreasurerLoanOverrideTests(TestCase):
+    def setUp(self):
+        self.treasurer = MemberProfile.objects.create_user(username='override-treasurer', password='pass12345', role='TREASURER')
+        self.member = MemberProfile.objects.create_user(username='override-member', password='pass12345', role='MEMBER')
+        self.account = SavingsAccount.objects.create(owner=self.member, label='A')
+        self.guarantors = [MemberProfile.objects.create_user(username=f'override-g{i}', password='pass12345', role='MEMBER') for i in range(3)]
+        self.loan = LoanRequest.objects.create(member=self.member, account=self.account, principal=100000, duration_months=3, status=LoanRequest.STATUS_PENDING_GUARANTOR)
+        for guarantor in self.guarantors:
+            LoanGuarantorApproval.objects.create(loan=self.loan, guarantor=guarantor)
+        self.client.login(username=self.treasurer.username, password='pass12345')
+
+    def test_treasurer_override_records_actual_and_original_approvers(self):
+        response = self.client.post(reverse('override_loan_approval', args=[self.loan.id]), {
+            'original_approver_role': 'GUARANTOR', 'override_reason': 'Guarantors are unavailable',
+        })
+        self.assertRedirects(response, reverse('pending_loans'))
+        self.loan.refresh_from_db()
+        self.assertEqual(self.loan.status, LoanRequest.STATUS_PENDING)
+        self.assertEqual(self.loan.guarantor_approval_count, 3)
+        self.assertEqual(LoanApprovalAudit.objects.filter(loan=self.loan, actual_approver=self.treasurer, original_approver_role='GUARANTOR').count(), 3)

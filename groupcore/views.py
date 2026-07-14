@@ -30,6 +30,8 @@ from django.core.mail import send_mail
 import random, datetime
 from django.core.mail import EmailMultiAlternatives
 from groupcore.account_context import get_active_account, get_user_active_accounts, set_active_account
+from groupcore.savings_calendar import build_weekly_calendar
+from deposits.rules import weekly_savings_paid
 
 
 logger = logging.getLogger(__name__)
@@ -150,7 +152,11 @@ def _member_week_progress(member, active_account=None):
     if active_account:
         deposits = deposits.filter(account=active_account)
 
-    paid_weeks = set(deposits.values_list('payment_week', flat=True))
+    candidate_weeks = set(deposits.values_list('payment_week', flat=True))
+    paid_weeks = {
+        week for week in candidate_weeks
+        if weekly_savings_paid(member, active_account, week)
+    }
     due_weeks = [
         saving_week.cycle_start + timedelta(weeks=index)
         for index in range(saving_week.week_number)
@@ -439,21 +445,21 @@ def treasurer_dashboard(request):
         messages.error(request, "Access denied.")
         return redirect('member_dashboard')
 
-    approved_deposits_qs = DepositSubmission.objects.filter(status='APPROVED')
+    approved_deposits_qs = DepositSubmission.objects.filter(status='APPROVED', member__is_superuser=False)
     purpose_totals = _deposit_purpose_totals(approved_deposits_qs)
     source_balances = _fund_source_balances(approved_deposits_qs)
 
     total_savings = source_balances['collected']['SAVINGS']
 
     # Count of all pending deposits
-    pending_deposits_count = DepositSubmission.objects.filter(status='PENDING').count()
-    pending_deposits_amount = DepositSubmission.objects.filter(status='PENDING').aggregate(total=Sum('amount'))['total'] or 0
+    pending_deposits_count = DepositSubmission.objects.filter(status='PENDING', member__is_superuser=False).count()
+    pending_deposits_amount = DepositSubmission.objects.filter(status='PENDING', member__is_superuser=False).aggregate(total=Sum('amount'))['total'] or 0
 
     # Sum of unpaid fines
-    total_unpaid_fines = Fine.objects.filter(is_paid=False).aggregate(total=Sum('amount'))['total'] or 0
+    total_unpaid_fines = sum((fine.outstanding_amount for fine in Fine.objects.filter(is_paid=False, member__is_superuser=False)), Decimal('0'))
 
     # Recent deposit submissions
-    recent_deposits = DepositSubmission.objects.select_related('member').order_by('-date_submitted')[:10]
+    recent_deposits = DepositSubmission.objects.filter(member__is_superuser=False).select_related('member').order_by('-date_submitted')[:10]
 
     month = timezone.now().month
     year = timezone.now().year
@@ -499,7 +505,7 @@ def member_dashboard(request):
         messages.info(request, "Please select a savings account first.")
         return redirect('select_savings_account')
 
-    approved_group_qs = DepositSubmission.objects.filter(status='APPROVED')
+    approved_group_qs = DepositSubmission.objects.filter(status='APPROVED', member__is_superuser=False)
     approved_member_qs = DepositSubmission.objects.filter(member=member, status='APPROVED')
 
     if active_account:
@@ -509,13 +515,14 @@ def member_dashboard(request):
 
     user_savings_total = approved_member_qs.aggregate(total=Sum('saving_amount'))['total'] or 0
     week_progress = _member_week_progress(member, active_account)
+    savings_calendar = build_weekly_calendar(member, active_account)
     weeks_paid = week_progress['paid_weeks_count'] if week_progress['cycle_open'] else approved_member_qs.values('payment_week').distinct().count()
 
     
     outstanding_fines_qs = Fine.objects.filter(member=member, is_paid=False)
     if active_account:
         outstanding_fines_qs = outstanding_fines_qs.filter(account=active_account)
-    outstanding_fines = outstanding_fines_qs.aggregate(Sum('amount'))['amount__sum'] or 0
+    outstanding_fines = sum((fine.outstanding_amount for fine in outstanding_fines_qs), Decimal('0'))
     unpaid_fines = outstanding_fines_qs
 
     
@@ -563,28 +570,50 @@ def member_dashboard(request):
         'active_account': active_account,
         'my_total_loan_interest': my_total_loan_interest,
         'week_progress': week_progress,
+        'savings_calendar': savings_calendar,
     }
     return render(request, 'groupcore/member_dashboard.html', context)
 
+
+@login_required
+def treasurer_member_preview(request, member_id):
+    if not request.user.is_treasurer():
+        messages.error(request, 'Access denied.')
+        return redirect('member_dashboard')
+    member = get_object_or_404(MemberProfile, pk=member_id, is_superuser=False)
+    accounts = member.savings_accounts.filter(is_active=True).order_by('label')
+    selected = accounts.filter(pk=request.GET.get('account')).first() or accounts.first()
+    from messaging.models import MessageRecipient
+    return render(request, 'groupcore/treasurer_member_preview.html', {
+        'managed_member': member,
+        'accounts': accounts,
+        'active_account': selected,
+        'savings_calendar': build_weekly_calendar(member, selected),
+        'deposits': member.deposits.filter(account=selected).order_by('-date_submitted')[:20],
+        'loans': member.loan_requests.filter(account=selected).order_by('-requested_on'),
+        'fines': member.fines.filter(account=selected).order_by('-date_issued'),
+        'notifications': MessageRecipient.objects.filter(recipient=member, message__isnull=False).select_related('message').order_by('-message__sent_at')[:10],
+    })
+
 @login_required
 def secretary_dashboard(request):
-    total_documents = Document.objects.count()
+    total_documents = Document.objects.filter(user__is_superuser=False).count()
     personal_documents = Document.objects.filter(user=request.user).count()
     total_members = MemberProfile.objects.exclude(is_superuser=True).count()
-    pending_deposits_count = DepositSubmission.objects.filter(status='PENDING').count()
-    approved_deposits_count = DepositSubmission.objects.filter(status='APPROVED').count()
-    purpose_totals = _deposit_purpose_totals(DepositSubmission.objects.filter(status='APPROVED'))
+    pending_deposits_count = DepositSubmission.objects.filter(status='PENDING', member__is_superuser=False).count()
+    approved_deposits_count = DepositSubmission.objects.filter(status='APPROVED', member__is_superuser=False).count()
+    purpose_totals = _deposit_purpose_totals(DepositSubmission.objects.filter(status='APPROVED', member__is_superuser=False))
 
-    approved_loans_qs = LoanRequest.objects.filter(status='APPROVED')
+    approved_loans_qs = LoanRequest.objects.filter(status='APPROVED', member__is_superuser=False)
     approved_loans_count = approved_loans_qs.count()
     approved_loans_amount = approved_loans_qs.aggregate(total=Sum('principal'))['total'] or 0
     total_loan_interest = _loan_interest_total(approved_loans_qs)
     recent_approved_loans = approved_loans_qs.select_related('member').order_by('-approved_on', '-requested_on')[:5]
-    loan_pending_count = LoanRequest.objects.filter(status__in=[
+    loan_pending_count = LoanRequest.objects.filter(member__is_superuser=False, status__in=[
         LoanRequest.STATUS_PENDING_GUARANTOR,
         LoanRequest.STATUS_PENDING,
     ]).count()
-    loan_rejected_count = LoanRequest.objects.filter(status__in=[
+    loan_rejected_count = LoanRequest.objects.filter(member__is_superuser=False, status__in=[
         LoanRequest.STATUS_REJECTED,
         LoanRequest.STATUS_REJECTED_GUARANTOR,
     ]).count()
@@ -656,20 +685,15 @@ def mobilizer_dashboard(request):
     unpaid_count = 0
 
     for member in members:
-        deposits = member.deposits.filter(status='APPROVED')
-        covered_weeks = []
-
-        for deposit in deposits:
-            covered_weeks += deposit.get_covered_weeks()
-
-        if current_week_start in covered_weeks:
+        accounts = list(member.savings_accounts.filter(is_active=True)) or [None]
+        if any(weekly_savings_paid(member, account, current_week_start) for account in accounts):
             paid_count += 1
         else:
             unpaid_count += 1
 
     personal_deposits = request.user.deposits.filter(status='APPROVED').count()
     current_week_purpose_totals = _deposit_purpose_totals(
-        DepositSubmission.objects.filter(status='APPROVED', payment_week=current_week_start)
+        DepositSubmission.objects.filter(status='APPROVED', member__is_superuser=False, payment_week=current_week_start)
     )
 
     context = {
@@ -702,7 +726,7 @@ def chairman_dashboard(request):
     total_members = MemberProfile.objects.exclude(is_superuser=True).count()
 
     # Sum of approved deposits amounts
-    approved_deposits_qs = DepositSubmission.objects.filter(status='APPROVED')
+    approved_deposits_qs = DepositSubmission.objects.filter(status='APPROVED', member__is_superuser=False)
     purpose_totals = _deposit_purpose_totals(approved_deposits_qs)
     source_balances = _fund_source_balances(approved_deposits_qs)
     total_deposits = purpose_totals['total']
@@ -717,7 +741,7 @@ def chairman_dashboard(request):
 
     # Sum of expenditures
     total_expenditures = Expenditure.objects.aggregate(total=Sum('amount'))['total'] or 0
-    approved_loans_qs = LoanRequest.objects.filter(status='APPROVED')
+    approved_loans_qs = LoanRequest.objects.filter(status='APPROVED', member__is_superuser=False)
     total_loan_interest = _loan_interest_total(approved_loans_qs)
 
     total_assets = Asset.objects.count()
@@ -743,11 +767,8 @@ def chairman_dashboard(request):
         current_week_start = saving_week.week_start
 
         for member in MemberProfile.objects.filter(is_superuser=False):
-            deposits = member.deposits.filter(status='APPROVED')
-            covered_weeks = []
-            for deposit in deposits:
-                covered_weeks += deposit.get_covered_weeks()
-            if current_week_start in covered_weeks:
+            accounts = list(member.savings_accounts.filter(is_active=True)) or [None]
+            if any(weekly_savings_paid(member, account, current_week_start) for account in accounts):
                 weekly_status["paid"] += 1
             else:
                 weekly_status["unpaid"] += 1
@@ -820,8 +841,8 @@ def year_end_settlement(request):
     members = MemberProfile.objects.exclude(is_superuser=True)
     rows = []
 
-    approved_deposits_base = DepositSubmission.objects.filter(status='APPROVED')
-    approved_loans_base = LoanRequest.objects.filter(status='APPROVED')
+    approved_deposits_base = DepositSubmission.objects.filter(status='APPROVED', member__is_superuser=False)
+    approved_loans_base = LoanRequest.objects.filter(status='APPROVED', member__is_superuser=False)
     years = merge_year_options(
         years_from_dates(approved_deposits_base, 'payment_week'),
         years_from_dates(approved_loans_base, 'approved_on'),

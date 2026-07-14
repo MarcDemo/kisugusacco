@@ -340,6 +340,22 @@ class LoanGuarantorApproval(models.Model):
         return f"Loan {self.loan_id} guarantor {self.guarantor_id} - {self.status}"
 
 
+class LoanApprovalAudit(models.Model):
+    ROLE_CHOICES = [
+        ('GUARANTOR', 'Guarantor'), ('SECRETARY', 'Secretary'),
+        ('VICE_CHAIRMAN', 'Vice Chairman'), ('CHAIRMAN', 'Chairman'),
+    ]
+    loan = models.ForeignKey(LoanRequest, on_delete=models.CASCADE, related_name='approval_audits')
+    original_approver_role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    on_behalf_of = models.ForeignKey(MemberProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name='loan_approvals_overridden')
+    actual_approver = models.ForeignKey(MemberProfile, on_delete=models.PROTECT, related_name='loan_override_approvals')
+    reason = models.TextField()
+    approved_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['approved_at', 'id']
+
+
 class LoanRepayment(models.Model):
     loan = models.ForeignKey(LoanRequest, on_delete=models.CASCADE, related_name='repayments')
     amount = models.DecimalField(max_digits=12, decimal_places=2)

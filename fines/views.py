@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 from .forms import FineForm
 from groupcore.account_context import get_active_account
+from groupcore.savings_calendar import ensure_overdue_fines
 
 # Create your views here.
 @login_required
@@ -19,8 +20,8 @@ def my_fines(request):
     stats = fines.aggregate(
         paid_count=Count('id', filter=Q(is_paid=True)),
         unpaid_count=Count('id', filter=Q(is_paid=False)),
-        outstanding_amount=Sum('amount', filter=Q(is_paid=False)),
     )
+    stats['outstanding_amount'] = sum((fine.outstanding_amount for fine in fines), 0)
     return render(request, 'fines/my_fines.html', {
         'fines': fines,
         'total_fines': total_fines,
@@ -34,14 +35,15 @@ def manage_fines(request):
         messages.error(request, "Access denied.")
         return redirect('member_dashboard')
 
-    fines = Fine.objects.select_related('member', 'account').order_by('-date_issued')
+    ensure_overdue_fines()
+    fines = Fine.objects.filter(member__is_superuser=False).select_related('member', 'account').order_by('-date_issued')
     totals = fines.aggregate(
         total_records=Count('id'),
         paid_count=Count('id', filter=Q(is_paid=True)),
         unpaid_count=Count('id', filter=Q(is_paid=False)),
         total_amount=Sum('amount'),
-        unpaid_amount=Sum('amount', filter=Q(is_paid=False)),
     )
+    totals['unpaid_amount'] = sum((fine.outstanding_amount for fine in fines), 0)
     return render(request, 'fines/manage_fines.html', {
         'fines': fines,
         'totals': totals,
@@ -76,9 +78,10 @@ def mark_fine_paid(request, fine_id):
         return redirect('member_dashboard')
 
     fine = get_object_or_404(Fine, id=fine_id)
+    fine.amount_paid = fine.amount
     fine.is_paid = True
     fine.full_clean()
-    fine.save(update_fields=['is_paid'])
+    fine.save(update_fields=['amount_paid', 'is_paid'])
 
     messages.success(request, f"Marked fine for {fine.member.username} as paid.")
     return redirect('manage_fines')

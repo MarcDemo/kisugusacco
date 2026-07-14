@@ -2,9 +2,11 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from .forms import GuarantorDecisionForm, LoanRepaymentForm, LoanRequestForm, TreasurerRateForm
-from .models import LoanGuarantorApproval, LoanRequest
+from .models import LoanApprovalAudit, LoanGuarantorApproval, LoanRequest
 from groupcore.account_context import get_active_account, get_user_active_accounts
 from groupcore.models import MemberProfile
 from messaging.services import send_notification
@@ -146,6 +148,54 @@ def approve_loan(request, loan_id):
 
 
 @login_required
+@require_POST
+def override_loan_approval(request, loan_id):
+    if not request.user.is_treasurer():
+        messages.error(request, 'Only the Treasurer can record an override approval.')
+        return redirect('pending_loans')
+    loan = get_object_or_404(
+        LoanRequest.objects.prefetch_related('guarantor_approvals'),
+        id=loan_id,
+        status__in=[LoanRequest.STATUS_PENDING_GUARANTOR, LoanRequest.STATUS_PENDING],
+    )
+    role = request.POST.get('original_approver_role')
+    reason = (request.POST.get('override_reason') or '').strip()
+    valid_roles = {choice[0] for choice in LoanApprovalAudit.ROLE_CHOICES}
+    if role not in valid_roles or not reason:
+        messages.error(request, 'Select the original approver role and give an override reason.')
+        return redirect('pending_loans')
+
+    with transaction.atomic():
+        if role == 'GUARANTOR':
+            pending = list(loan.guarantor_approvals.filter(status=LoanGuarantorApproval.STATUS_PENDING))
+            if not pending:
+                messages.info(request, 'There are no pending guarantor approvals to override.')
+                return redirect('pending_loans')
+            for approval in pending:
+                approval.status = LoanGuarantorApproval.STATUS_APPROVED
+                approval.comments = f'Approved by Treasurer on behalf of Guarantor. Reason: {reason}'
+                approval.decided_at = timezone.now()
+                approval.save(update_fields=['status', 'comments', 'decided_at'])
+                LoanApprovalAudit.objects.create(loan=loan, original_approver_role=role, on_behalf_of=approval.guarantor, actual_approver=request.user, reason=reason)
+            loan._prefetched_objects_cache.pop('guarantor_approvals', None)
+            loan.mark_pending_if_guarantors_complete()
+        else:
+            if loan.status == LoanRequest.STATUS_PENDING_GUARANTOR:
+                messages.error(request, 'Guarantor approvals must be completed or overridden first.')
+                return redirect('pending_loans')
+            if role == 'CHAIRMAN':
+                loan.chairman_approved_by = request.user
+                loan.save(update_fields=['chairman_approved_by'])
+            elif role == 'VICE_CHAIRMAN':
+                loan.vice_chairman_approved_by = request.user
+                loan.save(update_fields=['vice_chairman_approved_by'])
+            LoanApprovalAudit.objects.create(loan=loan, original_approver_role=role, actual_approver=request.user, reason=reason)
+            loan.mark_approved_if_complete()
+    messages.success(request, f'Override recorded: approved by Treasurer on behalf of {dict(LoanApprovalAudit.ROLE_CHOICES)[role]}.')
+    return redirect('pending_loans')
+
+
+@login_required
 def reject_loan(request, loan_id):
     loan = get_object_or_404(LoanRequest, id=loan_id, status=LoanRequest.STATUS_PENDING)
 
@@ -177,15 +227,16 @@ def pending_loans(request):
         return redirect('member_dashboard')
 
     # Heal inconsistent records: if all required approvals exist, move out of pending.
-    pending_qs = LoanRequest.objects.filter(status=LoanRequest.STATUS_PENDING).order_by('-requested_on')
+    pending_qs = LoanRequest.objects.filter(status=LoanRequest.STATUS_PENDING, member__is_superuser=False).order_by('-requested_on')
     for loan in pending_qs:
         loan.mark_approved_if_complete()
 
     loans = (
         LoanRequest.objects
-        .filter(status__in=[LoanRequest.STATUS_PENDING_GUARANTOR, LoanRequest.STATUS_PENDING])
+        .filter(status__in=[LoanRequest.STATUS_PENDING_GUARANTOR, LoanRequest.STATUS_PENDING], member__is_superuser=False)
         .select_related('member', 'account')
         .prefetch_related('guarantor_approvals__guarantor')
+        .prefetch_related('approval_audits__actual_approver', 'approval_audits__on_behalf_of')
         .order_by('-requested_on')
     )
     return render(request, 'loans/pending_loans.html', {
@@ -209,7 +260,7 @@ def loan_statuses(request):
         messages.error(request, 'Access denied.')
         return redirect('member_dashboard')
 
-    all_loans = LoanRequest.objects.select_related('member', 'account').prefetch_related('repayments').order_by('-requested_on')
+    all_loans = LoanRequest.objects.filter(member__is_superuser=False).select_related('member', 'account').prefetch_related('repayments').order_by('-requested_on')
     approved_loans = all_loans.filter(status=LoanRequest.STATUS_APPROVED)
     pending_loans_qs = all_loans.filter(status__in=[
         LoanRequest.STATUS_PENDING_GUARANTOR,

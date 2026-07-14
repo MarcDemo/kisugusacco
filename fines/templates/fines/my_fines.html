@@ -134,7 +134,7 @@
           {% for fine in fines %}
           <tr>
             <td>{{ fine.date_issued|date:"Y-m-d" }}</td>
-            <td>UGX {{ fine.amount|floatformat:"0" }}</td>
+            <td>UGX {{ fine.amount|floatformat:"0" }}{% if fine.amount_paid %}<div class="small text-muted">UGX {{ fine.outstanding_amount|floatformat:"0" }} left</div>{% endif %}</td>
             <td class="reason-col" title="{{ fine.reason }}">{{ fine.reason }}</td>
             <td>
               {% if fine.is_paid %}

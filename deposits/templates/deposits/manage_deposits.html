@@ -3,6 +3,7 @@
 
 {% block content %}
 <style>
+  .weekly-calendar-grid{display:grid;grid-template-columns:repeat(8,minmax(120px,1fr));gap:.65rem}.week-card{border:2px solid #d8dee8;border-radius:13px;padding:.7rem;background:#f3f5f7;cursor:pointer;transition:.18s}.week-card.is-selected{border-color:#1976d2;background:#e7f1ff;box-shadow:0 0 0 2px rgba(25,118,210,.12)}.week-card.is-paid{background:#e8f7ee;color:#17643a;cursor:not-allowed;opacity:.78}.week-card input{accent-color:#1976d2}.week-amount-panel{margin-top:.55rem}.allocation-summary{border-radius:14px;background:#f7f9fc;border:1px solid #e0e6ef;padding:.75rem}@media(max-width:900px){.weekly-calendar-grid{grid-template-columns:repeat(4,1fr)}}@media(max-width:520px){.weekly-calendar-grid{grid-template-columns:repeat(2,1fr)}}
   .dd-purpose-box {
     opacity: 1;
     transform: translateY(0);
@@ -192,12 +193,27 @@
             {% endif %}
           </div>
 
-          <div class="col-md-3">
-            <label for="id_payment_week" class="form-label">Saving Week <span class="text-danger">*</span></label>
-            {{ form.payment_week|add_class:"form-control" }}
-            {% if form.payment_week.errors %}
-            <div class="text-danger small mt-1">{{ form.payment_week.errors|join:", " }}</div>
-            {% endif %}
+          {{ form.payment_week }}
+          <div class="col-12">
+            <label class="form-label fw-semibold">Weekly Savings Calendar <span class="text-danger">*</span></label>
+            <small class="text-muted d-block mb-2">Select each week and enter its allocation. Every weekly amount must be UGX 10,000–50,000.</small>
+            <div class="weekly-calendar-grid">
+              {% for week in form.week_options %}
+              <label class="week-card {% if week.is_paid %}is-paid{% elif week.selected %}is-selected{% endif %}" data-week-card data-week="{{ week.value }}">
+                <span class="d-flex gap-2 align-items-start">
+                  <input type="checkbox" name="selected_weeks" value="{{ week.value }}" {% if week.selected %}checked{% endif %} {% if week.is_paid %}disabled{% endif %}>
+                  <strong>{{ week.label }}</strong>
+                </span>
+                {% if week.is_paid %}<span class="badge text-bg-success mt-2" data-paid-badge>Paid · Locked</span>{% endif %}
+                <span class="week-amount-panel {% if not week.selected %}d-none{% endif %}" data-week-amount-panel>
+                  <span class="small d-block mt-1">Amount (UGX)</span>
+                  <input type="number" name="week_amount_{{ week.value }}" value="{{ week.amount }}" min="10000" max="50000" step="100" class="form-control form-control-sm week-allocation-amount" {% if not week.selected %}disabled{% endif %}>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            {{ form.saving_amount }}
+            {% if form.selected_weeks.errors %}<div class="text-danger small mt-1">{{ form.selected_weeks.errors|join:", " }}</div>{% endif %}
           </div>
 
           <!-- Payment Date -->
@@ -240,13 +256,6 @@
             <label class="form-label fw-semibold">Amount per Purpose <span class="text-danger">*</span></label>
             <small class="text-muted d-block mb-2">Only selected purposes are shown below.</small>
             <div class="row g-2">
-              <div class="col-md-3 col-6 dd-purpose-box" data-purpose="saving">
-                <label for="id_saving_amount" class="form-label small">Saving (UGX)</label>
-                {{ form.saving_amount|add_class:"form-control dd-purpose-amount" }}
-                {% if form.saving_amount.errors %}
-                <div class="text-danger small mt-1">{{ form.saving_amount.errors|join:", " }}</div>
-                {% endif %}
-              </div>
               <div class="col-md-3 col-6 dd-purpose-box" data-purpose="welfare">
                 <label for="id_welfare_amount" class="form-label small">Welfare (UGX)</label>
                 {{ form.welfare_amount|add_class:"form-control dd-purpose-amount" }}
@@ -295,17 +304,27 @@
             {% endif %}
           </div>
 
-          <!-- Live total -->
+          <div class="col-md-4">
+            <label for="id_amount_received" class="form-label">Amount Received (UGX)</label>
+            {{ form.amount_received|add_class:"form-control" }}
+            <small class="text-muted">Optional; leave blank when it equals the allocation total.</small>
+            {% if form.amount_received.errors %}<div class="text-danger small mt-1">{{ form.amount_received.errors|join:", " }}</div>{% endif %}
+          </div>
           <div class="col-12">
-            <div class="alert alert-info py-2 mb-0 d-flex justify-content-between align-items-center">
-              <span class="fw-semibold">Total Deposit:</span>
-              <span id="ddTotalDisplay" class="fs-5 fw-bold">UGX 0</span>
+            <div class="row g-2">
+              <div class="col-6 col-md"><div class="allocation-summary"><small>Weeks selected</small><div class="fw-bold" id="ddSelectedWeeks">0</div></div></div>
+              <div class="col-6 col-md"><div class="allocation-summary"><small>Savings</small><div class="fw-bold" id="ddSavingsTotal">UGX 0</div></div></div>
+              <div class="col-6 col-md"><div class="allocation-summary"><small>Fines</small><div class="fw-bold" id="ddFineTotal">UGX 0</div></div></div>
+              <div class="col-6 col-md"><div class="allocation-summary"><small>Other purposes</small><div class="fw-bold" id="ddOtherTotal">UGX 0</div></div></div>
+              <div class="col-6 col-md"><div class="allocation-summary"><small>Total payable</small><div class="fw-bold" id="ddTotalDisplay">UGX 0</div></div></div>
+              <div class="col-6 col-md"><div class="allocation-summary"><small>Remaining</small><div class="fw-bold" id="ddRemaining">UGX 0</div></div></div>
+              <div class="col-6 col-md"><div class="allocation-summary"><small>Overpayment</small><div class="fw-bold" id="ddOverpayment">UGX 0</div></div></div>
             </div>
           </div>
 
           <!-- Proof -->
           <div class="col-md-6">
-            <label for="id_proof" class="form-label">Proof of Payment <span class="text-danger">*</span></label>
+            <label for="id_proof" class="form-label">Proof of Payment <span class="text-muted small">(optional)</span></label>
             {{ form.proof|add_class:"form-control" }}
             <small class="text-muted">Upload an image only, for example .jpg, .jpeg, or .png. PDF files are not accepted.</small>
             {% if form.proof.errors %}
@@ -372,24 +391,67 @@
       }
 
       function updateDdTotal() {
+        const savingSelected = selectedDdPurposes().includes('saving');
+        const selectedCards = Array.from(document.querySelectorAll('[data-week-card] input[name="selected_weeks"]:checked'));
+        let savings = 0;
+        if (savingSelected) {
+          selectedCards.forEach(function(checkbox) {
+            const amount = checkbox.closest('[data-week-card]').querySelector('.week-allocation-amount');
+            savings += parseFloat(amount && amount.value) || 0;
+          });
+        }
+        let fine = 0;
+        let other = 0;
         const fields = document.querySelectorAll('.dd-purpose-box:not(.d-none) .dd-purpose-amount');
-        let total = 0;
         fields.forEach(function(f) {
           const val = parseFloat(f.value) || 0;
-          total += val;
+          if (f.name === 'fine_amount') fine += val;
+          else other += val;
         });
-        document.getElementById('ddTotalDisplay').textContent = 'UGX ' + total.toLocaleString('en-UG', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+        const total = savings + fine + other;
+        const receivedInput = document.getElementById('id_amount_received');
+        const received = receivedInput && receivedInput.value !== '' ? (parseFloat(receivedInput.value) || 0) : total;
+        const format = value => 'UGX ' + value.toLocaleString('en-UG', {maximumFractionDigits: 0});
+        document.getElementById('ddSelectedWeeks').textContent = selectedCards.length;
+        document.getElementById('ddSavingsTotal').textContent = format(savings);
+        document.getElementById('ddFineTotal').textContent = format(fine);
+        document.getElementById('ddOtherTotal').textContent = format(other);
+        document.getElementById('ddTotalDisplay').textContent = format(total);
+        document.getElementById('ddRemaining').textContent = format(Math.max(total - received, 0));
+        document.getElementById('ddOverpayment').textContent = format(Math.max(received - total, 0));
+      }
+      function syncWeekCards() {
+        const savingSelected = selectedDdPurposes().includes('saving');
+        document.querySelectorAll('[data-week-card]').forEach(function(card) {
+          const checkbox = card.querySelector('input[name="selected_weeks"]');
+          const panel = card.querySelector('[data-week-amount-panel]');
+          const amount = card.querySelector('.week-allocation-amount');
+          const showAmount = savingSelected && checkbox.checked && !checkbox.disabled;
+          card.classList.toggle('is-selected', checkbox.checked && !checkbox.disabled);
+          panel.classList.toggle('d-none', !showAmount);
+          amount.disabled = !showAmount;
+          amount.required = showAmount;
+          if (!checkbox.checked) amount.value = '';
+        });
       }
       document.querySelectorAll('input[name="selected_purposes"]').forEach(function(cb) {
         cb.addEventListener('change', function() {
           toggleDdPurposeBoxes();
+          syncWeekCards();
           updateDdTotal();
         });
       });
       document.querySelectorAll('.dd-purpose-amount').forEach(function(f) {
         f.addEventListener('input', updateDdTotal);
       });
+      document.querySelectorAll('[data-week-card] input[name="selected_weeks"]').forEach(function(cb) {
+        cb.addEventListener('change', function() { syncWeekCards(); updateDdTotal(); });
+      });
+      document.querySelectorAll('.week-allocation-amount, #id_amount_received').forEach(function(f) {
+        f.addEventListener('input', updateDdTotal);
+      });
       toggleDdPurposeBoxes();
+      syncWeekCards();
       updateDdTotal();
       </script>
       </div>
@@ -410,6 +472,37 @@
     const memberSelect = document.getElementById('id_member');
     const accountSelect = document.getElementById('id_account');
     const endpointTemplate = "{% url 'member_accounts_api' 0 %}";
+    const weekOptionsEndpoint = "{% url 'treasurer_week_options' %}";
+
+    async function refreshPaidWeeks() {
+      if (!memberSelect || !memberSelect.value) return;
+      const params = new URLSearchParams({member: memberSelect.value, account: accountSelect.value || ''});
+      const response = await fetch(weekOptionsEndpoint + '?' + params.toString(), {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+      if (!response.ok) return;
+      const payload = await response.json();
+      const statuses = new Map((payload.weeks || []).map(week => [week.date, week]));
+      document.querySelectorAll('[data-week-card]').forEach(function(card) {
+        const status = statuses.get(card.dataset.week);
+        const checkbox = card.querySelector('input[name="selected_weeks"]');
+        const paid = Boolean(status && status.paid);
+        checkbox.disabled = paid;
+        if (paid) checkbox.checked = false;
+        card.classList.toggle('is-paid', paid);
+        let badge = card.querySelector('[data-paid-badge]');
+        if (paid && !badge) {
+          badge = document.createElement('span');
+          badge.className = 'badge text-bg-success mt-2';
+          badge.dataset.paidBadge = 'true';
+          card.appendChild(badge);
+        }
+        if (badge) {
+          badge.textContent = paid ? 'Paid · Locked' : '';
+          badge.classList.toggle('d-none', !paid);
+        }
+      });
+      syncWeekCards();
+      updateDdTotal();
+    }
 
     async function loadMemberAccounts(memberId) {
       if (!memberSelect || !accountSelect) {
@@ -437,6 +530,8 @@
         }
         accountSelect.appendChild(option);
       });
+      if (!currentValue && accounts.length === 1) accountSelect.value = String(accounts[0].id);
+      await refreshPaidWeeks();
     }
 
     if (memberSelect) {
@@ -447,6 +542,7 @@
         loadMemberAccounts(memberSelect.value);
       }
     }
+    if (accountSelect) accountSelect.addEventListener('change', refreshPaidWeeks);
 
     const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'))
     popoverTriggerList.map(function (popoverTriggerEl) {

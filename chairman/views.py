@@ -1,6 +1,7 @@
 from groupcore.models import MemberProfile, GroupSettings, SavingsAccount
 from groupcore.reporting import merge_year_options, parse_report_year, years_from_dates
 from groupcore.week_cycle import current_saving_week
+from deposits.rules import weekly_savings_paid
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.contrib.auth.decorators import login_required, user_passes_test
@@ -32,7 +33,7 @@ def is_chairman(user):
 
 
 def can_manage_users(user):
-    return user.is_authenticated and (user.is_chairman() or user.is_secretary())
+    return user.is_authenticated and (user.is_chairman() or user.is_secretary() or user.is_treasurer())
 
 
 def user_management_redirect(user):
@@ -40,6 +41,8 @@ def user_management_redirect(user):
         return 'secretary_dashboard'
     if user.is_authenticated and user.is_chairman():
         return 'chairman_dashboard'
+    if user.is_authenticated and user.is_treasurer():
+        return 'treasurer_dashboard'
     return 'member_dashboard'
 
 
@@ -66,7 +69,7 @@ def is_leadership(user):
 @login_required
 def manage_users(request):
     if not can_manage_users(request.user):
-        messages.error(request, "Access denied. Only the Chairman or Secretary can manage users.")
+        messages.error(request, "Access denied. Only the Chairman, Secretary, or Treasurer can manage users.")
         return redirect(user_management_redirect(request.user))
 
     search_query = (request.GET.get('q') or '').strip()
@@ -93,7 +96,7 @@ def manage_users(request):
 @login_required
 def toggle_user_status(request, user_id):
     if not can_manage_users(request.user):
-        messages.error(request, "Access denied. Only the Chairman or Secretary can toggle user status.")
+        messages.error(request, "Access denied. Only the Chairman, Secretary, or Treasurer can toggle user status.")
         return redirect(user_management_redirect(request.user))
 
     user = get_object_or_404(MemberProfile, pk=user_id, is_superuser=False)
@@ -111,7 +114,7 @@ def toggle_user_status(request, user_id):
 @login_required
 def add_user(request):
     if not can_manage_users(request.user):
-        messages.error(request, "Access denied. Only the Chairman or Secretary can add users.")
+        messages.error(request, "Access denied. Only the Chairman, Secretary, or Treasurer can add users.")
         return redirect(user_management_redirect(request.user))
 
     if request.method == 'POST':
@@ -130,7 +133,7 @@ def add_user(request):
 @login_required
 def user_detail(request, user_id):
     if not can_manage_users(request.user):
-        messages.error(request, "Access denied. Only the Chairman or Secretary can view users.")
+        messages.error(request, "Access denied. Only the Chairman, Secretary, or Treasurer can view users.")
         return redirect(user_management_redirect(request.user))
 
     user = get_object_or_404(
@@ -147,7 +150,7 @@ def user_detail(request, user_id):
 @login_required
 def edit_user(request, user_id):
     if not can_manage_users(request.user):
-        messages.error(request, "Access denied. Only the Chairman or Secretary can edit users.")
+        messages.error(request, "Access denied. Only the Chairman, Secretary, or Treasurer can edit users.")
         return redirect(user_management_redirect(request.user))
 
     user = get_object_or_404(MemberProfile, pk=user_id, is_superuser=False)
@@ -247,7 +250,7 @@ def chairman_deposit_report(request):
         return redirect('chairman_dashboard')
 
     # Base queryset: all approved deposits, ordered newest first
-    base_qs = DepositSubmission.objects.filter(status='APPROVED').order_by('-payment_week', '-payment_date')
+    base_qs = DepositSubmission.objects.filter(status='APPROVED', member__is_superuser=False).order_by('-payment_week', '-payment_date')
 
     # Dropdown options (always from base dataset)
     selected_year = parse_report_year(request.GET.get('year'))
@@ -343,7 +346,7 @@ def chairman_fine_report(request):
         messages.error(request, "Access denied.")
         return redirect('chairman_dashboard')
 
-    fines = Fine.objects.all().order_by('-date_issued')
+    fines = Fine.objects.filter(member__is_superuser=False).order_by('-date_issued')
     return render(request, 'chairman/fine_report.html', {'fines': fines})
 
 
@@ -353,7 +356,7 @@ def chairman_document_report(request):
         messages.error(request, "Access denied.")
         return redirect('chairman_dashboard')
 
-    documents = Document.objects.all().order_by('-uploaded_at')
+    documents = Document.objects.filter(user__is_superuser=False).order_by('-uploaded_at')
     return render(request, 'chairman/document_report.html', {'documents': documents})
 
 
@@ -363,8 +366,8 @@ def chairman_income_report(request):
         messages.error(request, "Access denied.")
         return redirect('chairman_dashboard')
 
-    shares = ShareContribution.objects.all().order_by('-contribution_date')
-    subscriptions = AnnualSubscription.objects.all().order_by('-year', 'member__username')
+    shares = ShareContribution.objects.filter(member__is_superuser=False).order_by('-contribution_date')
+    subscriptions = AnnualSubscription.objects.filter(member__is_superuser=False).order_by('-year', 'member__username')
     return render(request, 'chairman/income_report.html', {
         'shares': shares,
         'subscriptions': subscriptions,
@@ -388,12 +391,16 @@ def chairman_weekly_payment_status(request):
     saving_week = current_saving_week(settings.week_one_start, timezone.localdate())
     current_week_start = saving_week.week_start
 
-    members = MemberProfile.objects.all()
+    members = MemberProfile.objects.filter(is_superuser=False)
     paid_members = []
     unpaid_members = []
 
     for member in members:
-        has_paid = member.deposits.filter(status='APPROVED', payment_week=current_week_start).exists()
+        accounts = list(member.savings_accounts.filter(is_active=True)) or [None]
+        has_paid = any(
+            weekly_savings_paid(member, account, current_week_start)
+            for account in accounts
+        )
         if has_paid:
             paid_members.append(member)
         else:

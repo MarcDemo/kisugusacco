@@ -72,6 +72,21 @@
               {% endif %}
             {% endif %}
 
+            {% if is_treasurer %}
+            <details class="mt-2">
+              <summary class="small text-primary" style="cursor:pointer">Override an approval</summary>
+              <form method="post" action="{% url 'override_loan_approval' loan.id %}" class="border rounded p-2 mt-2 bg-light">
+                {% csrf_token %}
+                <select name="original_approver_role" class="form-select form-select-sm mb-2" required>
+                  <option value="">On behalf of…</option><option value="GUARANTOR">Guarantor(s)</option><option value="SECRETARY">Secretary</option><option value="VICE_CHAIRMAN">Vice Chairman</option><option value="CHAIRMAN">Chairman</option>
+                </select>
+                <textarea name="override_reason" class="form-control form-control-sm mb-2" rows="2" placeholder="Reason for override" required></textarea>
+                <button class="btn btn-sm btn-primary">Record override</button>
+              </form>
+            </details>
+            {% endif %}
+            {% for audit in loan.approval_audits.all %}<div class="small mt-2 border-start border-primary ps-2"><strong>Approved by {{ audit.actual_approver.username }}</strong><br>(On behalf of {{ audit.get_original_approver_role_display }}{% if audit.on_behalf_of %}: {{ audit.on_behalf_of.username }}{% endif %})<br><span class="text-muted">{{ audit.approved_at|date:'d M Y H:i' }} · {{ audit.reason }}</span></div>{% endfor %}
+
           </td>
         </tr>
         {% empty %}

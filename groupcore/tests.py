@@ -15,6 +15,7 @@ from deposits.models import DepositSubmission
 from fines.models import Fine
 from groupcore.models import GroupSettings, MemberProfile, SavingsAccount
 from groupcore.week_cycle import current_saving_week, first_friday_of_year
+from groupcore.savings_calendar import build_weekly_calendar, ensure_overdue_fines
 from loans.models import LoanRequest
 
 
@@ -39,6 +40,62 @@ class SavingWeekCycleTests(SimpleTestCase):
         self.assertEqual(saving_week.week_start, date(2027, 7, 2))
         self.assertEqual(saving_week.week_number, 27)
         self.assertEqual(saving_week.saving_year, 2027)
+
+
+class AutomaticWeeklyFineTests(TestCase):
+    def test_ten_thousand_is_paid_but_subthreshold_week_is_fined(self):
+        paid_member = MemberProfile.objects.create_user(username='threshold-paid', password='pass12345')
+        unpaid_member = MemberProfile.objects.create_user(username='threshold-unpaid', password='pass12345')
+        paid_account = SavingsAccount.objects.create(owner=paid_member, label='A')
+        unpaid_account = SavingsAccount.objects.create(owner=unpaid_member, label='A')
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        for member, account, amount in (
+            (paid_member, paid_account, Decimal('10000')),
+            (unpaid_member, unpaid_account, Decimal('9999')),
+        ):
+            DepositSubmission.objects.create(
+                member=member, account=account, submitted_by=member,
+                payment_week=date(2026, 1, 2), saving_amount=amount,
+                payment_date=date(2026, 1, 2), payment_time=time(9, 0), status='APPROVED',
+            )
+        after_deadline = timezone.make_aware(datetime(2026, 1, 5, 0, 1))
+
+        ensure_overdue_fines(now=after_deadline)
+
+        self.assertFalse(Fine.objects.filter(member=paid_member).exists())
+        fine = Fine.objects.get(member=unpaid_member, reference_week=date(2026, 1, 2))
+        self.assertEqual(fine.amount, Decimal('1000'))
+
+    def test_calendar_marks_valid_late_allocation_paid_late(self):
+        member = MemberProfile.objects.create_user(username='calendar-late', password='pass12345')
+        account = SavingsAccount.objects.create(owner=member, label='A')
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        DepositSubmission.objects.create(
+            member=member, account=account, submitted_by=member,
+            payment_week=date(2026, 1, 2), saving_amount=Decimal('30000'),
+            payment_date=date(2026, 1, 6), payment_time=time(9, 0), status='APPROVED',
+        )
+
+        calendar = build_weekly_calendar(member, account, today=date(2026, 7, 14))
+
+        self.assertEqual(calendar['weeks'][0]['status'], 'paid_late')
+        self.assertEqual(calendar['weeks'][0]['required'], Decimal('10000'))
+
+    def test_generation_is_idempotent_and_late_savings_do_not_remove_fine(self):
+        member = MemberProfile.objects.create_user(username='calendar-member', password='pass12345')
+        account = SavingsAccount.objects.create(owner=member, label='A')
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        after_deadline = timezone.make_aware(datetime(2026, 1, 5, 0, 1))
+
+        self.assertEqual(ensure_overdue_fines(member, account, after_deadline), 1)
+        self.assertEqual(ensure_overdue_fines(member, account, after_deadline), 0)
+        fine = Fine.objects.get(member=member, account=account, reference_week=date(2026, 1, 2))
+        DepositSubmission.objects.create(
+            member=member, account=account, submitted_by=member,
+            payment_week=date(2026, 1, 2), saving_amount=Decimal('20000'),
+            payment_date=date(2026, 1, 6), payment_time=time(10, 0), status='APPROVED',
+        )
+        self.assertTrue(Fine.objects.filter(pk=fine.pk, is_paid=False).exists())
 
     def test_new_year_waits_for_the_first_friday_saving_week(self):
         saving_week = current_saving_week(
@@ -383,7 +440,7 @@ class HistoricalDataImportCommandTests(TestCase):
             self.assertEqual(deposit.status, 'APPROVED')
             self.assertIn('CREATED_TRANSACTION', report_path.read_text(encoding='utf-8'))
 
-    def test_commit_import_deletes_matching_missed_week_fine_paid_in_time(self):
+    def test_commit_import_preserves_existing_weekly_fine_independently(self):
         member = MemberProfile.objects.create_user(
             username='jane_member',
             password='pass12345',
@@ -413,7 +470,7 @@ class HistoricalDataImportCommandTests(TestCase):
                 commit=True,
             )
 
-        self.assertFalse(Fine.objects.filter(id=fine.id).exists())
+        self.assertTrue(Fine.objects.filter(id=fine.id, is_paid=False).exists())
 
     def test_commit_import_keeps_matching_missed_week_fine_when_paid_late(self):
         member = MemberProfile.objects.create_user(
