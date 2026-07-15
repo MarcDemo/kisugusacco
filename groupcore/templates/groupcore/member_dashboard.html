@@ -136,12 +136,50 @@
 </style>
 
 <div class="member-surface">
+  {% if is_treasurer_preview %}
+  <div class="card border-primary shadow-sm mb-4">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+        <div>
+          <span class="badge text-bg-primary mb-2"><i class="bi bi-eye me-1"></i> Read-only Treasurer preview</span>
+          <h4 class="mb-1">Viewing {{ preview_member.get_full_name|default:preview_member.username }}'s dashboard</h4>
+          <div class="text-muted small">@{{ preview_member.username }} · {{ preview_member.get_role_display }}</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+          <a href="{% url 'treasurer_member_preview_index' %}" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i> Choose another member</a>
+          <a href="{% url 'treasurer_dashboard' %}" class="btn btn-outline-secondary btn-sm">Exit preview</a>
+        </div>
+      </div>
+      {% if preview_accounts|length > 1 %}
+      <form method="get" action="{% url 'treasurer_member_preview_index' %}" class="row g-2 align-items-end">
+        <input type="hidden" name="member" value="{{ preview_member.id }}">
+        <div class="col-md-6">
+          <label for="preview-account" class="form-label fw-semibold mb-1">Savings account</label>
+          <select id="preview-account" name="account" class="form-select form-select-sm">
+            {% for account in preview_accounts %}
+              <option value="{{ account.id }}" {% if account == active_account %}selected{% endif %}>{{ account.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-auto"><button class="btn btn-outline-primary btn-sm" type="submit">View account</button></div>
+      </form>
+      {% elif active_account %}
+        <div class="small text-muted">Savings account: <strong>{{ active_account.label }}</strong></div>
+      {% else %}
+        <div class="alert alert-warning py-2 mb-0">This member has no active savings account. The dashboard shows their combined records.</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
-    <h2 class="mb-0" style="color:#134b2f;"><i class="bi bi-person-circle me-2"></i>Member Dashboard</h2>
+    <h2 class="mb-0" style="color:#134b2f;"><i class="bi bi-person-circle me-2"></i>{% if is_treasurer_preview %}Member Dashboard Preview{% else %}Member Dashboard{% endif %}</h2>
+    {% if not is_treasurer_preview %}
     <div class="d-flex gap-2">
       <a href="{% url 'submit_deposit' %}" class="btn btn-success btn-sm"><i class="bi bi-plus-circle me-1"></i> New Deposit</a>
       <a href="{% url 'my_contributions' %}" class="btn btn-outline-success btn-sm"><i class="bi bi-bar-chart-line me-1"></i> Contributions</a>
     </div>
+    {% endif %}
   </div>
 
   <div class="row g-3 mb-4">

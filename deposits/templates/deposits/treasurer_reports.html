@@ -43,6 +43,7 @@
       <thead class="table-light">
         <tr>
           <th>Member</th>
+          <th>Savings Account</th>
           <th>Total</th>
           <th>Saving</th>
           <th>Welfare</th>
@@ -59,6 +60,7 @@
           {% for row in report_data %}
               <tr>
               <td>{{ row.member.get_full_name|default:row.member.username }}</td>
+              <td>{{ row.savings_account|default:"-" }}</td>
               <td>UGX {{ row.total_amount|default:0|floatformat:"0" }}</td>
               <td>UGX {{ row.total_saving|default:0|floatformat:"0" }}</td>
               <td>UGX {{ row.total_welfare|default:0|floatformat:"0" }}</td>
@@ -79,7 +81,7 @@
               </tr>
           {% empty %}
               <tr>
-            <td colspan="11" class="text-center text-muted">No members found.</td>
+            <td colspan="12" class="text-center text-muted">No members found.</td>
               </tr>
           {% endfor %}
           </tbody>

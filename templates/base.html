@@ -870,8 +870,13 @@
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link {% if request.resolver_match.url_name == 'manage_users' or request.resolver_match.url_name == 'treasurer_member_preview' %}active{% endif %}" href="{% url 'manage_users' %}">
-              <i class="bi bi-people me-2"></i> Manage Users & Preview
+            <a class="nav-link {% if request.resolver_match.url_name == 'manage_users' %}active{% endif %}" href="{% url 'manage_users' %}">
+              <i class="bi bi-people me-2"></i> Manage Users
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'treasurer_member_preview' or request.resolver_match.url_name == 'treasurer_member_preview_index' %}active{% endif %}" href="{% url 'treasurer_member_preview_index' %}">
+              <i class="bi bi-person-bounding-box me-2"></i> Member Dashboard Preview
             </a>
           </li>
           <li class="nav-item">

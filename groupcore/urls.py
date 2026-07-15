@@ -13,6 +13,7 @@ urlpatterns = [
     path('vice-chairman/dashboard/', views.vice_chairman_dashboard, name='vice_chairman_dashboard'),
     path('overseer/dashboard/', views.overseer_dashboard, name='overseer_dashboard'),
     path('treasurer/dashboard/', views.treasurer_dashboard, name='treasurer_dashboard'),
+    path('treasurer/member-preview/', views.treasurer_member_preview, name='treasurer_member_preview_index'),
     path('treasurer/members/<int:member_id>/preview/', views.treasurer_member_preview, name='treasurer_member_preview'),
     path('member/dashboard/', views.member_dashboard, name='member_dashboard'),
     path('secretary/dashboard/', views.secretary_dashboard, name='secretary_dashboard'),

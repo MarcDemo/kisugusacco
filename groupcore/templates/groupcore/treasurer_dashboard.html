@@ -122,7 +122,8 @@
     <h2 class="mb-0 text-primary"><i class="bi bi-calculator me-2"></i>Treasurer Dashboard</h2>
     <div class="d-flex gap-2 flex-wrap">
       <a href="{% url 'manage_deposits' %}" class="btn btn-success btn-sm"><i class="bi bi-check-circle-fill me-1"></i> Review Deposits</a>
-      <a href="{% url 'manage_users' %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-people me-1"></i> Manage Users & Member Preview</a>
+      <a href="{% url 'treasurer_member_preview_index' %}" class="btn btn-primary btn-sm"><i class="bi bi-person-bounding-box me-1"></i> Member Dashboard Preview</a>
+      <a href="{% url 'manage_users' %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-people me-1"></i> Manage Users</a>
       <a href="{% url 'loan_statuses' %}" class="btn btn-outline-warning btn-sm"><i class="bi bi-bank me-1"></i> Loan Management</a>
       <a href="{% url 'manage_fines' %}" class="btn btn-outline-danger btn-sm"><i class="bi bi-exclamation-diamond-fill me-1"></i> Manage Fines</a>
       <a href="{% url 'other_income_list' %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-cash-coin me-1"></i> Other Income</a>

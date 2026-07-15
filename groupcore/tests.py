@@ -15,7 +15,11 @@ from deposits.models import DepositSubmission
 from fines.models import Fine
 from groupcore.models import GroupSettings, MemberProfile, SavingsAccount
 from groupcore.week_cycle import current_saving_week, first_friday_of_year
-from groupcore.savings_calendar import build_weekly_calendar, ensure_overdue_fines
+from groupcore.savings_calendar import (
+    build_weekly_calendar,
+    clear_on_time_missed_fine,
+    ensure_overdue_fines,
+)
 from loans.models import LoanRequest
 
 
@@ -81,6 +85,43 @@ class AutomaticWeeklyFineTests(TestCase):
         self.assertEqual(calendar['weeks'][0]['status'], 'paid_late')
         self.assertEqual(calendar['weeks'][0]['required'], Decimal('10000'))
 
+    def test_pending_on_time_payment_does_not_create_fine(self):
+        member = MemberProfile.objects.create_user(username='pending-on-time', password='pass12345')
+        account = SavingsAccount.objects.create(owner=member, label='A')
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        DepositSubmission.objects.create(
+            member=member, account=account, submitted_by=member,
+            payment_week=date(2026, 1, 2), saving_amount=Decimal('10000'),
+            payment_date=date(2026, 1, 3), payment_time=time(10, 0), status='PENDING',
+        )
+
+        self.assertEqual(
+            ensure_overdue_fines(
+                member, account,
+                timezone.make_aware(datetime(2026, 1, 6, 0, 1)),
+            ),
+            0,
+        )
+        self.assertFalse(Fine.objects.filter(member=member).exists())
+
+    def test_on_time_approval_removes_previously_created_fine(self):
+        member = MemberProfile.objects.create_user(username='approval-on-time', password='pass12345')
+        account = SavingsAccount.objects.create(owner=member, label='A')
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        fine = Fine.objects.create(
+            member=member, account=account, fine_type='MISSED_WEEKLY_SAVING',
+            reference_week=date(2026, 1, 2), reason='Generated before approval',
+            amount=Decimal('1000'), issued_by=None,
+        )
+        DepositSubmission.objects.create(
+            member=member, account=account, submitted_by=member,
+            payment_week=date(2026, 1, 2), saving_amount=Decimal('10000'),
+            payment_date=date(2026, 1, 3), payment_time=time(10, 0), status='APPROVED',
+        )
+
+        self.assertEqual(clear_on_time_missed_fine(member, account, date(2026, 1, 2)), 1)
+        self.assertFalse(Fine.objects.filter(pk=fine.pk).exists())
+
     def test_generation_is_idempotent_and_late_savings_do_not_remove_fine(self):
         member = MemberProfile.objects.create_user(username='calendar-member', password='pass12345')
         account = SavingsAccount.objects.create(owner=member, label='A')
@@ -114,6 +155,90 @@ class RootUrlTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response['Location'], '/login/')
+
+
+class TreasurerMemberDashboardPreviewTests(TestCase):
+    def setUp(self):
+        self.treasurer = MemberProfile.objects.create_user(
+            username='preview-treasurer', password='pass12345', role='TREASURER'
+        )
+        self.member = MemberProfile.objects.create_user(
+            username='preview-member', first_name='Amina', last_name='Nansubuga',
+            email='amina@example.com', phone_number='0700000000', password='pass12345',
+        )
+        self.account_a = SavingsAccount.objects.create(owner=self.member, label='A')
+        self.account_b = SavingsAccount.objects.create(owner=self.member, label='B')
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        for account, amount in ((self.account_a, Decimal('20000')), (self.account_b, Decimal('40000'))):
+            DepositSubmission.objects.create(
+                member=self.member,
+                account=account,
+                submitted_by=self.member,
+                payment_week=date(2026, 1, 2),
+                saving_amount=amount,
+                payment_date=date(2026, 1, 2),
+                payment_time=time(9, 0),
+                status='APPROVED',
+            )
+
+    def test_treasurer_can_search_for_a_member(self):
+        MemberProfile.objects.create_superuser(
+            username='hidden-admin', email='admin@example.com', password='pass12345'
+        )
+        self.client.login(username='preview-treasurer', password='pass12345')
+
+        response = self.client.get(reverse('treasurer_member_preview_index'), {'q': 'Amina'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'groupcore/treasurer_member_preview_select.html')
+        self.assertContains(response, 'Amina Nansubuga')
+        self.assertNotContains(response, 'hidden-admin')
+
+    def test_selected_member_uses_the_real_member_dashboard_in_read_only_mode(self):
+        self.client.login(username='preview-treasurer', password='pass12345')
+
+        response = self.client.get(
+            reverse('treasurer_member_preview_index'),
+            {'member': self.member.id, 'account': self.account_a.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'groupcore/member_dashboard.html')
+        self.assertTrue(response.context['is_treasurer_preview'])
+        self.assertEqual(response.context['preview_member'], self.member)
+        self.assertEqual(response.context['active_account'], self.account_a)
+        self.assertEqual(response.context['user_savings_total'], Decimal('20000'))
+        self.assertContains(response, 'Viewing Amina Nansubuga')
+        self.assertNotContains(response, 'New Deposit')
+
+    def test_preview_can_switch_between_a_members_accounts(self):
+        self.client.login(username='preview-treasurer', password='pass12345')
+
+        response = self.client.get(
+            reverse('treasurer_member_preview_index'),
+            {'member': self.member.id, 'account': self.account_b.id},
+        )
+
+        self.assertEqual(response.context['active_account'], self.account_b)
+        self.assertEqual(response.context['user_savings_total'], Decimal('40000'))
+
+    def test_existing_member_preview_link_uses_the_same_dashboard(self):
+        self.client.login(username='preview-treasurer', password='pass12345')
+
+        response = self.client.get(reverse('treasurer_member_preview', args=[self.member.id]))
+
+        self.assertTemplateUsed(response, 'groupcore/member_dashboard.html')
+        self.assertEqual(response.context['preview_member'], self.member)
+
+    def test_non_treasurer_cannot_preview_other_members(self):
+        outsider = MemberProfile.objects.create_user(
+            username='preview-outsider', password='pass12345', role='MEMBER'
+        )
+        self.client.login(username=outsider.username, password='pass12345')
+
+        response = self.client.get(reverse('treasurer_member_preview_index'))
+
+        self.assertRedirects(response, reverse('member_dashboard'))
 
 
 class GroupSettingsSetupTests(TestCase):

@@ -3,7 +3,278 @@
 
 {% block content %}
 <style>
-  .weekly-calendar-grid{display:grid;grid-template-columns:repeat(8,minmax(120px,1fr));gap:.65rem}.week-card{border:2px solid #d8dee8;border-radius:13px;padding:.7rem;background:#f3f5f7;cursor:pointer;transition:.18s}.week-card.is-selected{border-color:#1976d2;background:#e7f1ff;box-shadow:0 0 0 2px rgba(25,118,210,.12)}.week-card.is-paid{background:#e8f7ee;color:#17643a;cursor:not-allowed;opacity:.78}.week-card input{accent-color:#1976d2}.week-amount-panel{margin-top:.55rem}.allocation-summary{border-radius:14px;background:#f7f9fc;border:1px solid #e0e6ef;padding:.75rem}@media(max-width:900px){.weekly-calendar-grid{grid-template-columns:repeat(4,1fr)}}@media(max-width:520px){.weekly-calendar-grid{grid-template-columns:repeat(2,1fr)}}
+  .dd-savings-allocation {
+    border: 1px solid #dfe6e2;
+    border-radius: 0.85rem;
+    background: #fbfdfc;
+    padding: 1rem;
+  }
+
+  .dd-week-trigger {
+    min-width: min(100%, 15rem);
+  }
+
+  .dd-allocation-list {
+    display: grid;
+    gap: 0.55rem;
+    margin-top: 0.85rem;
+  }
+
+  .dd-allocation-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(9rem, 12rem) auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid #e1e7e4;
+    border-radius: 0.7rem;
+    background: #fff;
+  }
+
+  .dd-allocation-date {
+    min-width: 0;
+  }
+
+  .dd-allocation-date small {
+    display: block;
+    color: #6c757d;
+  }
+
+  .dd-allocation-input-wrap {
+    position: relative;
+  }
+
+  .dd-allocation-input-wrap::before {
+    content: "UGX";
+    position: absolute;
+    left: 0.7rem;
+    top: 50%;
+    z-index: 1;
+    color: #6c757d;
+    font-size: 0.75rem;
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  .dd-allocation-input {
+    padding-left: 2.75rem;
+  }
+
+  .dd-deposit-summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.65rem;
+    min-height: 3rem;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid #dfe6e2;
+    border-radius: 0.75rem;
+    background: #f8faf9;
+    color: #34443b;
+  }
+
+  .dd-summary-separator {
+    color: #a0aaa4;
+    user-select: none;
+  }
+
+  .dd-calendar-modal {
+    z-index: 1200;
+  }
+
+  body.dd-calendar-open .modal-backdrop {
+    z-index: 1190;
+  }
+
+  .dd-calendar-modal .modal-content {
+    border: 0;
+    border-radius: 1rem;
+    box-shadow: 0 1.5rem 4rem rgba(19, 45, 31, 0.2);
+  }
+
+  .dd-calendar-modal .modal-header,
+  .dd-calendar-modal .modal-footer {
+    border-color: #e5ebe7;
+    background: #fff;
+  }
+
+  .dd-calendar-modal .modal-body {
+    background: #f8faf9;
+  }
+
+  .dd-calendar-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 1rem;
+    color: #5d6862;
+    font-size: 0.8rem;
+  }
+
+  .dd-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
+  }
+
+  .dd-legend-mark {
+    display: inline-grid;
+    place-items: center;
+    width: 1.35rem;
+    height: 1.35rem;
+    border: 1px solid #cbd5cf;
+    border-radius: 50%;
+    background: #fff;
+    font-size: 0.68rem;
+  }
+
+  .dd-legend-mark.is-selected {
+    border-color: #166534;
+    background: #166534;
+    color: #fff;
+  }
+
+  .dd-legend-mark.is-current {
+    border: 2px solid #0d6efd;
+  }
+
+  .dd-legend-mark.is-locked,
+  .dd-legend-mark.is-future {
+    background: #edf1ef;
+    color: #6c757d;
+  }
+
+  .dd-calendar-months {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.8rem;
+  }
+
+  .dd-calendar-month {
+    min-width: 0;
+    padding: 0.8rem;
+    border: 1px solid #e0e7e3;
+    border-radius: 0.8rem;
+    background: #fff;
+  }
+
+  .dd-calendar-month-title {
+    margin-bottom: 0.7rem;
+    color: #26352d;
+    font-size: 0.92rem;
+    font-weight: 650;
+    text-align: center;
+  }
+
+  .dd-calendar-days {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(2.35rem, 1fr));
+    justify-items: center;
+    gap: 0.5rem 0.35rem;
+  }
+
+  .dd-date-button {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 2.35rem;
+    min-width: 2.35rem;
+    height: 2.35rem;
+    min-height: 2.35rem;
+    padding: 0;
+    border: 1px solid #cbd5cf;
+    border-radius: 50%;
+    background: #fff;
+    color: #26352d;
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1;
+    transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+  }
+
+  .dd-date-button:hover:not(:disabled) {
+    border-color: #198754;
+    background: #f0f8f3;
+    transform: translateY(-1px);
+  }
+
+  .dd-date-button:focus-visible {
+    outline: 3px solid rgba(13, 110, 253, 0.28);
+    outline-offset: 2px;
+  }
+
+  .dd-date-button.is-selected {
+    border-color: #166534;
+    background: #166534;
+    color: #fff;
+    box-shadow: 0 0 0 3px rgba(22, 101, 52, 0.14);
+  }
+
+  .dd-date-button.is-current {
+    border: 2px solid #0d6efd;
+  }
+
+  .dd-date-button.is-missed {
+    border-color: #dc3545;
+    background: #fff1f2;
+    color: #b42333;
+  }
+
+  .dd-date-button.is-paid-late {
+    border-color: #d97706;
+    background: #fff7ed;
+    color: #a45100;
+  }
+
+  .dd-date-button.is-paid-on-time {
+    border-color: #198754;
+    background: #e9f7ef;
+    color: #146c43;
+  }
+
+  .dd-date-button:disabled {
+    border-color: #d7ded9;
+    background: #edf1ef;
+    color: #7b8580;
+    cursor: not-allowed;
+    opacity: 1;
+  }
+
+  .dd-date-button.is-paid-on-time:disabled {
+    border-color: #198754;
+    background: #e9f7ef;
+    color: #146c43;
+  }
+
+  .dd-date-button.is-paid-late:disabled {
+    border-color: #d97706;
+    background: #fff7ed;
+    color: #a45100;
+  }
+
+  .dd-date-state-icon {
+    position: absolute;
+    top: -0.3rem;
+    right: -0.25rem;
+    display: grid;
+    place-items: center;
+    width: 1rem;
+    height: 1rem;
+    border: 1px solid #fff;
+    border-radius: 50%;
+    background: #5e6b64;
+    color: #fff;
+    font-size: 0.56rem;
+  }
+
+  .dd-date-button.is-selected .dd-date-state-icon {
+    background: #0d6efd;
+  }
+
+  .dd-mobile-month-nav {
+    display: none;
+  }
+
   .dd-purpose-box {
     opacity: 1;
     transform: translateY(0);
@@ -32,6 +303,110 @@
     max-width: 100%;
     height: auto;
   }
+
+  @media (max-width: 991.98px) {
+    .dd-calendar-months {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 575.98px) {
+    .dd-savings-allocation {
+      padding: 0.8rem;
+    }
+
+    .dd-week-trigger {
+      width: 100%;
+    }
+
+    .dd-allocation-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.55rem;
+    }
+
+    .dd-allocation-input-wrap {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
+
+    .dd-allocation-remove {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .dd-calendar-modal .modal-content {
+      min-height: 100%;
+      border-radius: 0;
+    }
+
+    .dd-calendar-modal .modal-body {
+      overflow-y: auto;
+    }
+
+    .dd-calendar-modal .modal-footer {
+      position: sticky;
+      bottom: 0;
+      padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+    }
+
+    .dd-mobile-month-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .dd-mobile-month-label {
+      min-width: 0;
+      font-weight: 650;
+      text-align: center;
+    }
+
+    .dd-calendar-months {
+      display: block;
+    }
+
+    .dd-calendar-month {
+      display: none;
+      border: 0;
+      padding: 0.35rem 0;
+      background: transparent;
+    }
+
+    .dd-calendar-month.is-mobile-active {
+      display: block;
+    }
+
+    .dd-calendar-month-title {
+      display: none;
+    }
+
+    .dd-calendar-days {
+      grid-template-columns: repeat(5, minmax(2.75rem, 1fr));
+      gap: 0.8rem 0.45rem;
+      padding: 1rem 0;
+    }
+
+    .dd-date-button {
+      width: 2.75rem;
+      min-width: 2.75rem;
+      height: 2.75rem;
+      min-height: 2.75rem;
+    }
+
+    .dd-calendar-modal .modal-footer .btn {
+      flex: 1 1 0;
+    }
+
+    .dd-summary-separator {
+      display: none;
+    }
+
+    .dd-deposit-summary > span {
+      flex: 1 1 100%;
+    }
+  }
 </style>
 
 <div class="container py-4">
@@ -39,19 +414,20 @@
     <i class="bi bi-clipboard-check me-2"></i> Manage Deposits
   </h3>
 
-  <!-- Pending Deposits -->
+  <!-- Deposit submissions and review history -->
   <div class="card shadow-sm mb-5">
     <div class="card-header bg-success text-white">
-      <h5 class="mb-0"><i class="bi bi-hourglass-split me-2"></i> Pending Deposits</h5>
+      <h5 class="mb-0"><i class="bi bi-inbox me-2"></i> Deposit Submissions</h5>
     </div>
     <div class="card-body p-0">
-      {% if pending_deposits %}
+      {% if deposit_submissions %}
       <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
           <thead class="table-light">
             <tr>
               <th>Member</th>
               <th>Account</th>
+              <th>Status</th>
               <th>Total</th>
               <th>Types</th>
               <th>Saving</th>
@@ -71,10 +447,19 @@
             </tr>
           </thead>
           <tbody>
-            {% for deposit in pending_deposits %}
+            {% for deposit in deposit_submissions %}
             <tr>
               <td>{{ deposit.member.username }}</td>
               <td>{{ deposit.account.label|default:"-" }}</td>
+              <td>
+                {% if deposit.status == 'APPROVED' %}
+                <span class="badge text-bg-success">Approved</span>
+                {% elif deposit.status == 'REJECTED' %}
+                <span class="badge text-bg-danger">Rejected</span>
+                {% else %}
+                <span class="badge text-bg-warning text-dark">Pending</span>
+                {% endif %}
+              </td>
               <td>UGX {{ deposit.amount|floatformat:"0" }}</td>
               <td>
                 {% for purpose, value in deposit.purpose_breakdown.items %}
@@ -125,12 +510,16 @@
               <td>{{ deposit.payment_date|date:"Y-m-d" }}</td>
               <td>{{ deposit.payment_time|date:"H:i" }}</td>
               <td class="text-nowrap">
+                {% if deposit.status == 'PENDING' %}
                 <a href="{% url 'approve_deposit' deposit.id %}" class="btn btn-sm btn-success" title="Approve">
                   <i class="bi bi-check-circle"></i>
                 </a>
                 <a href="{% url 'reject_deposit' deposit.id %}" class="btn btn-sm btn-danger" title="Reject">
                   <i class="bi bi-x-circle"></i>
                 </a>
+                {% else %}
+                <span class="text-muted small">Processed</span>
+                {% endif %}
               </td>
             </tr>
             {% endfor %}
@@ -138,7 +527,7 @@
         </table>
       </div>
       {% else %}
-      <div class="p-4 text-muted">No pending deposits at the moment.</div>
+      <div class="p-4 text-muted">No deposit submissions at the moment.</div>
       {% endif %}
     </div>
   </div>
@@ -173,7 +562,7 @@
         </div>
         {% endif %}
 
-        <form method="post" enctype="multipart/form-data" class="row g-3">
+        <form method="post" enctype="multipart/form-data" class="row g-3" id="directDepositForm">
           {% csrf_token %}
 
           <!-- Select Member -->
@@ -193,31 +582,8 @@
             {% endif %}
           </div>
 
-          {{ form.payment_week }}
-          <div class="col-12">
-            <label class="form-label fw-semibold">Weekly Savings Calendar <span class="text-danger">*</span></label>
-            <small class="text-muted d-block mb-2">Select each week and enter its allocation. Every weekly amount must be UGX 10,000–50,000.</small>
-            <div class="weekly-calendar-grid">
-              {% for week in form.week_options %}
-              <label class="week-card {% if week.is_paid %}is-paid{% elif week.selected %}is-selected{% endif %}" data-week-card data-week="{{ week.value }}">
-                <span class="d-flex gap-2 align-items-start">
-                  <input type="checkbox" name="selected_weeks" value="{{ week.value }}" {% if week.selected %}checked{% endif %} {% if week.is_paid %}disabled{% endif %}>
-                  <strong>{{ week.label }}</strong>
-                </span>
-                {% if week.is_paid %}<span class="badge text-bg-success mt-2" data-paid-badge>Paid · Locked</span>{% endif %}
-                <span class="week-amount-panel {% if not week.selected %}d-none{% endif %}" data-week-amount-panel>
-                  <span class="small d-block mt-1">Amount (UGX)</span>
-                  <input type="number" name="week_amount_{{ week.value }}" value="{{ week.amount }}" min="10000" max="50000" step="100" class="form-control form-control-sm week-allocation-amount" {% if not week.selected %}disabled{% endif %}>
-                </span>
-              </label>
-              {% endfor %}
-            </div>
-            {{ form.saving_amount }}
-            {% if form.selected_weeks.errors %}<div class="text-danger small mt-1">{{ form.selected_weeks.errors|join:", " }}</div>{% endif %}
-          </div>
-
           <!-- Payment Date -->
-          <div class="col-md-3">
+          <div class="col-md-6">
             <label for="id_payment_date" class="form-label">Payment Date <span class="text-danger">*</span></label>
             {{ form.payment_date|add_class:"form-control" }}
             {% if form.payment_date.errors %}
@@ -226,7 +592,7 @@
           </div>
 
           <!-- Payment Time -->
-          <div class="col-md-3">
+          <div class="col-md-6">
             <label for="id_payment_time" class="form-label">Payment Time <span class="text-danger">*</span></label>
             {{ form.payment_time|add_class:"form-control" }}
             {% if form.payment_time.errors %}
@@ -241,7 +607,7 @@
             <div class="d-flex flex-wrap gap-3">
               {% for checkbox in form.selected_purposes %}
               <div class="form-check">
-                {{ checkbox.tag }}
+                {% if checkbox.data.value == 'fine' and not form.has_outstanding_fines %}<input type="checkbox" name="selected_purposes" value="fine" id="{{ checkbox.id_for_label }}" disabled aria-disabled="true">{% else %}{{ checkbox.tag }}{% endif %}
                 <label class="form-check-label" for="{{ checkbox.id_for_label }}">{{ checkbox.choice_label }}</label>
               </div>
               {% endfor %}
@@ -256,6 +622,14 @@
             <label class="form-label fw-semibold">Amount per Purpose <span class="text-danger">*</span></label>
             <small class="text-muted d-block mb-2">Only selected purposes are shown below.</small>
             <div class="row g-2">
+              <div class="col-md-3 col-6 dd-purpose-box" data-purpose="saving">
+                <label for="id_saving_amount" class="form-label small">Savings total (UGX)</label>
+                {{ form.saving_amount|add_class:"form-control dd-purpose-amount" }}
+                <small class="text-muted d-block mt-1">Allocate this total after entering it.</small>
+                {% if form.saving_amount.errors %}
+                <div class="text-danger small mt-1">{{ form.saving_amount.errors|join:", " }}</div>
+                {% endif %}
+              </div>
               <div class="col-md-3 col-6 dd-purpose-box" data-purpose="welfare">
                 <label for="id_welfare_amount" class="form-label small">Welfare (UGX)</label>
                 {{ form.welfare_amount|add_class:"form-control dd-purpose-amount" }}
@@ -304,22 +678,80 @@
             {% endif %}
           </div>
 
-          <div class="col-md-4">
-            <label for="id_amount_received" class="form-label">Amount Received (UGX)</label>
-            {{ form.amount_received|add_class:"form-control" }}
-            <small class="text-muted">Optional; leave blank when it equals the allocation total.</small>
-            {% if form.amount_received.errors %}<div class="text-danger small mt-1">{{ form.amount_received.errors|join:", " }}</div>{% endif %}
+          {{ form.payment_week }}
+
+          <div class="col-12 d-none" id="ddSavingsAllocation" aria-live="polite">
+            <section class="dd-savings-allocation" aria-labelledby="ddSavingsAllocationTitle">
+              <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
+                <div>
+                  <h6 class="mb-1" id="ddSavingsAllocationTitle">Savings-week allocation <span class="text-danger">*</span></h6>
+                  <p class="small text-muted mb-0">Choose the Friday week(s) this savings total covers. Each week must receive UGX 10,000–50,000.</p>
+                </div>
+                <button type="button" class="btn btn-outline-success dd-week-trigger" id="ddOpenWeekPicker" data-bs-toggle="modal" data-bs-target="#ddWeekPickerModal" aria-controls="ddWeekPickerModal">
+                  <i class="bi bi-calendar3 me-1" aria-hidden="true"></i>
+                  <span data-trigger-label>Choose savings weeks</span>
+                </button>
+              </div>
+
+              <div class="alert alert-warning small py-2 mt-3 mb-0 d-none" id="ddWeekStatusMessage" role="status"></div>
+              <div class="dd-allocation-list" id="ddAllocationRows" aria-label="Selected savings-week amounts"></div>
+              <p class="small text-muted mt-2 mb-0 d-none" id="ddNoWeeksMessage">No weeks selected yet.</p>
+              {% if form.selected_weeks.errors %}
+              <div class="text-danger small mt-2" id="ddWeekServerErrors">{{ form.selected_weeks.errors|join:", " }}</div>
+              {% endif %}
+
+              <div id="ddWeekOptionStore" hidden>
+                {% for week in form.week_options %}
+                <span
+                  data-week-option
+                  data-week="{{ week.value }}"
+                  data-label="{{ week.label }}"
+                  data-date-label="{{ week.date_label|default:week.label }}"
+                  data-accessible-label="{{ week.accessible_label|default:week.label }}"
+                  data-week-number="{{ week.week_number|default:forloop.counter }}"
+                  data-month="{{ week.month }}"
+                  data-month-name="{{ week.month_name }}"
+                  data-year="{{ week.year }}"
+                  data-day="{{ week.day }}"
+                  data-paid="{{ week.is_paid|yesno:'true,false' }}"
+                  data-savings-status="{{ week.savings_status }}"
+                  data-fine-status="{{ week.fine_status }}"
+                  data-fine-outstanding="{{ week.fine_outstanding }}"
+                  data-future="{{ week.is_future|yesno:'true,false' }}"
+                  data-current="{{ week.is_current|yesno:'true,false' }}"
+                  data-available="{{ week.is_available|yesno:'true,false' }}">
+                  <input type="checkbox" name="selected_weeks" value="{{ week.value }}" data-week-checkbox {% if week.selected %}checked{% endif %} {% if not week.selectable %}disabled{% endif %}>
+                  <input type="hidden" name="week_amount_{{ week.value }}" value="{{ week.amount }}" data-week-allocation-value {% if not week.selected %}disabled{% endif %}>
+                </span>
+                {% endfor %}
+              </div>
+            </section>
           </div>
-          <div class="col-12">
-            <div class="row g-2">
-              <div class="col-6 col-md"><div class="allocation-summary"><small>Weeks selected</small><div class="fw-bold" id="ddSelectedWeeks">0</div></div></div>
-              <div class="col-6 col-md"><div class="allocation-summary"><small>Savings</small><div class="fw-bold" id="ddSavingsTotal">UGX 0</div></div></div>
-              <div class="col-6 col-md"><div class="allocation-summary"><small>Fines</small><div class="fw-bold" id="ddFineTotal">UGX 0</div></div></div>
-              <div class="col-6 col-md"><div class="allocation-summary"><small>Other purposes</small><div class="fw-bold" id="ddOtherTotal">UGX 0</div></div></div>
-              <div class="col-6 col-md"><div class="allocation-summary"><small>Total payable</small><div class="fw-bold" id="ddTotalDisplay">UGX 0</div></div></div>
-              <div class="col-6 col-md"><div class="allocation-summary"><small>Remaining</small><div class="fw-bold" id="ddRemaining">UGX 0</div></div></div>
-              <div class="col-6 col-md"><div class="allocation-summary"><small>Overpayment</small><div class="fw-bold" id="ddOverpayment">UGX 0</div></div></div>
+
+          <div class="col-12 d-none" id="ddFineAllocation" aria-live="polite">
+            <section class="dd-savings-allocation" aria-labelledby="ddFineAllocationTitle">
+              <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
+                <div><h6 class="mb-1" id="ddFineAllocationTitle">Outstanding fine weeks</h6><p class="small text-muted mb-0">Only red outstanding fine circles can be selected.</p></div>
+                <button type="button" class="btn btn-outline-danger dd-week-trigger" id="ddOpenFinePicker" data-bs-toggle="modal" data-bs-target="#ddFinePickerModal"><i class="bi bi-exclamation-circle me-1" aria-hidden="true"></i><span>Choose fine weeks</span></button>
+              </div>
+              <div class="dd-allocation-list" id="ddFineRows" aria-live="polite"></div>
+              {% if form.selected_fine_weeks.errors %}<div class="text-danger small mt-2">{{ form.selected_fine_weeks.errors|join:", " }}</div>{% endif %}
+              <div id="ddFineOptionStore" hidden>{% for fine in form.fine_options %}<span data-fine-option data-week="{{ fine.value }}" data-label="{{ fine.accessible_label }}" data-month="{{ fine.month_name }} {{ fine.year }}" data-day="{{ fine.day }}" data-status="{{ fine.status }}" data-outstanding="{{ fine.outstanding }}" data-selectable="{{ fine.selectable|yesno:'true,false' }}"><input type="checkbox" name="selected_fine_weeks" value="{{ fine.value }}" {% if fine.selected %}checked{% endif %} {% if not fine.selectable %}disabled{% endif %}></span>{% endfor %}</div>
+            </section>
+          </div>
+
+          <div class="col-md-7">
+            <label class="form-label">Deposit summary</label>
+            <div class="dd-deposit-summary" id="ddDepositSummary" aria-live="polite">
+              <span><strong id="ddSelectedWeeks">0</strong> weeks</span>
+              <span class="dd-summary-separator" aria-hidden="true">·</span>
+              <span><strong id="ddSavingsTotal">UGX 0</strong> savings</span>
+              <span class="dd-summary-separator" aria-hidden="true">·</span>
+              <span><strong id="ddOtherTotal">UGX 0</strong> other purposes</span>
+              <span class="dd-summary-separator" aria-hidden="true">·</span>
+              <span><strong id="ddTotalDisplay">UGX 0</strong> deposit total</span>
             </div>
+            <div class="alert alert-warning small py-2 mt-2 mb-0 d-none" id="ddAllocationWarning" role="status"></div>
           </div>
 
           <!-- Proof -->
@@ -333,7 +765,7 @@
           </div>
 
           <!-- Remarks -->
-          <div class="col-12">
+          <div class="col-md-6">
             <label for="id_remarks" class="form-label">Remarks (optional)</label>
             {{ form.remarks|add_class:"form-control" }}
             {% if form.remarks.errors %}
@@ -348,119 +780,59 @@
           </div>
         </form>
 
-      <script>
-      function selectedDdPurposes() {
-        return Array.from(document.querySelectorAll('input[name="selected_purposes"]:checked')).map(function(el) {
-          return el.value;
-        });
-      }
-
-      function toggleDdPurposeBoxes() {
-        const selected = selectedDdPurposes();
-        document.querySelectorAll('.dd-purpose-box').forEach(function(box) {
-          const purpose = box.getAttribute('data-purpose');
-          const input = box.querySelector('input');
-          const isSelected = selected.includes(purpose);
-          if (isSelected) {
-            if (box.classList.contains('d-none')) {
-              box.classList.remove('d-none', 'dd-purpose-hiding');
-              box.style.opacity = '0';
-              box.style.transform = 'translateY(-6px)';
-              requestAnimationFrame(function() {
-                box.style.opacity = '';
-                box.style.transform = '';
-              });
-            }
-            if (input) {
-              input.disabled = false;
-            }
-          } else {
-            if (!box.classList.contains('d-none')) {
-              box.classList.add('dd-purpose-hiding');
-              window.setTimeout(function() {
-                box.classList.add('d-none');
-                box.classList.remove('dd-purpose-hiding');
-              }, 180);
-            }
-            if (input) {
-              input.disabled = true;
-              input.value = '';
-            }
-          }
-        });
-      }
-
-      function updateDdTotal() {
-        const savingSelected = selectedDdPurposes().includes('saving');
-        const selectedCards = Array.from(document.querySelectorAll('[data-week-card] input[name="selected_weeks"]:checked'));
-        let savings = 0;
-        if (savingSelected) {
-          selectedCards.forEach(function(checkbox) {
-            const amount = checkbox.closest('[data-week-card]').querySelector('.week-allocation-amount');
-            savings += parseFloat(amount && amount.value) || 0;
-          });
-        }
-        let fine = 0;
-        let other = 0;
-        const fields = document.querySelectorAll('.dd-purpose-box:not(.d-none) .dd-purpose-amount');
-        fields.forEach(function(f) {
-          const val = parseFloat(f.value) || 0;
-          if (f.name === 'fine_amount') fine += val;
-          else other += val;
-        });
-        const total = savings + fine + other;
-        const receivedInput = document.getElementById('id_amount_received');
-        const received = receivedInput && receivedInput.value !== '' ? (parseFloat(receivedInput.value) || 0) : total;
-        const format = value => 'UGX ' + value.toLocaleString('en-UG', {maximumFractionDigits: 0});
-        document.getElementById('ddSelectedWeeks').textContent = selectedCards.length;
-        document.getElementById('ddSavingsTotal').textContent = format(savings);
-        document.getElementById('ddFineTotal').textContent = format(fine);
-        document.getElementById('ddOtherTotal').textContent = format(other);
-        document.getElementById('ddTotalDisplay').textContent = format(total);
-        document.getElementById('ddRemaining').textContent = format(Math.max(total - received, 0));
-        document.getElementById('ddOverpayment').textContent = format(Math.max(received - total, 0));
-      }
-      function syncWeekCards() {
-        const savingSelected = selectedDdPurposes().includes('saving');
-        document.querySelectorAll('[data-week-card]').forEach(function(card) {
-          const checkbox = card.querySelector('input[name="selected_weeks"]');
-          const panel = card.querySelector('[data-week-amount-panel]');
-          const amount = card.querySelector('.week-allocation-amount');
-          const showAmount = savingSelected && checkbox.checked && !checkbox.disabled;
-          card.classList.toggle('is-selected', checkbox.checked && !checkbox.disabled);
-          panel.classList.toggle('d-none', !showAmount);
-          amount.disabled = !showAmount;
-          amount.required = showAmount;
-          if (!checkbox.checked) amount.value = '';
-        });
-      }
-      document.querySelectorAll('input[name="selected_purposes"]').forEach(function(cb) {
-        cb.addEventListener('change', function() {
-          toggleDdPurposeBoxes();
-          syncWeekCards();
-          updateDdTotal();
-        });
-      });
-      document.querySelectorAll('.dd-purpose-amount').forEach(function(f) {
-        f.addEventListener('input', updateDdTotal);
-      });
-      document.querySelectorAll('[data-week-card] input[name="selected_weeks"]').forEach(function(cb) {
-        cb.addEventListener('change', function() { syncWeekCards(); updateDdTotal(); });
-      });
-      document.querySelectorAll('.week-allocation-amount, #id_amount_received').forEach(function(f) {
-        f.addEventListener('input', updateDdTotal);
-      });
-      toggleDdPurposeBoxes();
-      syncWeekCards();
-      updateDdTotal();
-      </script>
       </div>
     </div>
   </div>
 
 </div>
 
-<!-- Bootstrap Popover Script -->
+<div class="modal fade dd-calendar-modal" id="ddFinePickerModal" tabindex="-1" aria-labelledby="ddFinePickerTitle"><div class="modal-dialog modal-dialog-centered modal-xl modal-fullscreen-sm-down"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title" id="ddFinePickerTitle">Select outstanding fine weeks</h5><p class="small text-muted mb-0">Red circles are outstanding and selectable. Teal circles are fully paid.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><div class="dd-calendar-months" id="ddFineMonths"></div></div><div class="modal-footer"><span class="small text-muted me-auto" id="ddFineTotal">No fines selected</span><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-success" id="ddApplyFines">Apply fines</button></div></div></div></div>
+
+<div class="modal fade dd-calendar-modal" id="ddWeekPickerModal" tabindex="-1" aria-labelledby="ddWeekPickerTitle" aria-describedby="ddWeekPickerHelp" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header align-items-start">
+        <div>
+          <h5 class="modal-title" id="ddWeekPickerTitle">Allocate savings weeks</h5>
+          <p class="small text-muted mb-0 mt-1" id="ddWeekPickerHelp">Select one or more available Friday dates, then apply your selection.</p>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close without applying changes"></button>
+      </div>
+      <div class="modal-body">
+        <div class="dd-calendar-legend mb-3" aria-label="Calendar key">
+          <span class="dd-legend-item"><span class="dd-legend-mark" aria-hidden="true"></span>Available</span>
+          <span class="dd-legend-item"><span class="dd-legend-mark is-selected" aria-hidden="true"><i class="bi bi-check-lg"></i></span>Selected</span>
+          <span class="dd-legend-item"><span class="dd-legend-mark is-current" aria-hidden="true"><i class="bi bi-record-circle"></i></span>Current week</span>
+          <span class="dd-legend-item"><span class="dd-legend-mark is-locked" aria-hidden="true"><i class="bi bi-lock-fill"></i></span>Paid on time / locked</span>
+          <span class="dd-legend-item"><span class="dd-legend-mark" style="border-color:#d97706;background:#fff7ed;color:#a45100" aria-hidden="true"><i class="bi bi-clock-history"></i></span>Paid late / locked</span>
+          <span class="dd-legend-item"><span class="dd-legend-mark" style="border-color:#dc3545;background:#fff1f2;color:#b42333" aria-hidden="true"><i class="bi bi-exclamation-triangle-fill"></i></span>Missed (selectable)</span>
+          <span class="dd-legend-item"><span class="dd-legend-mark is-future" aria-hidden="true"><i class="bi bi-clock"></i></span>Upcoming (selectable)</span>
+        </div>
+
+        <div class="dd-mobile-month-nav" aria-label="Calendar month navigation">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="ddPreviousMonth" aria-label="Show previous month">
+            <i class="bi bi-chevron-left" aria-hidden="true"></i>
+          </button>
+          <span class="dd-mobile-month-label" id="ddMobileMonthLabel" aria-live="polite"></span>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="ddNextMonth" aria-label="Show next month">
+            <i class="bi bi-chevron-right" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <div class="dd-calendar-months" id="ddCalendarMonths"></div>
+      </div>
+      <div class="modal-footer flex-nowrap">
+        <span class="small text-muted me-auto d-none d-md-inline" id="ddStagedSelectionStatus" aria-live="polite">No weeks selected</span>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success" id="ddApplyWeeks">
+          <i class="bi bi-check2 me-1" aria-hidden="true"></i>Apply weeks
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Direct-deposit interactions -->
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.proof-modal').forEach(function (modalEl) {
@@ -469,39 +841,632 @@
       }
     });
 
+    const form = document.getElementById('directDepositForm');
     const memberSelect = document.getElementById('id_member');
     const accountSelect = document.getElementById('id_account');
+    const savingsInput = document.getElementById('id_saving_amount');
+    const paymentWeekInput = document.getElementById('id_payment_week');
+    const savingsAllocation = document.getElementById('ddSavingsAllocation');
+    const allocationRows = document.getElementById('ddAllocationRows');
+    const noWeeksMessage = document.getElementById('ddNoWeeksMessage');
+    const weekStatusMessage = document.getElementById('ddWeekStatusMessage');
+    const openWeekPicker = document.getElementById('ddOpenWeekPicker');
+    const triggerLabel = openWeekPicker ? openWeekPicker.querySelector('[data-trigger-label]') : null;
+    const allocationWarning = document.getElementById('ddAllocationWarning');
+    const calendarModalEl = document.getElementById('ddWeekPickerModal');
+    const calendarMonths = document.getElementById('ddCalendarMonths');
+    const applyWeeksButton = document.getElementById('ddApplyWeeks');
+    const stagedSelectionStatus = document.getElementById('ddStagedSelectionStatus');
+    const previousMonthButton = document.getElementById('ddPreviousMonth');
+    const nextMonthButton = document.getElementById('ddNextMonth');
+    const mobileMonthLabel = document.getElementById('ddMobileMonthLabel');
     const endpointTemplate = "{% url 'member_accounts_api' 0 %}";
     const weekOptionsEndpoint = "{% url 'treasurer_week_options' %}";
+    const formatter = new Intl.NumberFormat('en-UG', { maximumFractionDigits: 0 });
+    const dateFormatter = new Intl.DateTimeFormat('en-UG', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+    const monthFormatter = new Intl.DateTimeFormat('en-UG', {
+      month: 'long',
+      year: 'numeric'
+    });
+    const weekOptions = new Map();
+    let stagedWeeks = new Set();
+    let mobileMonthIndex = 0;
+    let statusRequestSequence = 0;
+    let accountRequestSequence = 0;
 
-    async function refreshPaidWeeks() {
-      if (!memberSelect || !memberSelect.value) return;
-      const params = new URLSearchParams({member: memberSelect.value, account: accountSelect.value || ''});
-      const response = await fetch(weekOptionsEndpoint + '?' + params.toString(), {headers: {'X-Requested-With': 'XMLHttpRequest'}});
-      if (!response.ok) return;
-      const payload = await response.json();
-      const statuses = new Map((payload.weeks || []).map(week => [week.date, week]));
-      document.querySelectorAll('[data-week-card]').forEach(function(card) {
-        const status = statuses.get(card.dataset.week);
-        const checkbox = card.querySelector('input[name="selected_weeks"]');
-        const paid = Boolean(status && status.paid);
-        checkbox.disabled = paid;
-        if (paid) checkbox.checked = false;
-        card.classList.toggle('is-paid', paid);
-        let badge = card.querySelector('[data-paid-badge]');
-        if (paid && !badge) {
-          badge = document.createElement('span');
-          badge.className = 'badge text-bg-success mt-2';
-          badge.dataset.paidBadge = 'true';
-          card.appendChild(badge);
+    if (calendarModalEl && calendarModalEl.parentElement !== document.body) {
+      document.body.appendChild(calendarModalEl);
+    }
+
+    function parseWeekDate(value) {
+      return new Date(value + 'T12:00:00');
+    }
+
+    document.querySelectorAll('[data-week-option]').forEach(function (element) {
+      const date = element.dataset.week;
+      const parsedDate = parseWeekDate(date);
+      const checkbox = element.querySelector('[data-week-checkbox]');
+      const amountInput = element.querySelector('[data-week-allocation-value]');
+      weekOptions.set(date, {
+        date: date,
+        label: element.dataset.label || date,
+        dateLabel: element.dataset.dateLabel || dateFormatter.format(parsedDate),
+        accessibleLabel: element.dataset.accessibleLabel || dateFormatter.format(parsedDate),
+        weekNumber: Number(element.dataset.weekNumber) || 0,
+        month: Number(element.dataset.month) || (parsedDate.getMonth() + 1),
+        monthName: element.dataset.monthName || monthFormatter.format(parsedDate),
+        year: Number(element.dataset.year) || parsedDate.getFullYear(),
+        day: Number(element.dataset.day) || parsedDate.getDate(),
+        paid: element.dataset.paid === 'true',
+        savingsStatus: element.dataset.savingsStatus || (element.dataset.paid === 'true' ? 'paid_on_time' : 'available'),
+        fineStatus: element.dataset.fineStatus || 'none',
+        fineOutstanding: Number(element.dataset.fineOutstanding || 0),
+        future: element.dataset.future === 'true',
+        current: element.dataset.current === 'true',
+        available: element.dataset.available === 'true',
+        checkbox: checkbox,
+        amountInput: amountInput
+      });
+    });
+
+    function selectedPurposes() {
+      return Array.from(document.querySelectorAll('input[name="selected_purposes"]:checked')).map(function (input) {
+        return input.value;
+      });
+    }
+
+    function purposeIsSelected(purpose) {
+      return selectedPurposes().includes(purpose);
+    }
+
+    function numberValue(input) {
+      if (!input || input.value === '') return 0;
+      const value = Number(String(input.value).replace(/,/g, ''));
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    function formatMoney(value) {
+      return 'UGX ' + formatter.format(Math.max(0, Number(value) || 0));
+    }
+
+    function committedOptions() {
+      return Array.from(weekOptions.values())
+        .filter(function (option) { return option.checkbox && option.checkbox.checked; })
+        .sort(function (left, right) { return left.date.localeCompare(right.date); });
+    }
+
+    function savingPurposeActive() {
+      return purposeIsSelected('saving');
+    }
+
+    function savingAllocationReady() {
+      return savingPurposeActive() && numberValue(savingsInput) >= 10000;
+    }
+
+    function optionIsSelectable(option) {
+      return Boolean(option && option.available && !option.paid && option.savingsStatus !== 'paid_on_time' && option.savingsStatus !== 'paid_late');
+    }
+
+    function setWeekStatus(message, tone, retryHandler) {
+      if (!weekStatusMessage) return;
+      weekStatusMessage.replaceChildren();
+      if (!message) {
+        weekStatusMessage.className = 'alert small py-2 mt-3 mb-0 d-none';
+        return;
+      }
+
+      const text = document.createElement('span');
+      text.textContent = message;
+      weekStatusMessage.appendChild(text);
+      if (retryHandler) {
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'btn btn-sm btn-link p-0 ms-2 align-baseline';
+        retry.textContent = 'Retry';
+        retry.addEventListener('click', retryHandler);
+        weekStatusMessage.appendChild(retry);
+      }
+      weekStatusMessage.className = 'alert alert-' + (tone || 'warning') + ' small py-2 mt-3 mb-0';
+    }
+
+    function syncPaymentWeek() {
+      if (!paymentWeekInput) return;
+      const selected = committedOptions();
+      paymentWeekInput.value = savingPurposeActive() && selected.length ? selected[0].date : '';
+    }
+
+    function syncWeekSubmissionState() {
+      const savingSelected = savingPurposeActive();
+      weekOptions.forEach(function (option) {
+        const selected = Boolean(option.checkbox && option.checkbox.checked);
+        if (option.checkbox) {
+          option.checkbox.disabled = !savingSelected || !optionIsSelectable(option);
         }
-        if (badge) {
-          badge.textContent = paid ? 'Paid · Locked' : '';
-          badge.classList.toggle('d-none', !paid);
+        if (option.amountInput) {
+          option.amountInput.disabled = !savingSelected || !selected;
+          if (!selected) option.amountInput.value = '';
         }
       });
-      syncWeekCards();
-      updateDdTotal();
+      syncPaymentWeek();
+    }
+
+    function splitSavingsEqually() {
+      const selected = committedOptions();
+      if (!selected.length) {
+        syncWeekSubmissionState();
+        return;
+      }
+
+      const total = numberValue(savingsInput);
+      const baseAmount = Math.floor(total / selected.length / 100) * 100;
+      let allocated = 0;
+      selected.forEach(function (option, index) {
+        const amount = index === selected.length - 1 ? total - allocated : baseAmount;
+        option.amountInput.value = amount > 0 ? String(amount) : '';
+        allocated += amount;
+      });
+      syncWeekSubmissionState();
+    }
+
+    function clearCommittedWeeks() {
+      weekOptions.forEach(function (option) {
+        option.checkbox.checked = false;
+        option.amountInput.value = '';
+        option.amountInput.disabled = true;
+      });
+      stagedWeeks = new Set();
+      syncPaymentWeek();
+    }
+
+    function allocationTotal() {
+      return committedOptions().reduce(function (total, option) {
+        return total + numberValue(option.amountInput);
+      }, 0);
+    }
+
+    function otherPurposeTotal() {
+      const selected = selectedPurposes();
+      let total = 0;
+      document.querySelectorAll('.dd-purpose-box').forEach(function (box) {
+        const purpose = box.dataset.purpose;
+        if (purpose === 'saving' || !selected.includes(purpose)) return;
+        total += numberValue(box.querySelector('.dd-purpose-amount'));
+      });
+      return total;
+    }
+
+    function updateSummary() {
+      const selected = savingPurposeActive() ? committedOptions() : [];
+      const savingsTarget = savingPurposeActive() ? numberValue(savingsInput) : 0;
+      const allocated = savingPurposeActive() ? allocationTotal() : 0;
+      const other = otherPurposeTotal();
+      const depositTotal = savingsTarget + other;
+
+      document.getElementById('ddSelectedWeeks').textContent = String(selected.length);
+      document.getElementById('ddSavingsTotal').textContent = formatMoney(allocated);
+      document.getElementById('ddOtherTotal').textContent = formatMoney(other);
+      document.getElementById('ddTotalDisplay').textContent = formatMoney(depositTotal);
+
+      if (triggerLabel) {
+        triggerLabel.textContent = selected.length
+          ? selected.length + (selected.length === 1 ? ' week selected' : ' weeks selected')
+          : 'Choose savings weeks';
+      }
+
+      const warnings = [];
+      if (savingAllocationReady()) {
+        if (!selected.length) {
+          warnings.push('Choose at least one savings week.');
+        } else {
+          const invalidAmounts = selected.filter(function (option) {
+            const value = numberValue(option.amountInput);
+            return value < 10000 || value > 50000;
+          });
+          const difference = Math.round((savingsTarget - allocated) * 100) / 100;
+          if (difference > 0) {
+            warnings.push(formatMoney(difference) + ' remains to allocate to savings weeks.');
+          } else if (difference < 0) {
+            warnings.push(formatMoney(Math.abs(difference)) + ' is over-allocated to savings weeks.');
+          }
+          if (invalidAmounts.length) {
+            warnings.push('Each selected week must be between UGX 10,000 and UGX 50,000.');
+          }
+        }
+      }
+
+      if (allocationWarning) {
+        allocationWarning.textContent = warnings.join(' ');
+        allocationWarning.classList.toggle('d-none', warnings.length === 0);
+      }
+      return warnings.length === 0;
+    }
+
+    function renderAllocationRows() {
+      if (!allocationRows) return;
+      allocationRows.replaceChildren();
+      const selected = committedOptions();
+
+      selected.forEach(function (option) {
+        const row = document.createElement('div');
+        row.className = 'dd-allocation-row';
+        row.dataset.allocationWeek = option.date;
+
+        const dateBlock = document.createElement('div');
+        dateBlock.className = 'dd-allocation-date';
+        const dateText = document.createElement('strong');
+        dateText.textContent = option.dateLabel;
+        const weekText = document.createElement('small');
+        weekText.textContent = 'Week ' + option.weekNumber;
+        dateBlock.append(dateText, weekText);
+
+        const inputWrap = document.createElement('div');
+        inputWrap.className = 'dd-allocation-input-wrap';
+        const amount = document.createElement('input');
+        amount.type = 'number';
+        amount.className = 'form-control form-control-sm dd-allocation-input';
+        amount.min = '10000';
+        amount.max = '50000';
+        amount.step = '100';
+        amount.required = true;
+        amount.value = option.amountInput.value;
+        amount.setAttribute('inputmode', 'numeric');
+        amount.setAttribute('aria-label', 'Amount for ' + option.accessibleLabel + ' in UGX');
+        amount.addEventListener('input', function () {
+          option.amountInput.value = amount.value;
+          const value = numberValue(amount);
+          amount.classList.toggle('is-invalid', amount.value !== '' && (value < 10000 || value > 50000));
+          updateSummary();
+        });
+        inputWrap.appendChild(amount);
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn btn-outline-danger btn-sm dd-allocation-remove';
+        remove.setAttribute('aria-label', 'Remove ' + option.accessibleLabel);
+        remove.title = 'Remove week';
+        const removeIcon = document.createElement('i');
+        removeIcon.className = 'bi bi-trash3';
+        removeIcon.setAttribute('aria-hidden', 'true');
+        remove.appendChild(removeIcon);
+        remove.addEventListener('click', function () {
+          option.checkbox.checked = false;
+          option.amountInput.value = '';
+          splitSavingsEqually();
+          renderAllocationRows();
+          renderCalendar();
+          updateSummary();
+          openWeekPicker.focus();
+        });
+
+        row.append(dateBlock, inputWrap, remove);
+        allocationRows.appendChild(row);
+      });
+
+      if (noWeeksMessage) {
+        noWeeksMessage.classList.toggle('d-none', selected.length > 0);
+      }
+      syncWeekSubmissionState();
+    }
+
+    function calendarStateLabel(option, selected) {
+      if (option.savingsStatus === 'paid_on_time') return 'savings paid on time and locked';
+      if (option.savingsStatus === 'paid_late') return 'savings paid late and locked';
+      if (option.savingsStatus === 'missed') return 'missed savings week, available for backfill';
+      if (option.savingsStatus === 'upcoming') return 'upcoming and selectable';
+      if (!option.available) return 'unavailable';
+      if (selected) return 'selected';
+      if (option.current) return 'current week, available';
+      return 'available';
+    }
+
+    function createStateIcon(iconClass) {
+      const iconWrap = document.createElement('span');
+      iconWrap.className = 'dd-date-state-icon';
+      iconWrap.setAttribute('aria-hidden', 'true');
+      const icon = document.createElement('i');
+      icon.className = 'bi ' + iconClass;
+      iconWrap.appendChild(icon);
+      return iconWrap;
+    }
+
+    function groupedMonths() {
+      const groups = [];
+      Array.from(weekOptions.values())
+        .sort(function (left, right) { return left.date.localeCompare(right.date); })
+        .forEach(function (option) {
+          const key = String(option.year) + '-' + String(option.month).padStart(2, '0');
+          let group = groups[groups.length - 1];
+          if (!group || group.key !== key) {
+            const parsed = parseWeekDate(option.date);
+            group = {
+              key: key,
+              label: option.monthName && option.monthName.indexOf(String(option.year)) !== -1
+                ? option.monthName
+                : monthFormatter.format(parsed),
+              options: []
+            };
+            groups.push(group);
+          }
+          group.options.push(option);
+        });
+      return groups;
+    }
+
+    function updateMobileMonthState() {
+      const panels = Array.from(calendarMonths ? calendarMonths.querySelectorAll('[data-month-panel]') : []);
+      if (!panels.length) {
+        if (mobileMonthLabel) mobileMonthLabel.textContent = '';
+        if (previousMonthButton) previousMonthButton.disabled = true;
+        if (nextMonthButton) nextMonthButton.disabled = true;
+        return;
+      }
+
+      mobileMonthIndex = Math.max(0, Math.min(mobileMonthIndex, panels.length - 1));
+      panels.forEach(function (panel, index) {
+        panel.classList.toggle('is-mobile-active', index === mobileMonthIndex);
+      });
+      if (mobileMonthLabel) mobileMonthLabel.textContent = panels[mobileMonthIndex].dataset.monthLabel;
+      if (previousMonthButton) previousMonthButton.disabled = mobileMonthIndex === 0;
+      if (nextMonthButton) nextMonthButton.disabled = mobileMonthIndex === panels.length - 1;
+    }
+
+    function updateStagedStatus() {
+      const count = stagedWeeks.size;
+      if (stagedSelectionStatus) {
+        stagedSelectionStatus.textContent = count
+          ? count + (count === 1 ? ' week selected' : ' weeks selected')
+          : 'No weeks selected';
+      }
+      // Applying an empty staged set intentionally clears an earlier selection.
+      if (applyWeeksButton) applyWeeksButton.disabled = false;
+    }
+
+    function renderCalendar(focusDate) {
+      if (!calendarMonths) return;
+      calendarMonths.replaceChildren();
+      const groups = groupedMonths();
+
+      if (!groups.length) {
+        const empty = document.createElement('div');
+        empty.className = 'alert alert-light border mb-0';
+        empty.textContent = 'Savings weeks are not configured for the current cycle.';
+        calendarMonths.appendChild(empty);
+        updateStagedStatus();
+        return;
+      }
+
+      groups.forEach(function (group, groupIndex) {
+        const panel = document.createElement('section');
+        panel.className = 'dd-calendar-month';
+        panel.dataset.monthPanel = group.key;
+        panel.dataset.monthLabel = group.label;
+        panel.setAttribute('aria-label', group.label);
+
+        const title = document.createElement('h6');
+        title.className = 'dd-calendar-month-title';
+        title.textContent = group.label;
+
+        const days = document.createElement('div');
+        days.className = 'dd-calendar-days';
+        days.setAttribute('role', 'group');
+        days.setAttribute('aria-label', 'Savings Fridays in ' + group.label);
+
+        group.options.forEach(function (option) {
+          const selected = stagedWeeks.has(option.date);
+          const selectable = optionIsSelectable(option);
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'dd-date-button';
+          button.dataset.calendarWeek = option.date;
+          button.disabled = !selectable;
+          button.classList.toggle('is-selected', selected);
+          button.classList.toggle('is-current', option.current);
+          button.classList.toggle('is-missed', option.savingsStatus === 'missed');
+          button.classList.toggle('is-paid-late', option.savingsStatus === 'paid_late');
+          button.classList.toggle('is-paid-on-time', option.savingsStatus === 'paid_on_time');
+          button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+          button.setAttribute('aria-label', option.accessibleLabel + ', ' + calendarStateLabel(option, selected));
+          button.title = option.accessibleLabel + ' — ' + calendarStateLabel(option, selected);
+
+          const day = document.createElement('span');
+          day.textContent = String(option.day);
+          button.appendChild(day);
+
+          if (option.savingsStatus === 'paid_on_time') {
+            button.appendChild(createStateIcon('bi-lock-fill'));
+          } else if (option.savingsStatus === 'paid_late') {
+            button.appendChild(createStateIcon('bi-clock-history'));
+          } else if (option.savingsStatus === 'missed') {
+            button.appendChild(createStateIcon('bi-exclamation-triangle-fill'));
+          } else if (option.future) {
+            button.appendChild(createStateIcon('bi-clock'));
+          } else if (selected) {
+            button.appendChild(createStateIcon('bi-check-lg'));
+          } else if (option.current) {
+            button.appendChild(createStateIcon('bi-record-circle'));
+          }
+
+          if (selectable) {
+            button.addEventListener('click', function () {
+              if (stagedWeeks.has(option.date)) stagedWeeks.delete(option.date);
+              else stagedWeeks.add(option.date);
+              renderCalendar(option.date);
+            });
+          }
+          days.appendChild(button);
+        });
+
+        panel.append(title, days);
+        calendarMonths.appendChild(panel);
+        if (groupIndex === mobileMonthIndex) panel.classList.add('is-mobile-active');
+      });
+
+      updateMobileMonthState();
+      updateStagedStatus();
+      if (focusDate) {
+        window.requestAnimationFrame(function () {
+          const focusTarget = calendarMonths.querySelector('[data-calendar-week="' + focusDate + '"]');
+          if (focusTarget) focusTarget.focus();
+        });
+      }
+    }
+
+    function stageCommittedWeeks() {
+      stagedWeeks = new Set(
+        committedOptions()
+          .filter(optionIsSelectable)
+          .map(function (option) { return option.date; })
+      );
+      const groups = groupedMonths();
+      const preferredDate = stagedWeeks.values().next().value;
+      const preferredOption = preferredDate ? weekOptions.get(preferredDate) : null;
+      const currentOption = Array.from(weekOptions.values()).find(function (option) { return option.current; });
+      const anchor = preferredOption || currentOption || Array.from(weekOptions.values()).find(optionIsSelectable);
+      if (anchor) {
+        const key = String(anchor.year) + '-' + String(anchor.month).padStart(2, '0');
+        const index = groups.findIndex(function (group) { return group.key === key; });
+        mobileMonthIndex = index >= 0 ? index : 0;
+      } else {
+        mobileMonthIndex = 0;
+      }
+      renderCalendar();
+    }
+
+    function applyStagedWeeks() {
+      const currentDates = committedOptions().map(function (option) { return option.date; }).sort();
+      const stagedDates = Array.from(stagedWeeks).sort();
+      const selectionChanged = currentDates.join('|') !== stagedDates.join('|');
+
+      weekOptions.forEach(function (option) {
+        option.checkbox.checked = stagedWeeks.has(option.date) && optionIsSelectable(option);
+        if (!option.checkbox.checked) option.amountInput.value = '';
+      });
+
+      if (selectionChanged || committedOptions().some(function (option) { return !option.amountInput.value; })) {
+        splitSavingsEqually();
+      } else {
+        syncWeekSubmissionState();
+      }
+      renderAllocationRows();
+      updateSummary();
+      bootstrap.Modal.getOrCreateInstance(calendarModalEl).hide();
+    }
+
+    function updateSavingsVisibility() {
+      const ready = savingAllocationReady();
+      if (savingsAllocation) savingsAllocation.classList.toggle('d-none', !ready);
+      if (openWeekPicker) {
+        openWeekPicker.disabled = !ready || weekOptions.size === 0;
+        openWeekPicker.setAttribute('aria-disabled', openWeekPicker.disabled ? 'true' : 'false');
+      }
+      syncWeekSubmissionState();
+    }
+
+    function togglePurposeBoxes() {
+      const selected = selectedPurposes();
+      document.querySelectorAll('.dd-purpose-box').forEach(function (box) {
+        const input = box.querySelector('.dd-purpose-amount');
+        const isSelected = selected.includes(box.dataset.purpose);
+        box.classList.toggle('d-none', !isSelected);
+        box.classList.remove('dd-purpose-hiding');
+        if (input) input.disabled = !isSelected;
+      });
+      updateSavingsVisibility();
+    }
+
+    function selectionHasClientErrors() {
+      if (!savingAllocationReady()) return false;
+      const selected = committedOptions();
+      if (!selected.length) return true;
+      if (Math.abs(allocationTotal() - numberValue(savingsInput)) > 0.009) return true;
+      return selected.some(function (option) {
+        const value = numberValue(option.amountInput);
+        return value < 10000 || value > 50000;
+      });
+    }
+
+    async function refreshPaidWeeks() {
+      if (!memberSelect || !memberSelect.value) {
+        setWeekStatus('', 'warning');
+        return;
+      }
+
+      const requestSequence = ++statusRequestSequence;
+      const params = new URLSearchParams({
+        member: memberSelect.value,
+        account: accountSelect && accountSelect.value ? accountSelect.value : ''
+      });
+      if (openWeekPicker) {
+        openWeekPicker.setAttribute('aria-busy', 'true');
+      }
+      setWeekStatus('Checking paid weeks…', 'light');
+
+      try {
+        const response = await fetch(weekOptionsEndpoint + '?' + params.toString(), {
+          headers: {'X-Requested-With': 'XMLHttpRequest'}
+        });
+        if (!response.ok) throw new Error('Week status request failed');
+        const payload = await response.json();
+        if (requestSequence !== statusRequestSequence) return;
+
+        const statuses = new Map((payload.weeks || []).map(function (week) {
+          return [week.date, week];
+        }));
+        document.dispatchEvent(new CustomEvent('dd:fine-status', {detail: payload.fines || []}));
+        const removed = [];
+
+        weekOptions.forEach(function (option) {
+          const status = statuses.get(option.date);
+          if (!status) return;
+          option.paid = Boolean(status.paid);
+          if (status.savings_status) option.savingsStatus = status.savings_status;
+          if (typeof status.is_future === 'boolean') option.future = status.is_future;
+          if (typeof status.is_current === 'boolean') option.current = status.is_current;
+          if (typeof status.is_available === 'boolean') option.available = status.is_available;
+          else if (typeof status.selectable === 'boolean') option.available = status.selectable;
+          else option.available = !option.paid;
+
+          if (!optionIsSelectable(option) && option.checkbox.checked) {
+            removed.push(option.dateLabel);
+            option.checkbox.checked = false;
+            option.amountInput.value = '';
+          }
+          if (!optionIsSelectable(option)) stagedWeeks.delete(option.date);
+        });
+
+        if (removed.length) {
+          splitSavingsEqually();
+          renderAllocationRows();
+          setWeekStatus(
+            (removed.length === 1
+              ? removed[0] + ' is now paid and was removed.'
+              : removed.length + ' selected weeks are now paid and were removed.') +
+            ' The remaining savings amount was redistributed.',
+            'warning'
+          );
+        } else {
+          setWeekStatus('', 'warning');
+        }
+        syncWeekSubmissionState();
+        renderCalendar();
+        updateSummary();
+      } catch (error) {
+        if (requestSequence !== statusRequestSequence) return;
+        setWeekStatus(
+          'Paid-week status could not be refreshed. Check the connection before submitting.',
+          'danger',
+          refreshPaidWeeks
+        );
+      } finally {
+        if (requestSequence === statusRequestSequence && openWeekPicker) {
+          openWeekPicker.removeAttribute('aria-busy');
+        }
+      }
     }
 
     async function loadMemberAccounts(memberId) {
@@ -511,27 +1476,95 @@
 
       if (!memberId) {
         accountSelect.innerHTML = '<option value="">-- Select member first --</option>';
+        setWeekStatus('', 'warning');
         return;
       }
 
+      const requestSequence = ++accountRequestSequence;
       const currentValue = accountSelect.value;
       const url = endpointTemplate.replace('/0/', '/' + memberId + '/');
-      const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-      const payload = await response.json();
-      const accounts = payload.accounts || [];
+      accountSelect.setAttribute('aria-busy', 'true');
+      try {
+        const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        if (!response.ok) throw new Error('Account request failed');
+        const payload = await response.json();
+        if (requestSequence !== accountRequestSequence) return;
+        const accounts = payload.accounts || [];
 
-      accountSelect.innerHTML = '<option value="">-- Select Account --</option>';
-      accounts.forEach(function (account) {
-        const option = document.createElement('option');
-        option.value = account.id;
-        option.textContent = account.label;
-        if (String(account.id) === String(currentValue)) {
-          option.selected = true;
+        accountSelect.innerHTML = '<option value="">-- Select Account --</option>';
+        let retainedCurrentAccount = false;
+        accounts.forEach(function (account) {
+          const option = document.createElement('option');
+          option.value = account.id;
+          option.textContent = account.label;
+          if (String(account.id) === String(currentValue)) {
+            option.selected = true;
+            retainedCurrentAccount = true;
+          }
+          accountSelect.appendChild(option);
+        });
+        if (!retainedCurrentAccount && accounts.length === 1) accountSelect.value = String(accounts[0].id);
+        await refreshPaidWeeks();
+      } catch (error) {
+        if (requestSequence !== accountRequestSequence) return;
+        setWeekStatus(
+          'Accounts could not be refreshed for this member.',
+          'danger',
+          function () { loadMemberAccounts(memberSelect.value); }
+        );
+      } finally {
+        if (requestSequence === accountRequestSequence) accountSelect.removeAttribute('aria-busy');
+      }
+    }
+
+    document.querySelectorAll('input[name="selected_purposes"]').forEach(function (checkbox) {
+      checkbox.addEventListener('change', function () {
+        if (checkbox.value === 'saving' && !checkbox.checked) {
+          clearCommittedWeeks();
         }
-        accountSelect.appendChild(option);
+        togglePurposeBoxes();
+        renderAllocationRows();
+        updateSummary();
       });
-      if (!currentValue && accounts.length === 1) accountSelect.value = String(accounts[0].id);
-      await refreshPaidWeeks();
+    });
+
+    document.querySelectorAll('.dd-purpose-amount').forEach(function (input) {
+      input.addEventListener('input', function () {
+        if (input === savingsInput) {
+          if (committedOptions().length) splitSavingsEqually();
+          renderAllocationRows();
+          updateSavingsVisibility();
+        }
+        updateSummary();
+      });
+    });
+
+    if (calendarModalEl) {
+      calendarModalEl.addEventListener('show.bs.modal', function () {
+        stageCommittedWeeks();
+        // Ensure the dialog always opens with the latest member/account
+        // status, even when it is opened immediately after a selection.
+        refreshPaidWeeks();
+        document.body.classList.add('dd-calendar-open');
+      });
+      calendarModalEl.addEventListener('hidden.bs.modal', function () {
+        document.body.classList.remove('dd-calendar-open');
+        stagedWeeks = new Set();
+      });
+    }
+
+    if (applyWeeksButton) applyWeeksButton.addEventListener('click', applyStagedWeeks);
+    if (previousMonthButton) {
+      previousMonthButton.addEventListener('click', function () {
+        mobileMonthIndex -= 1;
+        updateMobileMonthState();
+      });
+    }
+    if (nextMonthButton) {
+      nextMonthButton.addEventListener('click', function () {
+        mobileMonthIndex += 1;
+        updateMobileMonthState();
+      });
     }
 
     if (memberSelect) {
@@ -544,10 +1577,114 @@
     }
     if (accountSelect) accountSelect.addEventListener('change', refreshPaidWeeks);
 
-    const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'))
+    if (form) {
+      form.addEventListener('submit', function (event) {
+        syncWeekSubmissionState();
+        updateSummary();
+        if (selectionHasClientErrors()) {
+          event.preventDefault();
+          if (allocationWarning) {
+            allocationWarning.classList.remove('d-none');
+            allocationWarning.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+      });
+    }
+
+    const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
     popoverTriggerList.map(function (popoverTriggerEl) {
-      return new bootstrap.Popover(popoverTriggerEl)
-    })
+      return new bootstrap.Popover(popoverTriggerEl);
+    });
+
+    togglePurposeBoxes();
+    syncWeekSubmissionState();
+    renderAllocationRows();
+    updateSummary();
+    renderCalendar();
   });
+</script>
+<script>
+(function () {
+  const store = document.getElementById('ddFineOptionStore');
+  if (!store) return;
+  let options = Array.from(store.querySelectorAll('[data-fine-option]')).map(function (el) {
+    return {el: el, date: el.dataset.week, label: el.dataset.label, month: el.dataset.month, day: el.dataset.day,
+      status: el.dataset.status, outstanding: Number(el.dataset.outstanding || 0), selectable: el.dataset.selectable === 'true', checkbox: el.querySelector('input[type=checkbox]')};
+  });
+  const panel = document.getElementById('ddFineAllocation');
+  const rows = document.getElementById('ddFineRows');
+  const months = document.getElementById('ddFineMonths');
+  const total = document.getElementById('ddFineTotal');
+  const purpose = document.querySelector('input[name="selected_purposes"][value="fine"]');
+  const amount = document.getElementById('id_fine_amount');
+  const memberField = document.getElementById('id_member');
+  const accountField = document.getElementById('id_account');
+  const fineStatusEndpoint = "{% url 'treasurer_week_options' %}";
+  const money = function (n) { return 'UGX ' + Math.max(0, n || 0).toLocaleString('en-UG', {maximumFractionDigits: 0}); };
+  function replaceOptions(items) {
+    store.replaceChildren();
+    options = (items || []).map(function (item) {
+      const el = document.createElement('span');
+      el.dataset.fineOption = '';
+      el.dataset.week = item.date;
+      el.dataset.label = item.accessible_label || item.label || ('Fine for ' + item.date);
+      const parsed = new Date(item.date + 'T12:00:00');
+      el.dataset.month = parsed.toLocaleDateString('en-UG', {month: 'long', year: 'numeric'});
+      el.dataset.day = String(parsed.getDate());
+      el.dataset.status = item.status || 'none';
+      el.dataset.outstanding = item.outstanding || '0';
+      el.dataset.selectable = item.selectable ? 'true' : 'false';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox'; checkbox.name = 'selected_fine_weeks'; checkbox.value = item.date;
+      checkbox.disabled = !item.selectable;
+      el.appendChild(checkbox); store.appendChild(el);
+      return {el: el, date: item.date, label: el.dataset.label, month: el.dataset.month, day: el.dataset.day,
+        status: el.dataset.status, outstanding: Number(el.dataset.outstanding || 0), selectable: Boolean(item.selectable), checkbox: checkbox};
+    });
+  }
+  function selected() { return options.filter(function (x) { return x.checkbox.checked && x.selectable; }); }
+  function render() {
+    if (!months) return;
+    months.replaceChildren(); const groups = new Map();
+    options.forEach(function (x) { if (!groups.has(x.month)) groups.set(x.month, []); groups.get(x.month).push(x); });
+    groups.forEach(function (items, month) {
+      const panelEl = document.createElement('section'); panelEl.className = 'dd-calendar-month'; const title = document.createElement('h6'); title.className = 'dd-calendar-month-title'; title.textContent = month; panelEl.appendChild(title);
+      const days = document.createElement('div'); days.className = 'dd-calendar-days';
+      items.forEach(function (x) { const b = document.createElement('button'); b.type = 'button'; b.className = 'dd-date-button'; b.textContent = x.day; b.disabled = !x.selectable; b.classList.toggle('is-missed', x.status === 'outstanding'); b.classList.toggle('is-paid-on-time', x.status === 'paid'); b.classList.toggle('is-selected', x.checkbox.checked); b.setAttribute('aria-label', x.label + (x.status === 'outstanding' ? ', outstanding fine' : ', fine paid')); if (x.selectable) b.addEventListener('click', function () { x.checkbox.checked = !x.checkbox.checked; render(); }); days.appendChild(b); });
+      panelEl.appendChild(days); months.appendChild(panelEl);
+    });
+    const picked = selected(); const sum = picked.reduce(function (s, x) { return s + x.outstanding; }, 0);
+    if (total) total.textContent = picked.length ? picked.length + ' week(s) · ' + money(sum) : 'No fines selected';
+    if (rows) rows.textContent = picked.map(function (x) { return x.label + ' (' + money(x.outstanding) + ')'; }).join(' · ');
+    if (amount) { amount.readOnly = true; amount.value = sum || ''; }
+  }
+  function refresh() {
+    const available = options.some(function (x) { return x.selectable; });
+    if (purpose) { purpose.disabled = !available; if (!available) purpose.checked = false; const wrap = purpose.closest('.form-check'); if (wrap) wrap.classList.toggle('text-muted', !available); }
+    if (panel) panel.classList.toggle('d-none', !(available && purpose && purpose.checked));
+    render();
+  }
+  purpose?.addEventListener('change', refresh);
+  document.addEventListener('dd:fine-status', function (event) {
+    replaceOptions(event.detail || []);
+    const incoming = new Map((event.detail || []).map(function (x) { return [x.date, x]; }));
+    options.forEach(function (x) { const next = incoming.get(x.date); if (!next) { x.selectable = false; x.status = 'none'; x.outstanding = 0; } else { x.selectable = Boolean(next.selectable); x.status = next.status || 'none'; x.outstanding = Number(next.outstanding || 0); } x.checkbox.disabled = !x.selectable; if (!x.selectable) x.checkbox.checked = false; });
+    refresh();
+  });
+  function fetchFineStatus() {
+    if (!memberField || !memberField.value) { refresh(); return; }
+    const params = new URLSearchParams({member: memberField.value, account: accountField && accountField.value ? accountField.value : ''});
+    fetch(fineStatusEndpoint + '?' + params.toString(), {headers: {'X-Requested-With': 'XMLHttpRequest'}})
+      .then(function (response) { if (!response.ok) throw new Error('Fine status request failed'); return response.json(); })
+      .then(function (payload) { document.dispatchEvent(new CustomEvent('dd:fine-status', {detail: payload.fines || []})); })
+      .catch(function () { refresh(); });
+  }
+  memberField?.addEventListener('change', fetchFineStatus);
+  accountField?.addEventListener('change', fetchFineStatus);
+  document.getElementById('ddFinePickerModal')?.addEventListener('show.bs.modal', render);
+  document.getElementById('ddApplyFines')?.addEventListener('click', function () { refresh(); bootstrap.Modal.getOrCreateInstance(document.getElementById('ddFinePickerModal')).hide(); });
+  fetchFineStatus();
+  refresh();
+})();
 </script>
 {% endblock %}

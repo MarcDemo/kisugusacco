@@ -115,3 +115,31 @@ class DepositSubmission(models.Model):
         if self.loan_repayment_amount:
             breakdown['Loan Repayment'] = self.loan_repayment_amount
         return breakdown
+
+
+class DepositFineAllocation(models.Model):
+    """A fine balance selected for a deposit and applied on approval."""
+
+    deposit = models.ForeignKey(
+        DepositSubmission,
+        on_delete=models.CASCADE,
+        related_name='fine_allocations',
+    )
+    fine = models.ForeignKey(
+        'fines.Fine',
+        on_delete=models.PROTECT,
+        related_name='deposit_allocations',
+    )
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['deposit', 'fine'],
+                name='unique_deposit_fine_allocation',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(amount__gt=0),
+                name='deposit_fine_allocation_amount_positive',
+            ),
+        ]

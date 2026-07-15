@@ -13,6 +13,21 @@
     transform: translateY(-6px);
   }
 
+  .calendar-panel { border:1px solid #dfe7e2; border-radius:.75rem; padding:.75rem; background:#fff; }
+  .calendar-panel .month-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem; }
+  .calendar-month { border:1px solid #e3e9e5; border-radius:.65rem; padding:.65rem; }
+  .calendar-month h6 { text-align:center; margin-bottom:.6rem; }
+  .calendar-days { display:flex; flex-wrap:wrap; justify-content:center; gap:.45rem; }
+  .calendar-day { width:2.25rem; height:2.25rem; border-radius:50%; border:1px solid #cbd5cf; background:#fff; position:relative; }
+  .calendar-day.missed, .calendar-day.fine-outstanding { border-color:#dc3545; background:#fff1f2; color:#b42333; }
+  .calendar-day.paid-late { border-color:#d97706; background:#fff7ed; color:#a45100; }
+  .calendar-day.paid-on-time, .calendar-day.fine-paid { border-color:#198754; background:#e9f7ef; color:#146c43; }
+  .calendar-day.upcoming { background:#f1f4f2; color:#6c757d; }
+  .calendar-day.selected { background:#166534; border-color:#166534; color:#fff; }
+  .calendar-day:disabled { opacity:.8; cursor:not-allowed; }
+  @media (max-width: 991.98px) { .calendar-panel .month-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width: 575.98px) { .calendar-panel .month-grid { grid-template-columns:1fr; } }
+
   @media (max-width: 767.98px) {
     .card-body {
       padding: 1rem;
@@ -103,7 +118,7 @@
               <div class="d-flex flex-wrap gap-3">
                 {% for checkbox in form.selected_purposes %}
                 <div class="form-check">
-                  {{ checkbox.tag }}
+                  {% if checkbox.data.value == 'fine' and not form.has_outstanding_fines %}<input type="checkbox" name="selected_purposes" value="fine" id="{{ checkbox.id_for_label }}" disabled aria-disabled="true">{% else %}{{ checkbox.tag }}{% endif %}
                   <label class="form-check-label" for="{{ checkbox.id_for_label }}">{{ checkbox.choice_label }}</label>
                 </div>
                 {% endfor %}
@@ -119,7 +134,7 @@
               <small class="text-muted d-block mb-2">Only selected purposes are shown below.</small>
               <div class="row g-2">
                 <div class="col-md-3 col-6 purpose-box" data-purpose="saving">
-                  <label for="id_saving_amount" class="form-label small">Saving (UGX)</label>
+                  <label for="id_saving_amount" class="form-label small">Savings total (UGX)</label>
                   {{ form.saving_amount|add_class:"form-control purpose-amount" }}
                   <small class="text-muted">UGX 10,000–50,000 for the current week.</small>
                   {% if form.saving_amount.errors %}
@@ -177,6 +192,28 @@
               {% endif %}
             </div>
 
+            <div class="col-12 d-none" id="savingsAllocationPanel">
+              <div class="calendar-panel">
+                <div class="d-flex justify-content-between align-items-center gap-2">
+                  <div><strong>Allocate savings weeks</strong><small class="d-block text-muted">Future, current and missed Fridays may be selected.</small></div>
+                  <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#savingsWeekModal">Choose weeks</button>
+                </div>
+                <div id="savingsAllocationRows" class="mt-2"></div>
+                {% if form.selected_weeks.errors %}<div class="text-danger small mt-2">{{ form.selected_weeks.errors|join:", " }}</div>{% endif %}
+              </div>
+            </div>
+
+            <div class="col-12 d-none" id="fineAllocationPanel">
+              <div class="calendar-panel">
+                <div class="d-flex justify-content-between align-items-center gap-2">
+                  <div><strong>Pay outstanding fines</strong><small class="d-block text-muted">Only red outstanding fine weeks can be selected.</small></div>
+                  <button type="button" class="btn btn-outline-danger btn-sm" id="openFineCalendar" data-bs-toggle="modal" data-bs-target="#fineWeekModal">Choose fine weeks</button>
+                </div>
+                <div id="fineAllocationRows" class="small mt-2"></div>
+                {% if form.selected_fine_weeks.errors %}<div class="text-danger small mt-2">{{ form.selected_fine_weeks.errors|join:", " }}</div>{% endif %}
+              </div>
+            </div>
+
             <!-- Live total -->
             <div class="col-12">
               <div class="alert alert-success py-2 mb-0 d-flex justify-content-between align-items-center">
@@ -216,6 +253,27 @@
 
     </div>
   </div>
+</div>
+
+<div class="modal fade" id="savingsWeekModal" tabindex="-1" aria-labelledby="savingsWeekModalTitle">
+  <div class="modal-dialog modal-dialog-centered modal-xl modal-fullscreen-sm-down"><div class="modal-content">
+    <div class="modal-header"><div><h5 class="modal-title" id="savingsWeekModalTitle">Allocate savings weeks</h5><small class="text-muted">Select Friday dates; apply to commit.</small></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body"><div class="small text-muted mb-2">Green = paid on time, amber = paid late, red = missed and available, grey = upcoming.</div><div id="memberSavingsMonths" class="month-grid"></div></div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-success" id="applyMemberSavings">Apply weeks</button></div>
+  </div></div>
+</div>
+
+<div class="modal fade" id="fineWeekModal" tabindex="-1" aria-labelledby="fineWeekModalTitle">
+  <div class="modal-dialog modal-dialog-centered modal-xl modal-fullscreen-sm-down"><div class="modal-content">
+    <div class="modal-header"><div><h5 class="modal-title" id="fineWeekModalTitle">Select outstanding fines</h5><small class="text-muted">Only red circles are selectable; teal circles are already paid.</small></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body"><div id="memberFineMonths" class="month-grid"></div></div>
+    <div class="modal-footer"><span id="memberFineTotal" class="me-auto small text-muted">No fines selected</span><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-success" id="applyMemberFines">Apply fines</button></div>
+  </div></div>
+</div>
+
+<div id="memberCalendarStore" hidden>
+  {% for week in form.week_options %}<span data-member-week data-week="{{ week.value }}" data-label="{{ week.date_label }}" data-month="{{ week.month_name }} {{ week.year }}" data-day="{{ week.day }}" data-status="{{ week.savings_status }}" data-selectable="{{ week.selectable|yesno:'true,false' }}" data-selected="{{ week.selected|yesno:'true,false' }}"><input type="checkbox" name="selected_weeks" value="{{ week.value }}" {% if week.selected %}checked{% endif %} {% if not week.selectable %}disabled{% endif %}><input type="hidden" name="week_amount_{{ week.value }}" value="{{ week.amount }}" disabled></span>{% endfor %}
+  {% for week in form.fine_options %}<span data-member-fine data-week="{{ week.value }}" data-label="{{ week.accessible_label }}" data-month="{{ week.month_name }} {{ week.year }}" data-day="{{ week.day }}" data-status="{{ week.status }}" data-outstanding="{{ week.outstanding }}" data-selectable="{{ week.selectable|yesno:'true,false' }}"><input type="checkbox" name="selected_fine_weeks" value="{{ week.value }}" {% if week.selected %}checked{% endif %} {% if not week.selectable %}disabled{% endif %}></span>{% endfor %}
 </div>
 
 <!-- Loader Script -->
@@ -347,5 +405,85 @@ document.querySelectorAll('.purpose-amount').forEach(function(f) {
 updateLoanRepaymentVisibility();
 togglePurposeBoxes();
 updateTotal();
+</script>
+
+<script>
+(function () {
+  const weeks = Array.from(document.querySelectorAll('[data-member-week]')).map(function (el) {
+    return {el: el, date: el.dataset.week, label: el.dataset.label, month: el.dataset.month, day: el.dataset.day,
+      status: el.dataset.status, selectable: el.dataset.selectable === 'true', checkbox: el.querySelector('input[type=checkbox]'), amount: el.querySelector('input[type=hidden]')};
+  });
+  const fines = Array.from(document.querySelectorAll('[data-member-fine]')).map(function (el) {
+    return {el: el, date: el.dataset.week, label: el.dataset.label, month: el.dataset.month, day: el.dataset.day,
+      status: el.dataset.status, outstanding: Number(el.dataset.outstanding || 0), selectable: el.dataset.selectable === 'true', checkbox: el.querySelector('input[type=checkbox]')};
+  });
+  const savingInput = document.getElementById('id_saving_amount');
+  const fineInput = document.getElementById('id_fine_amount');
+  const savingPanel = document.getElementById('savingsAllocationPanel');
+  const finePanel = document.getElementById('fineAllocationPanel');
+  const savingRows = document.getElementById('savingsAllocationRows');
+  const fineRows = document.getElementById('fineAllocationRows');
+  const selectedPurposes = function () { return Array.from(document.querySelectorAll('input[name="selected_purposes"]:checked')).map(function (x) { return x.value; }); };
+  const money = function (n) { return 'UGX ' + Math.max(0, n || 0).toLocaleString('en-UG', {maximumFractionDigits: 0}); };
+  function grouped(items) { const map = new Map(); items.forEach(function (x) { if (!map.has(x.month)) map.set(x.month, []); map.get(x.month).push(x); }); return map; }
+  function renderMonths(container, items, fineMode) {
+    if (!container) return;
+    container.replaceChildren();
+    grouped(items).forEach(function (monthItems, month) {
+      const panel = document.createElement('section'); panel.className = 'calendar-month';
+      const title = document.createElement('h6'); title.textContent = month; panel.appendChild(title);
+      const days = document.createElement('div'); days.className = 'calendar-days';
+      monthItems.forEach(function (item) {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'calendar-day'; b.textContent = item.day;
+        const selected = item.checkbox.checked;
+        b.classList.toggle('selected', selected);
+        b.classList.toggle('missed', !fineMode && item.status === 'missed');
+        b.classList.toggle('paid-late', !fineMode && item.status === 'paid_late');
+        b.classList.toggle('paid-on-time', !fineMode && item.status === 'paid_on_time');
+        b.classList.toggle('upcoming', !fineMode && item.status === 'upcoming');
+        b.classList.toggle('fine-outstanding', fineMode && item.status === 'outstanding');
+        b.classList.toggle('fine-paid', fineMode && item.status === 'paid');
+        b.disabled = !item.selectable;
+        b.title = item.label + (fineMode ? (item.status === 'outstanding' ? ' — outstanding fine' : ' — paid') : ' — ' + item.status.replaceAll('_', ' '));
+        b.setAttribute('aria-label', b.title);
+        if (item.selectable) b.addEventListener('click', function () { item.checkbox.checked = !item.checkbox.checked; renderMonths(container, items, fineMode); });
+        days.appendChild(b);
+      });
+      panel.appendChild(days); container.appendChild(panel);
+    });
+  }
+  function splitSaving() {
+    const selected = weeks.filter(function (x) { return x.checkbox.checked && x.selectable; });
+    const total = Number(savingInput && savingInput.value || 0);
+    if (!selected.length) return;
+    const base = Math.floor(total / selected.length / 100) * 100; let used = 0;
+    selected.forEach(function (x, i) { const amount = i === selected.length - 1 ? total - used : base; x.amount.value = amount || ''; x.amount.disabled = false; used += amount; });
+    weeks.filter(function (x) { return !x.checkbox.checked; }).forEach(function (x) { x.amount.value = ''; x.amount.disabled = true; });
+  }
+  function renderRows() {
+    if (savingRows) { savingRows.replaceChildren(); weeks.filter(function (x) { return x.checkbox.checked; }).forEach(function (x) { const row = document.createElement('div'); row.className = 'd-flex align-items-center gap-2 mb-1'; row.innerHTML = '<span class="flex-grow-1">' + x.label + '</span>'; const input = document.createElement('input'); input.type = 'number'; input.min = '10000'; input.max = '50000'; input.step = '100'; input.className = 'form-control form-control-sm'; input.value = x.amount.value; input.addEventListener('input', function () { x.amount.value = input.value; }); row.appendChild(input); const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-sm btn-outline-danger'; remove.textContent = 'Remove'; remove.addEventListener('click', function () { x.checkbox.checked = false; x.amount.value = ''; x.amount.disabled = true; renderRows(); }); row.appendChild(remove); savingRows.appendChild(row); }); }
+    if (fineRows) { fineRows.textContent = ''; const selected = fines.filter(function (x) { return x.checkbox.checked; }); if (selected.length) fineRows.textContent = selected.map(function (x) { return x.label + ' (' + money(x.outstanding) + ')'; }).join(' · '); }
+  }
+  function refreshPanels() {
+    const savingReady = selectedPurposes().includes('saving') && Number(savingInput && savingInput.value || 0) >= 10000;
+    if (savingPanel) savingPanel.classList.toggle('d-none', !savingReady);
+    const fineAvailable = fines.some(function (x) { return x.selectable; });
+    const fineCheck = document.querySelector('input[name="selected_purposes"][value="fine"]');
+    if (fineCheck) { fineCheck.disabled = !fineAvailable; if (!fineAvailable) fineCheck.checked = false; const wrap = fineCheck.closest('.form-check'); if (wrap) wrap.classList.toggle('text-muted', !fineAvailable); }
+    const fineReady = selectedPurposes().includes('fine') && fineAvailable;
+    if (finePanel) finePanel.classList.toggle('d-none', !fineReady);
+    if (fineInput) { fineInput.readOnly = true; fineInput.value = fines.filter(function (x) { return x.checkbox.checked; }).reduce(function (s, x) { return s + x.outstanding; }, 0) || ''; }
+    renderRows();
+  }
+  document.querySelectorAll('[data-member-week] input[type=checkbox]').forEach(function (cb) { cb.addEventListener('change', function () { splitSaving(); renderRows(); }); });
+  document.querySelectorAll('[data-member-fine] input[type=checkbox]').forEach(function (cb) { cb.addEventListener('change', refreshPanels); });
+  document.getElementById('applyMemberSavings')?.addEventListener('click', function () { splitSaving(); renderRows(); bootstrap.Modal.getOrCreateInstance(document.getElementById('savingsWeekModal')).hide(); });
+  document.getElementById('applyMemberFines')?.addEventListener('click', function () { refreshPanels(); bootstrap.Modal.getOrCreateInstance(document.getElementById('fineWeekModal')).hide(); });
+  document.getElementById('savingsWeekModal')?.addEventListener('show.bs.modal', function () { renderMonths(document.getElementById('memberSavingsMonths'), weeks, false); });
+  document.getElementById('fineWeekModal')?.addEventListener('show.bs.modal', function () { renderMonths(document.getElementById('memberFineMonths'), fines, true); });
+  savingInput?.addEventListener('input', function () { splitSaving(); refreshPanels(); });
+  document.querySelectorAll('input[name="selected_purposes"]').forEach(function (cb) { cb.addEventListener('change', refreshPanels); });
+  refreshPanels();
+})();
 </script>
 {% endblock %}

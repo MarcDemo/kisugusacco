@@ -58,6 +58,11 @@ class GroupSettings(models.Model):
         return cls.objects.order_by('pk').first()
 
     def clean(self):
+        super().clean()
+        if self.week_one_start and self.week_one_start.weekday() != 4:
+            raise ValidationError({
+                'week_one_start': 'Week 1 start must be a Friday.',
+            })
         if GroupSettings.objects.exclude(pk=self.pk).exists():
             raise ValidationError("Only one group setting record is allowed.")
 

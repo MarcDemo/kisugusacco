@@ -32,12 +32,13 @@ def cycle_weeks(week_one_start, today=None):
     return active, [active.cycle_start + timedelta(weeks=index) for index in range(count)]
 
 
-def _completion_for_week(member, account, friday):
+def completion_for_week(member, account, friday, statuses=('APPROVED',)):
+    """Return cumulative savings and the payment timestamp that completed it."""
     deposits = (
         DepositSubmission.objects.filter(
             member=member,
             account=account,
-            status='APPROVED',
+            status__in=statuses,
             payment_week=friday,
             saving_amount__gt=0,
         )
@@ -53,6 +54,9 @@ def _completion_for_week(member, account, friday):
                 timezone.get_current_timezone(),
             )
     return paid, completed_at
+
+
+_completion_for_week = completion_for_week
 
 
 def ensure_overdue_fines(member=None, account=None, now=None):
@@ -78,7 +82,12 @@ def ensure_overdue_fines(member=None, account=None, now=None):
             deadline = week_deadline(friday)
             if deadline >= now:
                 break
-            _paid, completed_at = _completion_for_week(savings_account.owner, savings_account, friday)
+            _paid, completed_at = completion_for_week(
+                savings_account.owner,
+                savings_account,
+                friday,
+                statuses=('PENDING', 'APPROVED'),
+            )
             if completed_at and completed_at <= deadline:
                 continue
             _fine, was_created = Fine.objects.get_or_create(
@@ -94,6 +103,25 @@ def ensure_overdue_fines(member=None, account=None, now=None):
             )
             created += int(was_created)
     return created
+
+
+def clear_on_time_missed_fine(member, account, payment_week):
+    """Remove an overdue fine created before an on-time deposit was approved."""
+    paid, completed_at = completion_for_week(
+        member, account, payment_week, statuses=('APPROVED',)
+    )
+    if paid < WEEKLY_SAVINGS_AMOUNT or not completed_at:
+        return 0
+    deadline = week_deadline(payment_week)
+    if completed_at > deadline:
+        return 0
+    deleted, _ = Fine.objects.filter(
+        member=member,
+        account=account,
+        fine_type='MISSED_WEEKLY_SAVING',
+        reference_week=payment_week,
+    ).delete()
+    return deleted
 
 
 def build_weekly_calendar(member, account, today=None, create_fines=True):
@@ -119,7 +147,7 @@ def build_weekly_calendar(member, account, today=None, create_fines=True):
     cards = []
     for number, friday in enumerate(weeks, start=1):
         deadline = week_deadline(friday)
-        paid, completed_at = _completion_for_week(member, account, friday)
+        paid, completed_at = completion_for_week(member, account, friday)
         fully_paid = paid >= WEEKLY_SAVINGS_AMOUNT
         if fully_paid:
             status = 'paid_late' if completed_at > deadline else 'paid'

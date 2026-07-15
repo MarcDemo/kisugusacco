@@ -496,15 +496,8 @@ def treasurer_dashboard(request):
     return render(request, 'groupcore/treasurer_dashboard.html', context)
 
 
-@login_required
-def member_dashboard(request):
-    member = request.user
-    active_account = get_active_account(request, member)
-
-    if get_user_active_accounts(member).count() > 1 and not active_account:
-        messages.info(request, "Please select a savings account first.")
-        return redirect('select_savings_account')
-
+def _member_dashboard_context(member, active_account=None):
+    """Build the dashboard data used by both members and Treasurer previews."""
     approved_group_qs = DepositSubmission.objects.filter(status='APPROVED', member__is_superuser=False)
     approved_member_qs = DepositSubmission.objects.filter(member=member, status='APPROVED')
 
@@ -553,7 +546,7 @@ def member_dashboard(request):
     outstanding_loans = approved_loans_qs.aggregate(total=Sum('principal'))['total'] or 0
     my_total_loan_interest = _loan_interest_total(approved_loans_qs)
 
-    context = {
+    return {
         'group_total_savings': group_total_savings,
         'user_savings_total': user_savings_total,
         'weeks_paid': weeks_paid,
@@ -572,28 +565,59 @@ def member_dashboard(request):
         'week_progress': week_progress,
         'savings_calendar': savings_calendar,
     }
+
+
+@login_required
+def member_dashboard(request):
+    member = request.user
+    active_account = get_active_account(request, member)
+
+    if get_user_active_accounts(member).count() > 1 and not active_account:
+        messages.info(request, "Please select a savings account first.")
+        return redirect('select_savings_account')
+
+    context = _member_dashboard_context(member, active_account)
     return render(request, 'groupcore/member_dashboard.html', context)
 
 
 @login_required
-def treasurer_member_preview(request, member_id):
+def treasurer_member_preview(request, member_id=None):
     if not request.user.is_treasurer():
         messages.error(request, 'Access denied.')
         return redirect('member_dashboard')
-    member = get_object_or_404(MemberProfile, pk=member_id, is_superuser=False)
+
+    search_query = request.GET.get('q', '').strip()
+    members = MemberProfile.objects.exclude(is_superuser=True).order_by('first_name', 'last_name', 'username')
+    if search_query:
+        members = members.filter(
+            Q(username__icontains=search_query)
+            | Q(first_name__icontains=search_query)
+            | Q(last_name__icontains=search_query)
+            | Q(email__icontains=search_query)
+            | Q(phone_number__icontains=search_query)
+        )
+
+    selected_member_id = member_id or request.GET.get('member')
+    if not selected_member_id:
+        return render(request, 'groupcore/treasurer_member_preview_select.html', {
+            'preview_members': members,
+            'preview_search_query': search_query,
+        })
+
+    member = get_object_or_404(MemberProfile, pk=selected_member_id, is_superuser=False)
     accounts = member.savings_accounts.filter(is_active=True).order_by('label')
-    selected = accounts.filter(pk=request.GET.get('account')).first() or accounts.first()
-    from messaging.models import MessageRecipient
-    return render(request, 'groupcore/treasurer_member_preview.html', {
-        'managed_member': member,
-        'accounts': accounts,
-        'active_account': selected,
-        'savings_calendar': build_weekly_calendar(member, selected),
-        'deposits': member.deposits.filter(account=selected).order_by('-date_submitted')[:20],
-        'loans': member.loan_requests.filter(account=selected).order_by('-requested_on'),
-        'fines': member.fines.filter(account=selected).order_by('-date_issued'),
-        'notifications': MessageRecipient.objects.filter(recipient=member, message__isnull=False).select_related('message').order_by('-message__sent_at')[:10],
+    requested_account = request.GET.get('account')
+    active_account = accounts.filter(pk=requested_account).first() if requested_account else None
+    active_account = active_account or accounts.first()
+    context = _member_dashboard_context(member, active_account)
+    context.update({
+        'is_treasurer_preview': True,
+        'preview_member': member,
+        'preview_members': members,
+        'preview_search_query': search_query,
+        'preview_accounts': accounts,
     })
+    return render(request, 'groupcore/member_dashboard.html', context)
 
 @login_required
 def secretary_dashboard(request):

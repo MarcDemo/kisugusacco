@@ -1,13 +1,22 @@
+from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
+
 from django import forms
+from django.utils import timezone
+
 from .models import DepositSubmission
-import datetime
 from groupcore.models import GroupSettings, MemberProfile, SavingsAccount
 from groupcore.week_cycle import current_saving_week
 from loans.models import LoanRequest
-from datetime import timedelta
-from decimal import Decimal, InvalidOperation
-from django.db.models import Sum
-from deposits.rules import MAX_WEEKLY_SAVINGS, MIN_WEEKLY_SAVINGS, weekly_savings_total
+from deposits.rules import (
+    MAX_WEEKLY_SAVINGS,
+    MIN_WEEKLY_SAVINGS,
+    fine_week_options,
+    saving_year_weeks,
+    saving_week_statuses,
+    weekly_savings_total,
+    weekly_savings_totals_by_week,
+)
 
 
 PURPOSE_CHOICES = [
@@ -34,6 +43,14 @@ PURPOSE_AMOUNT_FIELDS = {
 class DepositSubmissionForm(forms.ModelForm):
     payment_date = forms.DateField(widget=forms.DateInput(attrs={'type': 'date'}))
     payment_time = forms.TimeField(widget=forms.TimeInput(attrs={'type': 'time'}))
+    selected_weeks = forms.MultipleChoiceField(
+        choices=(), required=False, widget=forms.CheckboxSelectMultiple,
+        label='Savings weeks',
+    )
+    selected_fine_weeks = forms.MultipleChoiceField(
+        choices=(), required=False, widget=forms.CheckboxSelectMultiple,
+        label='Fine weeks',
+    )
     account = forms.ModelChoiceField(queryset=SavingsAccount.objects.none(), required=True, empty_label="-- Select Account --")
     proof = forms.ImageField(
         required=False,
@@ -49,10 +66,10 @@ class DepositSubmissionForm(forms.ModelForm):
         label="Deposit Purpose",
     )
     saving_amount = forms.DecimalField(
-        min_value=0, max_value=MAX_WEEKLY_SAVINGS,
+        min_value=0,
         required=False, initial=Decimal('0.00'),
         label="Saving",
-        widget=forms.NumberInput(attrs={'placeholder': '10,000–50,000', 'min': '10000', 'max': '50000', 'step': '100'}),
+        widget=forms.NumberInput(attrs={'placeholder': 'Total savings', 'min': '10000', 'step': '100'}),
     )
     welfare_amount = forms.DecimalField(
         min_value=0, required=False, initial=Decimal('0.00'),
@@ -93,11 +110,34 @@ class DepositSubmissionForm(forms.ModelForm):
             'proof', 'remarks',
         ]
 
+    def _data_values(self, field_name):
+        if not self.data:
+            return []
+        key = self.add_prefix(field_name)
+        if hasattr(self.data, 'getlist'):
+            return self.data.getlist(key)
+        value = self.data.get(key, [])
+        return list(value) if isinstance(value, (list, tuple)) else [value]
+
     def __init__(self, *args, **kwargs):
         user = kwargs.pop('user', None)
         self.payment_week = kwargs.pop('payment_week', None)
+        self.allow_backdated_payment = kwargs.pop('allow_backdated_payment', False)
         super().__init__(*args, **kwargs)
         self._user = user
+        self.today = timezone.localdate()
+        self.group_settings = GroupSettings.get_active()
+        self.saving_week = None
+        self.saving_weeks = []
+        if self.group_settings:
+            self.saving_week, self.saving_weeks = saving_year_weeks(
+                self.group_settings.week_one_start,
+                self.today,
+            )
+        self.fields['selected_weeks'].choices = [
+            (week.isoformat(), f'Week {index} · {week:%A %d %b}')
+            for index, week in enumerate(self.saving_weeks, start=1)
+        ]
         if user:
             self.fields['account'].queryset = SavingsAccount.objects.filter(owner=user, is_active=True)
             # Keep loan_repayment in choices — JS will show/hide per selected account.
@@ -109,6 +149,74 @@ class DepositSubmissionForm(forms.ModelForm):
                 ]
                 self.fields['loan_repayment_amount'].widget = forms.HiddenInput()
                 self.fields['loan_repayment_amount'].required = False
+
+        account_id = self.data.get(self.add_prefix('account')) if self.is_bound else self.initial.get('account')
+        account_id = getattr(account_id, 'pk', account_id)
+        account = self.fields['account'].queryset.filter(pk=account_id).first() if account_id else None
+        if not account and self.fields['account'].queryset.count() == 1:
+            account = self.fields['account'].queryset.first()
+        self._account = account
+        self._submitted_week_values = self._data_values('selected_weeks') if self.is_bound else []
+        self._submitted_fine_values = self._data_values('selected_fine_weeks') if self.is_bound else []
+        self._saving_statuses = saving_week_statuses(
+            user,
+            account,
+            self.saving_weeks,
+            self.today,
+            statuses=('PENDING', 'APPROVED'),
+        )
+        # Fine obligations can refer to an earlier saving cycle; unlike the
+        # savings picker, the fine picker must not hide an outstanding week
+        # merely because it is outside the current cycle.
+        self.fine_options_by_week = fine_week_options(user, account)
+        self.fields['selected_fine_weeks'].choices = [
+            (week.isoformat(), f'Fine · {week:%A %d %b %Y}')
+            for week in sorted(self.fine_options_by_week)
+        ]
+        self.week_options = []
+        for index, week in enumerate(self.saving_weeks, start=1):
+            status = self._saving_statuses.get(week, {}).get('status', 'available')
+            fine_state = self.fine_options_by_week.get(week, {})
+            self.week_options.append({
+                'value': week.isoformat(),
+                'label': f'Week {index} · {week:%A %d %b}',
+                'date_label': f'{week:%A} {week.day} {week:%B %Y}',
+                'accessible_label': f'Week {index}, {week:%A} {week.day} {week:%B %Y}',
+                'week_number': index,
+                'month': week.month,
+                'month_name': week.strftime('%B'),
+                'year': week.year,
+                'day': week.day,
+                'savings_status': status,
+                'fine_status': fine_state.get('status', 'none'),
+                'fine_outstanding': fine_state.get('outstanding', Decimal('0.00')),
+                'is_future': week > self.today,
+                'is_current': week <= self.today < week + timedelta(days=7),
+                'selectable': status not in ('paid_on_time', 'paid_late'),
+                'selected': week.isoformat() in set(self._submitted_week_values),
+                'amount': self.data.get(f'week_amount_{week.isoformat()}', '') if self.is_bound else '',
+            })
+        self.fine_options = []
+        for index, week in enumerate(sorted(self.fine_options_by_week), start=1):
+            state = self.fine_options_by_week.get(week)
+            if not state:
+                continue
+            self.fine_options.append({
+                'value': week.isoformat(),
+                'label': f'Week {index} · {week:%A %d %b}',
+                'accessible_label': f'Fine for Week {index}, {week:%A} {week.day} {week:%B %Y}',
+                'week_number': index,
+                'month': week.month,
+                'month_name': week.strftime('%B'),
+                'year': week.year,
+                'day': week.day,
+                'status': state['status'],
+                'selectable': state['selectable'],
+                'selected': week.isoformat() in set(self._submitted_fine_values) and state['selectable'],
+                'outstanding': state['outstanding'],
+                'fine_allocations': state['fine_allocations'],
+            })
+        self.has_outstanding_fines = any(item['selectable'] for item in self.fine_options)
 
         initial_purposes = []
         if self.instance and self.instance.pk:
@@ -151,21 +259,95 @@ class DepositSubmissionForm(forms.ModelForm):
                         "The selected account has no active loan. Loan Repayment cannot be used."
                     )
 
+        selected_weeks = []
+        weekly_allocations = []
         if 'saving' in selected_purposes:
             saving_amount = cleaned_data.get('saving_amount') or Decimal('0.00')
-            if saving_amount < MIN_WEEKLY_SAVINGS or saving_amount > MAX_WEEKLY_SAVINGS:
-                self.add_error(
-                    'saving_amount',
-                    'Weekly savings must be between UGX 10,000 and UGX 50,000.',
-                )
-            account = cleaned_data.get('account')
-            user = getattr(self, '_user', None)
-            if user and account and self.payment_week:
-                existing = weekly_savings_total(
-                    user, account, self.payment_week, statuses=('PENDING', 'APPROVED')
-                )
-                if existing >= MIN_WEEKLY_SAVINGS:
-                    self.add_error('saving_amount', 'This week is already paid or awaiting approval.')
+            raw_week_values = self._submitted_week_values
+            allowed_weeks = set(self.saving_weeks)
+            if len(raw_week_values) != len(set(raw_week_values)):
+                self.add_error('selected_weeks', 'Select each week only once.')
+            for value in raw_week_values:
+                try:
+                    week = date.fromisoformat(value)
+                except (TypeError, ValueError):
+                    self.add_error('selected_weeks', 'Select savings weeks from the active saving year only.')
+                    continue
+                if week not in allowed_weeks:
+                    self.add_error('selected_weeks', 'Select savings weeks from the active saving year only.')
+                elif week not in selected_weeks:
+                    selected_weeks.append(week)
+            if not selected_weeks and self.payment_week:
+                selected_weeks = [self.payment_week]
+            if not selected_weeks:
+                self.add_error('selected_weeks', 'Select at least one savings week.')
+            else:
+                cleaned_data['payment_week'] = selected_weeks[0]
+                if not self.allow_backdated_payment:
+                    current_week = current_saving_week(
+                        self.group_settings.week_one_start,
+                        self.today,
+                    ).week_start if self.group_settings else self.today
+                    if any(week < current_week for week in selected_weeks):
+                        payment_date = cleaned_data.get('payment_date')
+                        if payment_date and payment_date < self.today:
+                            self.add_error(
+                                'payment_date',
+                                'Members cannot backdate payments when backfilling a past savings week. '
+                                'Use today’s payment date or ask the treasurer to record the historical date.',
+                            )
+            if saving_amount < MIN_WEEKLY_SAVINGS:
+                self.add_error('saving_amount', 'Savings total must be at least UGX 10,000.')
+            for week in selected_weeks:
+                raw_amount = self.data.get(f'week_amount_{week.isoformat()}')
+                if raw_amount in (None, '') and len(selected_weeks) == 1:
+                    amount = saving_amount
+                else:
+                    try:
+                        amount = Decimal(str(raw_amount).replace(',', ''))
+                    except (InvalidOperation, TypeError, ValueError):
+                        amount = Decimal('0.00')
+                        self.add_error('selected_weeks', f'Enter a valid allocation for Week {week:%d %b %Y}.')
+                if amount < MIN_WEEKLY_SAVINGS or amount > MAX_WEEKLY_SAVINGS:
+                    self.add_error('selected_weeks', f'Week of {week:%d %b %Y} must be between UGX 10,000 and UGX 50,000.')
+                status = self._saving_statuses.get(week, {})
+                if status.get('total', Decimal('0.00')) >= MIN_WEEKLY_SAVINGS:
+                    self.add_error('selected_weeks', f'Week of {week:%d %b %Y} is already paid or awaiting approval.')
+                weekly_allocations.append((week, amount))
+            allocated_savings = sum((amount for _week, amount in weekly_allocations), Decimal('0.00'))
+            if allocated_savings != saving_amount:
+                self.add_error('selected_weeks', 'Weekly allocations must equal the Savings total.')
+        else:
+            cleaned_data['saving_amount'] = Decimal('0.00')
+            payment_date = cleaned_data.get('payment_date')
+            if self.group_settings and payment_date:
+                payment_week = current_saving_week(self.group_settings.week_one_start, payment_date).week_start
+                selected_weeks = [payment_week]
+                cleaned_data['payment_week'] = payment_week
+
+        fine_allocations = []
+        if 'fine' in selected_purposes:
+            fine_by_value = {item['value']: item for item in self.fine_options}
+            selected_fine_values = []
+            for value in self._submitted_fine_values:
+                option = fine_by_value.get(value)
+                if not option or not option['selectable']:
+                    self.add_error('selected_fine_weeks', 'Select only outstanding fine weeks.')
+                    continue
+                if value not in selected_fine_values:
+                    selected_fine_values.append(value)
+                    fine_allocations.extend(
+                        (allocation['id'], allocation['amount'])
+                        for allocation in option['fine_allocations']
+                    )
+            if not selected_fine_values:
+                self.add_error('selected_fine_weeks', 'Select at least one outstanding fine week.')
+            cleaned_data['fine_amount'] = sum((amount for _fine_id, amount in fine_allocations), Decimal('0.00'))
+        else:
+            cleaned_data['fine_amount'] = Decimal('0.00')
+        cleaned_data['selected_week_dates'] = selected_weeks
+        cleaned_data['weekly_allocations'] = weekly_allocations
+        cleaned_data['fine_allocations'] = fine_allocations
 
         total = Decimal('0.00')
         for purpose_key, amount_field in PURPOSE_AMOUNT_FIELDS.items():
@@ -195,12 +377,9 @@ class DirectDepositForm(forms.ModelForm):
         choices=(), required=False, widget=forms.CheckboxSelectMultiple,
         label='Savings weeks',
     )
-    amount_received = forms.DecimalField(
-        min_value=0,
-        required=False,
-        label='Amount received',
-        widget=forms.NumberInput(attrs={'placeholder': 'Optional', 'min': '0', 'step': '100'}),
-        help_text='If entered, it must be fully allocated before the deposit can be saved.',
+    selected_fine_weeks = forms.MultipleChoiceField(
+        choices=(), required=False, widget=forms.CheckboxSelectMultiple,
+        label='Fine weeks',
     )
     member = forms.ModelChoiceField(queryset=MemberProfile.objects.filter(is_superuser=False), label="Member")
     account = forms.ModelChoiceField(queryset=SavingsAccount.objects.none(), required=False)
@@ -218,9 +397,15 @@ class DirectDepositForm(forms.ModelForm):
         label="Deposit Purpose",
     )
     saving_amount = forms.DecimalField(
-        min_value=0, required=False, initial=Decimal('0.00'),
-        label="Saving",
-        widget=forms.HiddenInput(),
+        min_value=0, max_digits=10, decimal_places=2,
+        required=False, initial=Decimal('0.00'),
+        label="Savings total",
+        widget=forms.NumberInput(attrs={
+            'placeholder': 'Total savings to allocate',
+            'min': '10000',
+            'step': '100',
+            'inputmode': 'decimal',
+        }),
     )
     welfare_amount = forms.DecimalField(
         min_value=0, required=False, initial=Decimal('0.00'),
@@ -261,47 +446,157 @@ class DirectDepositForm(forms.ModelForm):
             'proof', 'remarks',
         ]
 
+    def _data_values(self, field_name):
+        if not self.data:
+            return []
+        key = self.add_prefix(field_name)
+        if hasattr(self.data, 'getlist'):
+            return self.data.getlist(key)
+        value = self.data.get(key, [])
+        return list(value) if isinstance(value, (list, tuple)) else [value]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        settings = GroupSettings.get_active()
-        week_choices = []
-        if settings:
-            saving_week = current_saving_week(settings.week_one_start)
-            weeks = [saving_week.cycle_start + timedelta(weeks=index) for index in range(saving_week.week_number)]
-            week_choices = [
-                (week.isoformat(), f'Week {index} · Fri {week:%d %b}')
-                for index, week in enumerate(weeks, start=1)
-            ]
-            self.fields['selected_weeks'].choices = week_choices
+        self.today = timezone.localdate()
+        self.group_settings = GroupSettings.get_active()
+        self.saving_week = None
+        self.saving_weeks = []
+        if self.group_settings:
+            self.saving_week, self.saving_weeks = saving_year_weeks(
+                self.group_settings.week_one_start,
+                self.today,
+            )
+
+        week_choices = [
+            (week.isoformat(), f'Week {index} · {week:%A %d %b}')
+            for index, week in enumerate(self.saving_weeks, start=1)
+        ]
+        self.fields['selected_weeks'].choices = week_choices
+
+        self._submitted_week_values = self._data_values('selected_weeks') if self.is_bound else []
+        raw_purposes = set(self._data_values('selected_purposes')) if self.is_bound else set()
+        if self.is_bound and 'saving' not in raw_purposes:
+            # Week controls are savings-only. Ignore stale or forged calendar data
+            # for deposits whose selected purposes do not include savings.
+            mutable_data = self.data.copy()
+            selected_weeks_key = self.add_prefix('selected_weeks')
+            if hasattr(mutable_data, 'setlist'):
+                mutable_data.setlist(selected_weeks_key, [])
+            else:
+                mutable_data[selected_weeks_key] = []
+            mutable_data[self.add_prefix('payment_week')] = ''
+            self.data = mutable_data
 
         member_id = None
         if self.is_bound:
             member_id = self.data.get(self.add_prefix('member'))
         if not member_id:
             member_id = self.initial.get('member') or getattr(self.instance, 'member_id', None)
+        member_id = getattr(member_id, 'pk', member_id)
 
+        active_accounts = SavingsAccount.objects.none()
         if member_id:
-            self.fields['account'].queryset = SavingsAccount.objects.filter(owner_id=member_id, is_active=True)
+            active_accounts = SavingsAccount.objects.filter(owner_id=member_id, is_active=True)
+            self.fields['account'].queryset = active_accounts
         else:
-            self.fields['account'].queryset = SavingsAccount.objects.none()
+            self.fields['account'].queryset = active_accounts
         self.fields['account'].empty_label = '-- Select member first --'
 
-        account_id = self.data.get(self.add_prefix('account')) if self.is_bound else self.initial.get('account')
-        selected_values = set(self.data.getlist(self.add_prefix('selected_weeks'))) if self.is_bound else set()
-        account = SavingsAccount.objects.filter(pk=account_id, owner_id=member_id).first() if account_id else None
+        account_id = (
+            self.data.get(self.add_prefix('account'))
+            if self.is_bound else self.initial.get('account')
+        )
+        account_id = getattr(account_id, 'pk', account_id)
+        account = active_accounts.filter(pk=account_id).first() if account_id else None
+        if member_id and not account:
+            possible_accounts = list(active_accounts.order_by('id')[:2])
+            if len(possible_accounts) == 1:
+                account = possible_accounts[0]
+
+        selected_values = set(self._data_values('selected_weeks')) if self.is_bound else set()
+        selected_fine_values = set(self._data_values('selected_fine_weeks')) if self.is_bound else set()
+        member = (
+            MemberProfile.objects.filter(pk=member_id, is_superuser=False).first()
+            if member_id else None
+        )
+        paid_totals = weekly_savings_totals_by_week(
+            member,
+            account,
+            self.saving_weeks,
+        )
+        savings_statuses = saving_week_statuses(
+            member,
+            account,
+            self.saving_weeks,
+            self.today,
+        )
+        self.fine_options_by_week = fine_week_options(member, account)
+        self.fields['selected_fine_weeks'].choices = [
+            (week.isoformat(), f'Fine · {week:%A %d %b %Y}')
+            for week in sorted(self.fine_options_by_week)
+        ]
+        self._paid_totals = paid_totals
+        self._paid_context = (
+            getattr(member, 'pk', None),
+            getattr(account, 'pk', None),
+        )
+
         self.week_options = []
-        member = MemberProfile.objects.filter(pk=member_id, is_superuser=False).first() if member_id else None
-        for value, label in week_choices:
-            week = datetime.date.fromisoformat(value)
-            is_paid = bool(member and weekly_savings_total(member, account, week) >= MIN_WEEKLY_SAVINGS)
+        for index, week in enumerate(self.saving_weeks, start=1):
+            value = week.isoformat()
+            paid_amount = paid_totals.get(week, Decimal('0.00'))
+            week_status = savings_statuses.get(week, {}).get('status', 'available')
+            is_paid = week_status in ('paid_on_time', 'paid_late')
+            is_future = week > self.today
+            is_current = week <= self.today < week + timedelta(days=7)
+            selectable = not is_paid
+            date_label = f'{week:%A} {week.day} {week:%B %Y}'
+            fine_state = self.fine_options_by_week.get(week, {})
             self.week_options.append({
                 'value': value,
-                'label': label,
+                'label': f'Week {index} · {week:%A %d %b}',
+                'date_label': date_label,
+                'accessible_label': f'Week {index}, {date_label}',
+                'week_number': index,
+                'month': week.month,
+                'month_name': week.strftime('%B'),
+                'year': week.year,
+                'day': week.day,
+                'paid_amount': paid_amount,
                 'is_paid': is_paid,
-                'selected': value in selected_values and not is_paid,
+                'savings_status': week_status,
+                'fine_status': fine_state.get('status', 'none'),
+                'fine_outstanding': fine_state.get('outstanding', Decimal('0.00')),
+                'is_future': is_future,
+                'is_current': is_current,
+                'is_available': selectable,
+                'selectable': selectable,
+                'selected': value in selected_values and selectable,
                 'amount': self.data.get(f'week_amount_{value}', '') if self.is_bound else '',
             })
+
+        self.fine_options = []
+        for index, week in enumerate(sorted(self.fine_options_by_week), start=1):
+            fine_state = self.fine_options_by_week.get(week)
+            if not fine_state:
+                continue
+            self.fine_options.append({
+                'value': week.isoformat(),
+                'label': f'Week {index} · {week:%A %d %b}',
+                'accessible_label': f'Fine for Week {index}, {week:%A} {week.day} {week:%B %Y}',
+                'week_number': index,
+                'month': week.month,
+                'month_name': week.strftime('%B'),
+                'year': week.year,
+                'day': week.day,
+                'status': fine_state['status'],
+                'selectable': fine_state['selectable'],
+                'selected': week.isoformat() in selected_fine_values and fine_state['selectable'],
+                'outstanding': fine_state['outstanding'],
+                'fine_allocations': fine_state['fine_allocations'],
+            })
+        self.has_outstanding_fines = any(item['selectable'] for item in self.fine_options)
 
         initial_purposes = []
         if self.instance and self.instance.pk:
@@ -326,32 +621,20 @@ class DirectDepositForm(forms.ModelForm):
         member = cleaned_data.get('member')
         account = cleaned_data.get('account')
         selected_purposes = cleaned_data.get('selected_purposes') or []
-        if member and not account:
-            sole_account = SavingsAccount.objects.filter(owner=member, is_active=True).order_by('id').first()
-            if SavingsAccount.objects.filter(owner=member, is_active=True).count() == 1:
-                account = sole_account
-                cleaned_data['account'] = account
 
-        raw_week_values = self.data.getlist(self.add_prefix('selected_weeks')) if self.data else []
-        if len(raw_week_values) != len(set(raw_week_values)):
-            self.add_error('selected_weeks', 'Select each week only once.')
-        selected_week_values = cleaned_data.get('selected_weeks') or []
-        legacy_week_selection = not selected_week_values and bool(cleaned_data.get('payment_week'))
-        if not selected_week_values and cleaned_data.get('payment_week'):
-            selected_week_values = [cleaned_data['payment_week'].isoformat()]
-        selected_weeks = [datetime.date.fromisoformat(value) for value in selected_week_values]
-        cleaned_data['selected_week_dates'] = selected_weeks
-        if not selected_weeks:
-            self.add_error('selected_weeks', 'Select at least one savings week.')
-        else:
-            cleaned_data['payment_week'] = selected_weeks[0]
+        if member and not account:
+            possible_accounts = list(
+                SavingsAccount.objects.filter(owner=member, is_active=True).order_by('id')[:2]
+            )
+            if len(possible_accounts) == 1:
+                account = possible_accounts[0]
+                cleaned_data['account'] = account
 
         if member and account and account.owner_id != member.id:
             self.add_error('account', 'Selected account does not belong to this member.')
 
         if member and not account:
-            member_accounts_count = SavingsAccount.objects.filter(owner=member, is_active=True).count()
-            if member_accounts_count > 1:
+            if SavingsAccount.objects.filter(owner=member, is_active=True).count() > 1:
                 self.add_error('account', 'Select an account for this member.')
 
         if member and 'loan_repayment' in selected_purposes:
@@ -361,7 +644,73 @@ class DirectDepositForm(forms.ModelForm):
 
         weekly_allocations = []
         submitted_saving_amount = cleaned_data.get('saving_amount') or Decimal('0.00')
-        if 'saving' in selected_purposes and selected_weeks:
+        selected_weeks = []
+        saving_selected = 'saving' in selected_purposes
+
+        if saving_selected:
+            raw_week_values = self._submitted_week_values
+            if len(raw_week_values) != len(set(raw_week_values)):
+                self.add_error('selected_weeks', 'Select each week only once.')
+
+            allowed_weeks = set(self.saving_weeks)
+            invalid_week_values = []
+            for value in raw_week_values:
+                try:
+                    parsed_week = date.fromisoformat(value)
+                except (TypeError, ValueError):
+                    invalid_week_values.append(value)
+                    continue
+                if parsed_week not in allowed_weeks:
+                    invalid_week_values.append(value)
+            if invalid_week_values:
+                self.add_error(
+                    'selected_weeks',
+                    'Select savings weeks from the active saving year only.',
+                )
+
+            selected_week_values = cleaned_data.get('selected_weeks') or []
+            legacy_week_selection = (
+                not raw_week_values
+                and not selected_week_values
+                and bool(cleaned_data.get('payment_week'))
+            )
+            if legacy_week_selection:
+                selected_week_values = [cleaned_data['payment_week'].isoformat()]
+
+            seen_weeks = set()
+            for value in selected_week_values:
+                try:
+                    week = date.fromisoformat(value)
+                except (TypeError, ValueError):
+                    continue
+                if week not in seen_weeks:
+                    selected_weeks.append(week)
+                    seen_weeks.add(week)
+
+            if not selected_weeks:
+                self.add_error('selected_weeks', 'Select at least one savings week.')
+            else:
+                cleaned_data['payment_week'] = selected_weeks[0]
+
+            if submitted_saving_amount < MIN_WEEKLY_SAVINGS:
+                self.add_error(
+                    'saving_amount',
+                    'Savings total must be at least UGX 10,000.',
+                )
+
+            paid_context = (
+                getattr(member, 'pk', None),
+                getattr(account, 'pk', None),
+            )
+            if paid_context == self._paid_context:
+                paid_totals = self._paid_totals
+            else:
+                paid_totals = weekly_savings_totals_by_week(
+                    member,
+                    account,
+                    self.saving_weeks,
+                )
+
             for week in selected_weeks:
                 raw_amount = self.data.get(f'week_amount_{week.isoformat()}')
                 if (raw_amount is None or raw_amount == '') and legacy_week_selection and len(selected_weeks) == 1:
@@ -369,27 +718,86 @@ class DirectDepositForm(forms.ModelForm):
                 else:
                     try:
                         amount = Decimal(str(raw_amount).replace(',', ''))
+                        if not amount.is_finite() or amount.as_tuple().exponent < -2:
+                            raise InvalidOperation
                     except (InvalidOperation, TypeError, ValueError):
                         amount = Decimal('0.00')
+                        self.add_error(
+                            'selected_weeks',
+                            f'Enter a valid allocation for the week of {week:%d %b %Y}.',
+                        )
                 if amount < MIN_WEEKLY_SAVINGS or amount > MAX_WEEKLY_SAVINGS:
                     self.add_error(
                         'selected_weeks',
                         f'Week of {week:%d %b %Y} must be between UGX 10,000 and UGX 50,000.',
                     )
-                if member and weekly_savings_total(member, account, week) >= MIN_WEEKLY_SAVINGS:
+                if week not in allowed_weeks:
+                    self.add_error(
+                        'selected_weeks',
+                        f'Week of {week:%d %b %Y} is outside the active saving year.',
+                    )
+                if paid_totals.get(week, Decimal('0.00')) >= MIN_WEEKLY_SAVINGS:
                     self.add_error('selected_weeks', f'Week of {week:%d %b %Y} is already paid and locked.')
                 weekly_allocations.append((week, amount))
-            cleaned_data['saving_amount'] = sum(
+
+            allocated_savings = sum(
                 (amount for _week, amount in weekly_allocations), Decimal('0.00')
             )
+            if allocated_savings != submitted_saving_amount:
+                difference = abs(submitted_saving_amount - allocated_savings)
+                direction = 'remaining' if allocated_savings < submitted_saving_amount else 'over-allocated'
+                self.add_error(
+                    'selected_weeks',
+                    f'Weekly allocations must equal the Savings total; UGX {difference:,.0f} is {direction}.',
+                )
         else:
             cleaned_data['saving_amount'] = Decimal('0.00')
+
+            payment_date = cleaned_data.get('payment_date')
+            if self.group_settings and payment_date:
+                payment_week = current_saving_week(
+                    self.group_settings.week_one_start,
+                    payment_date,
+                ).week_start
+                selected_weeks = [payment_week]
+                cleaned_data['payment_week'] = payment_week
+            elif not self.group_settings:
+                raise forms.ValidationError(
+                    'Open the saving cycle in Group Settings before recording deposits.'
+                )
+
+        fine_allocations = []
+        raw_fine_values = self._data_values('selected_fine_weeks')
+        if 'fine' in selected_purposes:
+            if len(raw_fine_values) != len(set(raw_fine_values)):
+                self.add_error('selected_fine_weeks', 'Select each fine week only once.')
+            fine_by_value = {item['value']: item for item in self.fine_options}
+            selected_fine_values = []
+            for value in raw_fine_values:
+                option = fine_by_value.get(value)
+                if not option or not option['selectable']:
+                    self.add_error('selected_fine_weeks', 'Select only outstanding fine weeks.')
+                    continue
+                if value not in selected_fine_values:
+                    selected_fine_values.append(value)
+                    fine_allocations.extend(
+                        (allocation['id'], allocation['amount'])
+                        for allocation in option['fine_allocations']
+                    )
+            if not selected_fine_values:
+                self.add_error('selected_fine_weeks', 'Select at least one outstanding fine week.')
+            cleaned_data['fine_amount'] = sum(
+                (amount for _fine_id, amount in fine_allocations), Decimal('0.00')
+            )
+        else:
+            cleaned_data['fine_amount'] = Decimal('0.00')
+
+        cleaned_data['selected_week_dates'] = selected_weeks
         cleaned_data['weekly_allocations'] = weekly_allocations
+        cleaned_data['fine_allocations'] = fine_allocations
 
         if not selected_purposes:
             raise forms.ValidationError("Please tick at least one purpose.")
-        if len(selected_weeks) > 1 and 'saving' not in selected_purposes:
-            self.add_error('selected_weeks', 'Multiple weeks can only be selected for a savings allocation.')
 
         total = Decimal('0.00')
         for purpose_key, amount_field in PURPOSE_AMOUNT_FIELDS.items():
@@ -407,13 +815,5 @@ class DirectDepositForm(forms.ModelForm):
 
         if total <= 0:
             raise forms.ValidationError("Please enter an amount for at least one purpose.")
-        amount_received = cleaned_data.get('amount_received')
-        if amount_received is not None and amount_received != total:
-            difference = abs(amount_received - total)
-            label = 'remaining' if amount_received < total else 'overpayment'
-            self.add_error(
-                'amount_received',
-                f'UGX {difference:,.0f} is {label}. Adjust the allocations so the amount received equals the total payable.',
-            )
         cleaned_data['amount'] = total
         return cleaned_data

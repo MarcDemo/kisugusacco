@@ -4,9 +4,11 @@ from io import BytesIO
 from unittest.mock import patch
 
 from django.test import TestCase
+from django.db import connection
 from django.http import QueryDict
 from django.urls import reverse
 from django.utils import timezone
+from django.test.utils import CaptureQueriesContext
 from openpyxl import load_workbook
 
 from deposits.models import DepositSubmission
@@ -40,6 +42,7 @@ class VariableWeeklySavingsAllocationTests(TestCase):
             'account': str(self.account.id),
             'payment_date': timezone.localdate().isoformat(),
             'payment_time': '10:00',
+            'saving_amount': str(sum(amounts)),
         })
         data.setlist('selected_purposes', ['saving'])
         data.setlist('selected_weeks', [week.isoformat() for week in weeks])
@@ -67,9 +70,10 @@ class VariableWeeklySavingsAllocationTests(TestCase):
 
     def test_treasurer_can_allocate_different_amounts_to_multiple_weeks(self):
         weeks = [self.saving_week.cycle_start, self.saving_week.cycle_start + timedelta(weeks=1)]
-        data = self.direct_data(weeks, [20000, 10000], 30000)
+        data = self.direct_data(weeks, [20000, 10000], 35000)
+        data['welfare_amount'] = '5000'
         post_data = data.dict()
-        post_data['selected_purposes'] = ['saving']
+        post_data['selected_purposes'] = ['saving', 'welfare']
         post_data['selected_weeks'] = [week.isoformat() for week in weeks]
         self.client.login(username=self.treasurer.username, password='pass12345')
 
@@ -79,7 +83,8 @@ class VariableWeeklySavingsAllocationTests(TestCase):
         self.assertRedirects(response, reverse('manage_deposits'))
         saved = list(DepositSubmission.objects.filter(member=self.member).order_by('payment_week'))
         self.assertEqual([item.saving_amount for item in saved], [Decimal('20000'), Decimal('10000')])
-        self.assertEqual(sum((item.amount for item in saved), Decimal('0')), Decimal('30000'))
+        self.assertEqual([item.welfare_amount for item in saved], [Decimal('5000'), Decimal('0')])
+        self.assertEqual(sum((item.amount for item in saved), Decimal('0')), Decimal('35000'))
 
     def test_paid_week_is_locked_and_duplicate_selection_is_rejected(self):
         week = self.saving_week.cycle_start
@@ -124,6 +129,28 @@ class VariableWeeklySavingsAllocationTests(TestCase):
         self.assertFalse(locked.is_valid())
         self.assertContainsError(locked, 'already paid or awaiting approval')
 
+    def test_member_cannot_backdate_a_past_week(self):
+        week = self.saving_week.cycle_start
+        data = QueryDict('', mutable=True)
+        data.update({
+            'account': str(self.account.id),
+            'payment_date': (timezone.localdate() - timedelta(days=1)).isoformat(),
+            'payment_time': '10:00',
+            'saving_amount': '10000',
+        })
+        data.setlist('selected_purposes', ['saving'])
+        data.setlist('selected_weeks', [week.isoformat()])
+        data[f'week_amount_{week.isoformat()}'] = '10000'
+
+        form = DepositSubmissionForm(
+            data,
+            user=self.member,
+            payment_week=week,
+            allow_backdated_payment=False,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn('cannot backdate', str(form.errors))
+
     def test_manage_page_and_status_api_expose_week_allocations_and_locking(self):
         week = self.saving_week.cycle_start
         DepositSubmission.objects.create(
@@ -145,11 +172,159 @@ class VariableWeeklySavingsAllocationTests(TestCase):
         week_status = next(item for item in api.json()['weeks'] if item['date'] == week.isoformat())
         self.assertTrue(week_status['paid'])
 
-    def test_unallocated_received_amount_is_rejected(self):
+    def test_manage_page_includes_approved_and_rejected_submissions(self):
+        week = self.saving_week.cycle_start
+        DepositSubmission.objects.create(
+            member=self.member,
+            account=self.account,
+            submitted_by=self.treasurer,
+            payment_week=week,
+            saving_amount=Decimal('10000'),
+            payment_date=week,
+            payment_time=time(9, 0),
+            status='APPROVED',
+        )
+        rejected = DepositSubmission.objects.create(
+            member=self.member,
+            account=self.account,
+            submitted_by=self.member,
+            payment_week=week + timedelta(weeks=1),
+            saving_amount=Decimal('10000'),
+            payment_date=week + timedelta(weeks=1),
+            payment_time=time(9, 0),
+            status='REJECTED',
+        )
+        self.client.login(username=self.treasurer.username, password='pass12345')
+
+        response = self.client.get(reverse('manage_deposits'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Deposit Submissions')
+        self.assertContains(response, 'Approved')
+        self.assertContains(response, 'Rejected')
+        self.assertIn(rejected, response.context['deposit_submissions'])
+
+    def test_manage_page_uses_compact_picker_after_purpose_amounts(self):
+        self.client.login(username=self.treasurer.username, password='pass12345')
+
+        response = self.client.get(reverse('manage_deposits'))
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        purpose_position = html.index('Deposit Purpose')
+        savings_amount_position = html.index('Savings total (UGX)')
+        picker_position = html.index('id="ddSavingsAllocation"')
+        self.assertLess(purpose_position, savings_amount_position)
+        self.assertLess(savings_amount_position, picker_position)
+        self.assertContains(response, 'id="ddWeekPickerModal"')
+        self.assertContains(response, 'modal-fullscreen-sm-down')
+        self.assertContains(response, 'data-week-option')
+        self.assertNotContains(response, 'class="week-card')
+
+    def test_legacy_amount_received_is_ignored(self):
         week = self.saving_week.cycle_start
         form = DirectDepositForm(self.direct_data([week], [10000], 30000))
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertNotIn('amount_received', form.fields)
+
+    def test_savings_total_is_authoritative_and_must_match_week_allocations(self):
+        weeks = [self.saving_week.cycle_start, self.saving_week.cycle_start + timedelta(weeks=1)]
+        data = self.direct_data(weeks, [10000, 20000], 40000)
+        data['saving_amount'] = '40000'
+
+        form = DirectDepositForm(data)
+
         self.assertFalse(form.is_valid())
-        self.assertContainsError(form, 'overpayment')
+        self.assertContainsError(form, 'Weekly allocations must equal the Savings total')
+        self.assertContainsError(form, '10,000 is remaining')
+        selected_options = [option for option in form.week_options if option['selected']]
+        self.assertEqual([option['value'] for option in selected_options], [
+            week.isoformat() for week in weeks
+        ])
+        self.assertEqual([option['amount'] for option in selected_options], ['10000', '20000'])
+
+    def test_future_weeks_are_selectable_but_out_of_year_weeks_are_rejected(self):
+        controlled_today = self.saving_week.cycle_start + timedelta(weeks=4, days=2)
+        future_week = self.saving_week.cycle_start + timedelta(weeks=5)
+        with patch('deposits.forms.timezone.localdate', return_value=controlled_today):
+            future_form = DirectDepositForm(self.direct_data([future_week], [10000], 10000))
+
+        self.assertTrue(future_form.is_valid(), future_form.errors)
+
+        outside_week = self.saving_week.cycle_start - timedelta(weeks=1)
+        outside_form = DirectDepositForm(self.direct_data([outside_week], [10000], 10000))
+        self.assertFalse(outside_form.is_valid())
+        self.assertContainsError(outside_form, 'active saving year only')
+
+    def test_non_savings_deposit_ignores_calendar_post_and_uses_payment_date_week(self):
+        payment_date = self.saving_week.cycle_start + timedelta(weeks=2, days=3)
+        expected_week = self.saving_week.cycle_start + timedelta(weeks=2)
+        data = QueryDict('', mutable=True)
+        data.update({
+            'member': str(self.member.id),
+            'account': str(self.account.id),
+            'payment_date': payment_date.isoformat(),
+            'payment_time': '10:00',
+            'payment_week': 'not-a-date',
+            'welfare_amount': '15000',
+            'amount_received': '15000',
+        })
+        data.setlist('selected_purposes', ['welfare'])
+        data.setlist('selected_weeks', ['1900-01-01', '2999-12-31'])
+        data['week_amount_1900-01-01'] = '50000'
+
+        form = DirectDepositForm(data)
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data['selected_week_dates'], [expected_week])
+        self.assertEqual(form.cleaned_data['payment_week'], expected_week)
+        self.assertEqual(form.cleaned_data['weekly_allocations'], [])
+        self.assertEqual(form.cleaned_data['saving_amount'], Decimal('0.00'))
+
+        self.client.login(username=self.treasurer.username, password='pass12345')
+        response = self.client.post(reverse('manage_deposits'), data)
+        self.assertRedirects(response, reverse('manage_deposits'))
+        saved = DepositSubmission.objects.get(member=self.member)
+        self.assertEqual(saved.payment_week, expected_week)
+        self.assertEqual(saved.saving_amount, Decimal('0.00'))
+        self.assertEqual(saved.welfare_amount, Decimal('15000.00'))
+
+    def test_full_saving_year_metadata_and_status_api_use_bounded_queries(self):
+        paid_week = self.saving_week.cycle_start
+        DepositSubmission.objects.create(
+            member=self.member, account=self.account, submitted_by=self.treasurer,
+            payment_week=paid_week, saving_amount=Decimal('10000'),
+            payment_date=paid_week, payment_time=time(9, 0), status='APPROVED',
+        )
+
+        form = DirectDepositForm(initial={'member': self.member, 'account': self.account})
+        self.assertIn(len(form.week_options), (52, 53))
+        first = form.week_options[0]
+        self.assertEqual(first['value'], paid_week.isoformat())
+        self.assertEqual(first['week_number'], 1)
+        self.assertEqual(first['month'], paid_week.month)
+        self.assertEqual(first['day'], paid_week.day)
+        self.assertIn('accessible_label', first)
+        self.assertTrue(first['is_paid'])
+        self.assertFalse(first['selectable'])
+
+        self.client.login(username=self.treasurer.username, password='pass12345')
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(reverse('treasurer_week_options'), {
+                'member': self.member.id,
+                'account': self.account.id,
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertLessEqual(len(queries), 8)
+        weeks = response.json()['weeks']
+        self.assertEqual(len(weeks), len(form.week_options))
+        api_week = weeks[0]
+        self.assertEqual(api_week['date'], paid_week.isoformat())
+        self.assertEqual(api_week['paid_amount'], '10000')
+        self.assertTrue(api_week['paid'])
+        self.assertFalse(api_week['selectable'])
+        self.assertIn('date_label', api_week)
 
 
 class TreasurerReportYearFilterTests(TestCase):
@@ -208,6 +383,17 @@ class TreasurerReportYearFilterTests(TestCase):
         self.assertEqual(row['total_saving'], Decimal('10000'))
         self.assertEqual(row['total_amount'], Decimal('10000'))
         self.assertEqual(row['total_weeks'], 1)
+
+    def test_treasurer_report_includes_savings_account_column(self):
+        account = SavingsAccount.objects.create(owner=self.member, label='A2')
+        self.previous_deposit.account = account
+        self.previous_deposit.save(update_fields=['account'])
+        self.client.login(username='treasurer', password='pass12345')
+
+        response = self.client.get(reverse('treasurer_reports'), {'year': self.previous_year})
+
+        self.assertContains(response, 'Savings Account')
+        self.assertEqual(self._member_row(response)['savings_account'], 'A2')
 
     def test_treasurer_report_defaults_to_current_year(self):
         self.client.login(username='treasurer', password='pass12345')

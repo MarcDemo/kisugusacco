@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 
 from django.utils import timezone
 from django.db.models import Q
@@ -38,9 +39,12 @@ def delete_missed_saving_fines_covered(member, account, payment_week):
 
 
 def delete_deposit_week_missed_saving_fines(deposit):
-    # Kept as a compatibility shim. Late fines are independent financial
-    # obligations and must never be deleted when savings are paid.
-    return 0
+    from groupcore.savings_calendar import clear_on_time_missed_fine
+    return clear_on_time_missed_fine(
+        deposit.member,
+        deposit.account,
+        deposit.payment_week,
+    )
 
 
 def allocate_fine_payment(member, account, amount):
@@ -60,3 +64,30 @@ def allocate_fine_payment(member, account, amount):
         applied += used
         remaining -= used
     return applied, remaining
+
+
+def apply_selected_fine_allocations(allocations):
+    """Apply persisted full-balance fine allocations atomically.
+
+    ``allocations`` is an iterable of ``(fine, amount)`` pairs.  A selected
+    fine must still have at least the recorded outstanding balance; otherwise
+    the caller can safely reject the deposit instead of silently paying a
+    different fine.
+    """
+    from django.core.exceptions import ValidationError
+    from django.db import transaction
+
+    allocations = list(allocations)
+    with transaction.atomic():
+        locked = []
+        for fine, amount in allocations:
+            fine = Fine.objects.select_for_update().get(pk=fine.pk)
+            outstanding = fine.outstanding_amount
+            if outstanding < amount:
+                raise ValidationError(
+                    f'Fine for week {fine.reference_week:%d %b %Y} changed before approval.'
+                )
+            locked.append((fine, amount))
+        for fine, amount in locked:
+            fine.apply_payment(amount)
+    return sum((amount for _fine, amount in locked), Decimal('0.00'))

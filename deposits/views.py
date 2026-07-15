@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from .forms import DepositSubmissionForm, DirectDepositForm
-from .models import DepositSubmission
+from .models import DepositFineAllocation, DepositSubmission
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from groupcore.models import GroupSettings, MemberProfile
@@ -28,12 +28,27 @@ import os
 from django.utils.timezone import now
 from openpyxl.utils import get_column_letter
 from django.core.mail import send_mail
+from django.core.exceptions import ValidationError
 from fines.models import Fine
-from fines.services import allocate_fine_payment, missed_saving_fines_can_be_created
+from fines.services import (
+    allocate_fine_payment,
+    apply_selected_fine_allocations,
+    delete_deposit_week_missed_saving_fines,
+    missed_saving_fines_can_be_created,
+)
 from groupcore.account_context import get_active_account, get_user_active_accounts
+from groupcore.savings_calendar import completion_for_week, week_deadline
 from loans.models import LoanRepayment, LoanRequest
 from decimal import Decimal
-from deposits.rules import MAX_WEEKLY_SAVINGS, MIN_WEEKLY_SAVINGS, weekly_savings_total
+from deposits.rules import (
+    MAX_WEEKLY_SAVINGS,
+    MIN_WEEKLY_SAVINGS,
+    fine_week_options,
+    saving_year_weeks,
+    saving_week_statuses,
+    weekly_savings_total,
+    weekly_savings_totals_by_week,
+)
 
 # Create your views here.
 
@@ -109,11 +124,17 @@ def submit_deposit(request):
 
     if request.method == 'POST':
         form = DepositSubmissionForm(
-            request.POST, request.FILES, user=request.user, payment_week=current_week_start
+            request.POST,
+            request.FILES,
+            user=request.user,
+            payment_week=current_week_start,
+            allow_backdated_payment=request.user.is_treasurer(),
         )
         if form.is_valid():
             account = active_account or form.cleaned_data.get('account')
-            payment_week = current_week_start
+            selected_weeks = form.cleaned_data.get('selected_week_dates') or [current_week_start]
+            weekly_allocations = dict(form.cleaned_data.get('weekly_allocations') or [])
+            payment_week = selected_weeks[0]
             proof = form.cleaned_data.get('proof')
             remarks = form.cleaned_data.get('remarks', '')
             payment_date = form.cleaned_data['payment_date']
@@ -125,32 +146,42 @@ def submit_deposit(request):
             fine_amount = form.cleaned_data.get('fine_amount') or 0
             shares_amount = form.cleaned_data.get('shares_amount') or 0
             loan_repayment_amount = form.cleaned_data.get('loan_repayment_amount') or 0
-            total_amount = form.cleaned_data['amount']  # computed in form.clean()
+            fine_allocations = form.cleaned_data.get('fine_allocations') or []
 
-            # Create deposit record (amount auto-computed in model.save())
-            deposit = DepositSubmission(
-                member=request.user,
-                account=account,
-                submitted_by=request.user,
-                payment_week=payment_week,
-                starting_week=payment_week,
-                weeks_covered=1,
-                saving_amount=saving_amount,
-                welfare_amount=welfare_amount,
-                annual_subscription_amount=annual_subscription_amount,
-                membership_amount=membership_amount,
-                fine_amount=fine_amount,
-                shares_amount=shares_amount,
-                loan_repayment_amount=loan_repayment_amount,
-                proof=proof,
-                remarks=remarks,
-                payment_date=payment_date,
-                payment_time=payment_time,
-                status='PENDING'
-            )
-            deposit.full_clean()
-            deposit.save()
-            amount = deposit.amount  # use the auto-computed total for emails
+            deposits_created = []
+            with transaction.atomic():
+                for index, payment_week in enumerate(selected_weeks):
+                    deposit = DepositSubmission(
+                        member=request.user,
+                        account=account,
+                        submitted_by=request.user,
+                        payment_week=payment_week,
+                        starting_week=payment_week,
+                        weeks_covered=1,
+                        saving_amount=weekly_allocations.get(payment_week, Decimal('0.00')),
+                        welfare_amount=welfare_amount if index == 0 else 0,
+                        annual_subscription_amount=annual_subscription_amount if index == 0 else 0,
+                        membership_amount=membership_amount if index == 0 else 0,
+                        fine_amount=fine_amount if index == 0 else 0,
+                        shares_amount=shares_amount if index == 0 else 0,
+                        loan_repayment_amount=loan_repayment_amount if index == 0 else 0,
+                        proof=proof if index == 0 else None,
+                        remarks=remarks if index == 0 else '',
+                        payment_date=payment_date,
+                        payment_time=payment_time,
+                        status='PENDING',
+                    )
+                    deposit.full_clean()
+                    deposit.save()
+                    deposits_created.append(deposit)
+                first_deposit = deposits_created[0]
+                for fine_id, amount in fine_allocations:
+                    DepositFineAllocation.objects.create(
+                        deposit=first_deposit,
+                        fine_id=fine_id,
+                        amount=amount,
+                    )
+            amount = sum((deposit.amount for deposit in deposits_created), Decimal('0.00'))
 
             # Send acknowledgment email
             subject = "Deposit Submission Acknowledgment"
@@ -194,7 +225,12 @@ def submit_deposit(request):
             messages.success(request, f"Weekly saving submitted for week of {payment_week}.")
             return redirect('member_dashboard')
     else:
-        form = DepositSubmissionForm(user=request.user, payment_week=current_week_start)
+        form = DepositSubmissionForm(
+            user=request.user,
+            payment_week=current_week_start,
+            allow_backdated_payment=request.user.is_treasurer(),
+            initial={'account': active_account.id} if active_account else None,
+        )
         if active_account:
             form.fields['account'].queryset = SavingsAccount.objects.filter(id=active_account.id)
             form.fields['account'].initial = active_account.id
@@ -231,11 +267,25 @@ def approve_deposit(request, deposit_id):
     ) >= MIN_WEEKLY_SAVINGS:
         messages.error(request, 'This savings week is already paid and locked. The duplicate submission was not approved.')
         return redirect('manage_deposits')
+    selected_fine_allocations = list(
+        deposit.fine_allocations.select_related('fine').all()
+    )
+    if selected_fine_allocations:
+        try:
+            apply_selected_fine_allocations(
+                (allocation.fine, allocation.amount)
+                for allocation in selected_fine_allocations
+            )
+        except ValidationError as exc:
+            messages.error(request, str(exc))
+            return redirect('manage_deposits')
     deposit.status = 'APPROVED'
     deposit.reviewed_by = request.user
     deposit.date_reviewed = timezone.now()
     deposit.save()
-    if deposit.fine_amount > 0:
+    if deposit.saving_amount > 0:
+        delete_deposit_week_missed_saving_fines(deposit)
+    if deposit.fine_amount > 0 and not selected_fine_allocations:
         allocate_fine_payment(deposit.member, deposit.account, deposit.fine_amount)
 
     if deposit.loan_repayment_amount and deposit.loan_repayment_amount > 0:
@@ -658,7 +708,16 @@ def manage_deposits(request):
         messages.error(request, "Access denied.")
         return redirect('member_dashboard')
 
-    pending_deposits = DepositSubmission.objects.filter(status='PENDING', member__is_superuser=False).order_by('-date_submitted')
+    # Keep the review queue and the submission history together on this page.
+    # Pending records still expose approve/reject actions, while approved and
+    # rejected records remain visible for a complete audit trail.
+    deposit_submissions = (
+        DepositSubmission.objects
+        .filter(member__is_superuser=False)
+        .select_related('member', 'account')
+        .order_by('-date_submitted')
+    )
+    pending_deposits = deposit_submissions.filter(status='PENDING')
     form = DirectDepositForm(request.POST or None, request.FILES or None)
 
     if request.method == 'POST':
@@ -676,6 +735,7 @@ def manage_deposits(request):
             annual_subscription_amount = form.cleaned_data.get('annual_subscription_amount') or 0
             membership_amount = form.cleaned_data.get('membership_amount') or 0
             fine_amount = form.cleaned_data.get('fine_amount') or 0
+            fine_allocations = form.cleaned_data.get('fine_allocations') or []
             shares_amount = form.cleaned_data.get('shares_amount') or 0
             loan_repayment_amount = form.cleaned_data.get('loan_repayment_amount') or 0
 
@@ -702,8 +762,23 @@ def manage_deposits(request):
                     deposit.full_clean()
                     deposit.save()
                     deposits_created.append(deposit)
+                    if first:
+                        for fine_id, amount in fine_allocations:
+                            DepositFineAllocation.objects.create(
+                                deposit=deposit,
+                                fine_id=fine_id,
+                                amount=amount,
+                            )
+                if fine_allocations:
+                    apply_selected_fine_allocations(
+                        (allocation.fine, allocation.amount)
+                        for allocation in deposits_created[0].fine_allocations.select_related('fine').all()
+                    )
+                for saved_deposit in deposits_created:
+                    if saved_deposit.saving_amount > 0:
+                        delete_deposit_week_missed_saving_fines(saved_deposit)
             deposit = deposits_created[0]
-            if deposit.fine_amount > 0:
+            if not fine_allocations and deposit.fine_amount > 0:
                 allocate_fine_payment(deposit.member, deposit.account, deposit.fine_amount)
 
             if deposit.loan_repayment_amount and deposit.loan_repayment_amount > 0:
@@ -718,11 +793,19 @@ def manage_deposits(request):
                 if unallocated > 0:
                     messages.warning(request, f"UGX {unallocated:,.0f} could not be posted because no outstanding approved loan balance was found.")
 
-            messages.success(request, f"Deposit for {member.username} allocated across {len(selected_weeks)} selected week(s).")
+            if weekly_allocations:
+                messages.success(
+                    request,
+                    f"Savings deposit for {member.username} allocated across "
+                    f"{len(selected_weeks)} selected week(s).",
+                )
+            else:
+                messages.success(request, f"Deposit for {member.username} recorded successfully.")
             return redirect('manage_deposits')
 
     return render(request, 'deposits/manage_deposits.html', {
         'pending_deposits': pending_deposits,
+        'deposit_submissions': deposit_submissions,
         'form': form,
     })
 
@@ -742,7 +825,7 @@ def treasurer_reports(request):
         approved_deposits = member.deposits.filter(
             status='APPROVED',
             payment_week__year=selected_year,
-        )
+        ).select_related('account')
         total_amount = approved_deposits.aggregate(Sum('amount'))['amount__sum'] or 0
         total_saving = approved_deposits.aggregate(Sum('saving_amount'))['saving_amount__sum'] or 0
         total_welfare = approved_deposits.aggregate(Sum('welfare_amount'))['welfare_amount__sum'] or 0
@@ -754,9 +837,22 @@ def treasurer_reports(request):
             member.loan_requests.filter(status='APPROVED', approved_on__year=selected_year)
         )
         total_weeks = approved_deposits.count()
+        account_labels = list(
+            approved_deposits.exclude(account__isnull=True)
+            .order_by('account__label')
+            .values_list('account__label', flat=True)
+            .distinct()
+        )
+        if not account_labels:
+            account_labels = list(
+                member.savings_accounts.filter(is_active=True)
+                .order_by('label')
+                .values_list('label', flat=True)
+            )
 
         report_data.append({
             'member': member,
+            'savings_account': ', '.join(account_labels) if account_labels else '-',
             'total_amount': total_amount,
             'total_weeks': total_weeks,
             'total_saving': total_saving,
@@ -783,23 +879,74 @@ def treasurer_week_options(request):
         MemberProfile, pk=request.GET.get('member'), is_superuser=False
     )
     account_id = request.GET.get('account')
-    account = SavingsAccount.objects.filter(pk=account_id, owner=member, is_active=True).first()
-    if not account and member.savings_accounts.filter(is_active=True).count() == 1:
-        account = member.savings_accounts.filter(is_active=True).first()
+    active_accounts = member.savings_accounts.filter(is_active=True)
+    account = active_accounts.filter(pk=account_id).first() if account_id else None
+    if not account:
+        possible_accounts = list(active_accounts.order_by('id')[:2])
+        if len(possible_accounts) == 1:
+            account = possible_accounts[0]
     group_settings = GroupSettings.get_active()
     if not group_settings:
         return JsonResponse({'weeks': []})
-    saving_week = current_saving_week(group_settings.week_one_start, timezone.localdate())
+
+    today = timezone.localdate()
+    _saving_week, saving_weeks = saving_year_weeks(group_settings.week_one_start, today)
+    paid_totals = weekly_savings_totals_by_week(member, account, saving_weeks)
+    savings_statuses = saving_week_statuses(member, account, saving_weeks, today)
+    # Fine obligations may come from a prior saving cycle, so expose all
+    # outstanding/paid fine weeks rather than limiting them to current-year
+    # savings dates.
+    fine_states = fine_week_options(member, account)
     weeks = []
-    for index in range(saving_week.week_number):
-        week = saving_week.cycle_start + timedelta(weeks=index)
-        total = weekly_savings_total(member, account, week)
+    for index, week in enumerate(saving_weeks, start=1):
+        total = paid_totals.get(week, Decimal('0.00'))
+        savings_state = savings_statuses.get(week, {})
+        status = savings_state.get('status', 'available')
+        paid = status in ('paid_on_time', 'paid_late')
+        is_future = week > today
+        is_current = week <= today < week + timedelta(days=7)
+        selectable = not paid
+        date_label = f'{week:%A} {week.day} {week:%B %Y}'
+        fine_state = fine_states.get(week, {})
         weeks.append({
             'date': week.isoformat(),
-            'paid': total >= MIN_WEEKLY_SAVINGS,
+            'paid': paid,
             'paid_amount': str(total),
+            'savings_status': status,
+            'completion_date': savings_state.get('completion_date').isoformat() if savings_state.get('completion_date') else None,
+            'deadline': savings_state.get('deadline').isoformat() if savings_state.get('deadline') else None,
+            'fine_status': fine_state.get('status', 'none'),
+            'fine_outstanding': str(fine_state.get('outstanding', Decimal('0.00'))),
+            'fine_ids': fine_state.get('outstanding_ids', []),
+            'label': f'Week {index} · {week:%A %d %b}',
+            'date_label': date_label,
+            'accessible_label': f'Week {index}, {date_label}',
+            'week_number': index,
+            'month': week.month,
+            'month_name': week.strftime('%B'),
+            'year': week.year,
+            'day': week.day,
+            'is_future': is_future,
+            'is_current': is_current,
+            'is_available': selectable,
+            'selectable': selectable,
         })
-    return JsonResponse({'weeks': weeks})
+    fines = []
+    for week, state in fine_states.items():
+        fines.append({
+            'date': week.isoformat(),
+            'label': f'Fine · {week:%A %d %b %Y}',
+            'accessible_label': f'Fine for {week:%A} {week.day} {week:%B %Y}',
+            'status': state['status'],
+            'outstanding': str(state['outstanding']),
+            'selectable': state['selectable'],
+            'fine_ids': state['outstanding_ids'],
+            'fine_allocations': [
+                {'id': item['id'], 'amount': str(item['amount'])}
+                for item in state['fine_allocations']
+            ],
+        })
+    return JsonResponse({'weeks': weeks, 'fines': fines})
 
 
 
@@ -1145,14 +1292,22 @@ def _current_week_payment_status_data(request, create_fines=False):
             else:
                 deposit_filter['account__isnull'] = True
 
-            has_paid = weekly_savings_total(member, account, current_week_start) >= MIN_WEEKLY_SAVINGS
+            paid_total, completion = completion_for_week(
+                member,
+                account,
+                current_week_start,
+                statuses=('PENDING', 'APPROVED'),
+            )
+            has_paid = paid_total >= MIN_WEEKLY_SAVINGS
             entry = _status_entry(member, account, has_paid)
             if has_paid:
                 paid_entries.append(entry)
                 continue
 
             unpaid_entries.append(entry)
-            if fines_can_be_created:
+            if fines_can_be_created and not (
+                completion and completion <= week_deadline(current_week_start)
+            ):
                 account_note = f" for account {account.label}" if account else ""
                 Fine.objects.get_or_create(
                     member=member,
