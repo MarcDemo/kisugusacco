@@ -3,6 +3,14 @@
 
 {% block content %}
 <style>
+  .manage-deposits-page {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .manage-deposits-page > #addDepositCard { order: 1; }
+  .manage-deposits-page > #depositSubmissionsCard { order: 2; }
+
   .dd-savings-allocation {
     border: 1px solid #dfe6e2;
     border-radius: 0.85rem;
@@ -409,13 +417,13 @@
   }
 </style>
 
-<div class="container py-4">
+<div class="container py-4 manage-deposits-page">
   <h3 class="mb-4 text-success">
     <i class="bi bi-clipboard-check me-2"></i> Manage Deposits
   </h3>
 
   <!-- Deposit submissions and review history -->
-  <div class="card shadow-sm mb-5">
+  <div class="card shadow-sm mb-5" id="depositSubmissionsCard">
     <div class="card-header bg-success text-white">
       <h5 class="mb-0"><i class="bi bi-inbox me-2"></i> Deposit Submissions</h5>
     </div>
@@ -526,6 +534,7 @@
           </tbody>
         </table>
       </div>
+      {% include 'includes/pagination.html' %}
       {% else %}
       <div class="p-4 text-muted">No deposit submissions at the moment.</div>
       {% endif %}
@@ -533,7 +542,7 @@
   </div>
 
   <!-- Add Direct Deposit -->
-  <div class="card shadow-sm">
+  <div class="card shadow-sm" id="addDepositCard">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
       <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i> Add Direct Deposit</h5>
       <button class="btn btn-light btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#addDepositForm" aria-expanded="{% if form.errors %}true{% else %}false{% endif %}">

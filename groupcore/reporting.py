@@ -29,3 +29,12 @@ def merge_year_options(*year_groups, selected_year=None, default_year=None):
     for year_group in year_groups:
         years.update(year for year in year_group if year)
     return sorted(years, reverse=True)
+
+
+def pagination_query(request):
+    """Preserve active filters while replacing the current page number."""
+    query = request.GET.copy()
+    for key in list(query):
+        if key == 'page' or key.endswith('_page'):
+            query.pop(key, None)
+    return query.urlencode()

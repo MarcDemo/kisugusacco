@@ -30,6 +30,7 @@
       </tbody>
     </table>
   </div>
+  {% with page_obj=shares_page page_param='shares_page' %}{% include 'includes/pagination.html' %}{% endwith %}
 
   <h5 class="mt-4">Annual Subscriptions</h5>
   <div class="table-responsive">
@@ -64,6 +65,7 @@
       </tbody>
     </table>
   </div>
+  {% with page_obj=subscriptions_page page_param='subscriptions_page' %}{% include 'includes/pagination.html' %}{% endwith %}
 
 </div>
 {% endblock %}

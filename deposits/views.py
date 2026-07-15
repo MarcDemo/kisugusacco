@@ -6,11 +6,12 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from groupcore.models import GroupSettings, MemberProfile
 from groupcore.models import SavingsAccount
-from groupcore.reporting import merge_year_options, parse_report_year, years_from_dates
+from groupcore.reporting import merge_year_options, pagination_query, parse_report_year, years_from_dates
 from groupcore.week_cycle import current_saving_week
 from django.utils import timezone
 from django.db.models import Sum
 from django.db import transaction
+from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
 from reportlab.pdfgen import canvas
 from openpyxl import Workbook
@@ -415,6 +416,7 @@ def _my_contributions_data(request):
     deposits = deposits.filter(payment_week__year=selected_year)
     if selected_month:
         deposits = deposits.filter(payment_week__month=selected_month)
+    deposits_page = Paginator(deposits, 25).get_page(request.GET.get('page'))
     years = merge_year_options(
         years_from_dates(base_deposits, 'payment_week'),
         selected_year=selected_year,
@@ -424,6 +426,7 @@ def _my_contributions_data(request):
     return {
         'active_account': active_account,
         'deposits': deposits,
+        'deposits_page': deposits_page,
         'years': years,
         'selected_year': selected_year,
         'selected_month': f'{selected_month:02d}' if selected_month else '',
@@ -688,7 +691,9 @@ def my_contributions(request):
     active_account = contribution_data['active_account']
 
     context = {
-        'deposits': contribution_data['deposits'],
+        'deposits': contribution_data['deposits_page'],
+        'page_obj': contribution_data['deposits_page'],
+        'pagination_query': pagination_query(request),
         'total_approved': contribution_data['approved_totals']['total'],
         'approved_totals': contribution_data['approved_totals'],
         'years': contribution_data['years'],
@@ -718,6 +723,7 @@ def manage_deposits(request):
         .order_by('-date_submitted')
     )
     pending_deposits = deposit_submissions.filter(status='PENDING')
+    deposit_submissions_page = Paginator(deposit_submissions, 25).get_page(request.GET.get('page'))
     form = DirectDepositForm(request.POST or None, request.FILES or None)
 
     if request.method == 'POST':
@@ -805,7 +811,9 @@ def manage_deposits(request):
 
     return render(request, 'deposits/manage_deposits.html', {
         'pending_deposits': pending_deposits,
-        'deposit_submissions': deposit_submissions,
+        'deposit_submissions': deposit_submissions_page,
+        'page_obj': deposit_submissions_page,
+        'pagination_query': pagination_query(request),
         'form': form,
     })
 
@@ -818,10 +826,11 @@ def treasurer_reports(request):
         years_from_dates(LoanRequest.objects.filter(status='APPROVED'), 'approved_on'),
         selected_year=selected_year,
     )
-    members = MemberProfile.objects.exclude(is_superuser=True)
+    members = MemberProfile.objects.exclude(is_superuser=True).order_by('username')
+    members_page = Paginator(members, 25).get_page(request.GET.get('page'))
 
     report_data = []
-    for member in members:
+    for member in members_page:
         approved_deposits = member.deposits.filter(
             status='APPROVED',
             payment_week__year=selected_year,
@@ -866,6 +875,8 @@ def treasurer_reports(request):
 
     return render(request, 'deposits/treasurer_reports.html', {
         'report_data': report_data,
+        'page_obj': members_page,
+        'pagination_query': pagination_query(request),
         'selected_year': selected_year,
         'years': years,
     })

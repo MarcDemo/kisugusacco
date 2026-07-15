@@ -1,5 +1,5 @@
 from groupcore.models import MemberProfile, GroupSettings, SavingsAccount
-from groupcore.reporting import merge_year_options, parse_report_year, years_from_dates
+from groupcore.reporting import merge_year_options, pagination_query, parse_report_year, years_from_dates
 from groupcore.week_cycle import current_saving_week
 from deposits.rules import weekly_savings_paid
 from django.contrib import messages
@@ -18,6 +18,7 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.timezone import now
 from django.db import transaction
+from django.core.paginator import Paginator
 import re
 import calendar
 from calendar import month_name
@@ -88,8 +89,11 @@ def manage_users(request):
             | Q(savings_accounts__label__icontains=search_query)
         ).distinct()
     users = users.order_by('username')
+    page_obj = Paginator(users, 25).get_page(request.GET.get('page'))
     return render(request, 'chairman/manage_users.html', {
-        'users': users,
+        'users': page_obj,
+        'page_obj': page_obj,
+        'pagination_query': pagination_query(request),
         'search_query': search_query,
     })
 
@@ -330,9 +334,13 @@ def chairman_deposit_report(request):
         doc.build(elements)
         return response
 
+    page_obj = Paginator(deposits, 25).get_page(request.GET.get('page'))
+
     # Render HTML page
     return render(request, 'chairman/deposit_report.html', {
-        'deposits': deposits,
+        'deposits': page_obj,
+        'page_obj': page_obj,
+        'pagination_query': pagination_query(request),
         'years': years,
         'months': months,
         'name_query': name_query,
@@ -347,7 +355,12 @@ def chairman_fine_report(request):
         return redirect('chairman_dashboard')
 
     fines = Fine.objects.filter(member__is_superuser=False).order_by('-date_issued')
-    return render(request, 'chairman/fine_report.html', {'fines': fines})
+    page_obj = Paginator(fines, 25).get_page(request.GET.get('page'))
+    return render(request, 'chairman/fine_report.html', {
+        'fines': page_obj,
+        'page_obj': page_obj,
+        'pagination_query': pagination_query(request),
+    })
 
 
 @login_required
@@ -357,7 +370,12 @@ def chairman_document_report(request):
         return redirect('chairman_dashboard')
 
     documents = Document.objects.filter(user__is_superuser=False).order_by('-uploaded_at')
-    return render(request, 'chairman/document_report.html', {'documents': documents})
+    page_obj = Paginator(documents, 25).get_page(request.GET.get('page'))
+    return render(request, 'chairman/document_report.html', {
+        'documents': page_obj,
+        'page_obj': page_obj,
+        'pagination_query': pagination_query(request),
+    })
 
 
 @login_required
@@ -368,9 +386,14 @@ def chairman_income_report(request):
 
     shares = ShareContribution.objects.filter(member__is_superuser=False).order_by('-contribution_date')
     subscriptions = AnnualSubscription.objects.filter(member__is_superuser=False).order_by('-year', 'member__username')
+    shares_page = Paginator(shares, 25).get_page(request.GET.get('shares_page'))
+    subscriptions_page = Paginator(subscriptions, 25).get_page(request.GET.get('subscriptions_page'))
     return render(request, 'chairman/income_report.html', {
-        'shares': shares,
-        'subscriptions': subscriptions,
+        'shares': shares_page,
+        'subscriptions': subscriptions_page,
+        'shares_page': shares_page,
+        'subscriptions_page': subscriptions_page,
+        'pagination_query': pagination_query(request),
     })
 
 
@@ -413,6 +436,13 @@ def chairman_weekly_payment_status(request):
         'paid_members': paid_members,
         'unpaid_members': unpaid_members,
     }
+    status_list = [
+        {'member': member, 'has_paid': member in paid_members}
+        for member in members
+    ]
+    context['status_list'] = Paginator(status_list, 25).get_page(request.GET.get('page'))
+    context['page_obj'] = context['status_list']
+    context['pagination_query'] = pagination_query(request)
     return render(request, 'chairman/current_week_status.html', context)
 
 
@@ -423,7 +453,12 @@ def chairman_asset_report(request):
         return redirect('chairman_dashboard')
 
     assets = Asset.objects.all().order_by('-date_acquired')
-    return render(request, 'chairman/asset_report.html', {'assets': assets})
+    page_obj = Paginator(assets, 25).get_page(request.GET.get('page'))
+    return render(request, 'chairman/asset_report.html', {
+        'assets': page_obj,
+        'page_obj': page_obj,
+        'pagination_query': pagination_query(request),
+    })
 
 
 @login_required
@@ -433,7 +468,12 @@ def chairman_expenditure_report(request):
         return redirect('chairman_dashboard')
 
     expenditures = Expenditure.objects.all().order_by('-date_spent')
-    return render(request, 'chairman/expenditure_report.html', {'expenditures': expenditures})
+    page_obj = Paginator(expenditures, 25).get_page(request.GET.get('page'))
+    return render(request, 'chairman/expenditure_report.html', {
+        'expenditures': page_obj,
+        'page_obj': page_obj,
+        'pagination_query': pagination_query(request),
+    })
 
 
 from django.http import JsonResponse

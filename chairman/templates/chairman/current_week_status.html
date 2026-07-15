@@ -28,6 +28,7 @@
       </tbody>
     </table>
   </div>
+  {% include 'includes/pagination.html' %}
   <p class="text-muted text-center mt-3">Week {{ current_week_number }} closing on: <strong>{{ current_week|date:"l, d M Y" }}</strong></p>
 </div>
 {% endblock %}
