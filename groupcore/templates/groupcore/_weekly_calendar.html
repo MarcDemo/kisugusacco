@@ -116,13 +116,24 @@
       <span class="member-week-date">Fri {{ week.friday|date:'d M' }}</span>
       <span class="member-week-status">{{ week.status_label }}</span>
     </button>
-    <div class="modal fade" id="weekDetail{{ week.number }}" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 rounded-4">
-        <div class="modal-header"><h5 class="modal-title">Week {{ week.number }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
-        <div class="modal-body"><dl class="row mb-0"><dt class="col-5">Friday date</dt><dd class="col-7">{{ week.friday|date:'d F Y' }}</dd><dt class="col-5">Deadline</dt><dd class="col-7">{{ week.deadline|date:'D d M Y, g:i A' }}</dd><dt class="col-5">Savings status</dt><dd class="col-7">{{ week.status_label }}</dd><dt class="col-5">Required savings</dt><dd class="col-7">UGX {{ week.required|floatformat:'0' }}</dd><dt class="col-5">Savings paid</dt><dd class="col-7">UGX {{ week.paid|floatformat:'0' }}</dd><dt class="col-5">Payment date</dt><dd class="col-7">{% if week.payment_date %}{{ week.payment_date|date:'d M Y, g:i A' }}{% else %}—{% endif %}</dd><dt class="col-5">Late fine</dt><dd class="col-7">{% if week.fine %}UGX {{ week.fine.amount|floatformat:'0' }} · {% if week.fine.is_paid %}Paid{% elif week.fine.amount_paid %}Part paid (UGX {{ week.fine_outstanding|floatformat:'0' }} left){% else %}Outstanding{% endif %}{% else %}None{% endif %}</dd></dl></div>
-      </div></div>
-    </div>
     {% endfor %}
   </div>
+  {% for week in savings_calendar.weeks %}
+  <div class="modal fade" id="weekDetail{{ week.number }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 rounded-4">
+      <div class="modal-header"><h5 class="modal-title">Week {{ week.number }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" data-member-week-close aria-label="Close"></button></div>
+      <div class="modal-body"><dl class="row mb-0"><dt class="col-5">Friday date</dt><dd class="col-7">{{ week.friday|date:'d F Y' }}</dd><dt class="col-5">Deadline</dt><dd class="col-7">{{ week.deadline|date:'D d M Y, g:i A' }}</dd><dt class="col-5">Savings status</dt><dd class="col-7">{{ week.status_label }}</dd><dt class="col-5">Required savings</dt><dd class="col-7">UGX {{ week.required|floatformat:'0' }}</dd><dt class="col-5">Savings paid</dt><dd class="col-7">UGX {{ week.paid|floatformat:'0' }}</dd><dt class="col-5">Payment date</dt><dd class="col-7">{% if week.payment_date %}{{ week.payment_date|date:'d M Y, g:i A' }}{% else %}—{% endif %}</dd><dt class="col-5">Late fine</dt><dd class="col-7">{% if week.fine %}UGX {{ week.fine.amount|floatformat:'0' }} · {% if week.fine.is_paid %}Paid{% elif week.fine.amount_paid %}Part paid (UGX {{ week.fine_outstanding|floatformat:'0' }} left){% else %}Outstanding{% endif %}{% else %}None{% endif %}</dd></dl></div>
+    </div></div>
+  </div>
+  {% endfor %}
+  <script>
+    document.addEventListener('click', function (event) {
+      const closeButton = event.target.closest('[data-member-week-close]');
+      if (!closeButton || !window.bootstrap) return;
+      event.preventDefault();
+      const modal = closeButton.closest('.modal');
+      if (modal) bootstrap.Modal.getOrCreateInstance(modal).hide();
+    });
+  </script>
   {% else %}<div class="alert alert-info m-3">Open the savings cycle and select an account to see the calendar.</div>{% endif %}
 </section>
