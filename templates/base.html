@@ -1516,6 +1516,52 @@
       });
     });
   </script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      // Add an instant, accessible filter to every data table. Pages can opt
+      // out with data-live-search="false" on the table element.
+      document.querySelectorAll('#main-content table').forEach(function (table) {
+        if (table.dataset.liveSearch === 'false' || table.querySelector('thead') === null) return;
+        const host = table.closest('.table-responsive') || table;
+        const toolbar = document.createElement('div');
+        toolbar.className = 'd-flex align-items-center gap-2 mb-2 live-table-search';
+        const label = document.createElement('label');
+        label.className = 'visually-hidden';
+        const input = document.createElement('input');
+        const tableId = table.id || ('live-table-' + Math.random().toString(36).slice(2));
+        table.id = tableId;
+        label.htmlFor = tableId + '-search';
+        label.textContent = 'Search this table';
+        input.id = label.htmlFor;
+        input.type = 'search';
+        input.className = 'form-control form-control-sm';
+        input.placeholder = table.dataset.liveSearchPlaceholder || 'Search this table…';
+        input.setAttribute('aria-controls', tableId);
+        input.autocomplete = 'off';
+        input.style.maxWidth = '24rem';
+        const count = document.createElement('small');
+        count.className = 'text-muted';
+        toolbar.appendChild(label);
+        toolbar.appendChild(input);
+        toolbar.appendChild(count);
+        host.parentNode.insertBefore(toolbar, host);
+
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        function filterRows() {
+          const query = input.value.trim().toLocaleLowerCase();
+          let visible = 0;
+          rows.forEach(function (row) {
+            const isEmpty = row.querySelector('td[colspan]') !== null;
+            const matches = !query || isEmpty || row.textContent.toLocaleLowerCase().includes(query);
+            row.hidden = !matches;
+            if (matches && !isEmpty) visible += 1;
+          });
+          count.textContent = query ? visible + ' matching row' + (visible === 1 ? '' : 's') : '';
+        }
+        input.addEventListener('input', filterRows);
+      });
+    });
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

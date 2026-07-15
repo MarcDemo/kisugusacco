@@ -577,6 +577,7 @@
           <!-- Select Member -->
           <div class="col-md-6">
             <label for="id_member" class="form-label">Select Member <span class="text-danger">*</span></label>
+            <input type="search" class="form-control form-control-sm mb-2" id="memberLiveSearch" placeholder="Search members…" autocomplete="off" aria-label="Search members">
             {{ form.member|add_class:"form-select" }}
             {% if form.member.errors %}
             <div class="text-danger small mt-1">{{ form.member.errors|join:", " }}</div>
@@ -1694,6 +1695,43 @@
   document.getElementById('ddApplyFines')?.addEventListener('click', function () { refresh(); bootstrap.Modal.getOrCreateInstance(document.getElementById('ddFinePickerModal')).hide(); });
   fetchFineStatus();
   refresh();
+})();
+</script>
+<script>
+(function () {
+  const search = document.getElementById('memberLiveSearch');
+  const select = document.getElementById('id_member');
+  if (!search || !select) return;
+
+  const originalOptions = Array.from(select.options).map(function (option) {
+    return option.cloneNode(true);
+  });
+
+  function filterMembers() {
+    const query = search.value.trim().toLocaleLowerCase();
+    const selectedValue = select.value;
+    select.replaceChildren();
+    originalOptions.forEach(function (option) {
+      const isPlaceholder = !option.value;
+      const matches = isPlaceholder || !query || option.textContent.toLocaleLowerCase().includes(query);
+      if (matches) select.appendChild(option.cloneNode(true));
+    });
+    const selectedOption = Array.from(select.options).find(function (option) {
+      return option.value === selectedValue;
+    });
+    if (selectedOption) {
+      selectedOption.selected = true;
+    } else if (selectedValue) {
+      select.value = '';
+    }
+  }
+
+  search.addEventListener('input', filterMembers);
+  select.addEventListener('change', function () {
+    if (!select.value) return;
+    search.value = '';
+    filterMembers();
+  });
 })();
 </script>
 {% endblock %}

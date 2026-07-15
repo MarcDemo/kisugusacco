@@ -219,6 +219,8 @@ class VariableWeeklySavingsAllocationTests(TestCase):
         self.assertContains(response, 'id="ddWeekPickerModal"')
         self.assertContains(response, 'modal-fullscreen-sm-down')
         self.assertContains(response, 'data-week-option')
+        self.assertContains(response, 'memberLiveSearch')
+        self.assertContains(response, 'Search this table')
         self.assertNotContains(response, 'class="week-card')
 
     def test_legacy_amount_received_is_ignored(self):
