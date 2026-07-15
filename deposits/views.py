@@ -25,6 +25,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as ExcelImage
 from datetime import datetime, date, timedelta
+from xml.sax.saxutils import escape as xml_escape
 import os
 from django.utils.timezone import now
 from openpyxl.utils import get_column_letter
@@ -502,6 +503,12 @@ def _money(value):
     return f"UGX {Decimal(value or 0):,.0f}"
 
 
+def _pdf_text(value, style):
+    """Create a wrapping, safely escaped PDF cell for long report text."""
+    text = '-' if value is None or value == '' else str(value)
+    return Paragraph(xml_escape(text).replace('\n', '<br/>'), style)
+
+
 def _export_my_contributions_pdf(user, active_account, contribution_data, deposits):
     response = HttpResponse(content_type='application/pdf')
     filename = _my_contributions_filename(
@@ -514,6 +521,14 @@ def _export_my_contributions_pdf(user, active_account, contribution_data, deposi
 
     doc = SimpleDocTemplate(response, pagesize=landscape(A4), leftMargin=24, rightMargin=24, topMargin=24, bottomMargin=24)
     styles = getSampleStyleSheet()
+    cell_style = styles['BodyText'].clone('member-contribution-cell')
+    cell_style.fontSize = 6.5
+    cell_style.leading = 8
+    header_style = styles['BodyText'].clone('member-contribution-header')
+    header_style.fontSize = 6.5
+    header_style.leading = 8
+    header_style.textColor = colors.white
+    header_style.alignment = 1
     meta = _my_contributions_report_meta(user, active_account, contribution_data)
     totals = contribution_data['approved_totals']
 
@@ -528,8 +543,8 @@ def _export_my_contributions_pdf(user, active_account, contribution_data, deposi
     ]
 
     summary_data = [
-        ['Approved Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Loan Repayment'],
-        [
+        [_pdf_text(header, header_style) for header in ['Approved Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Loan Repayment']],
+        [_pdf_text(value, cell_style) for value in [
             _money(totals['total']),
             _money(totals['saving']),
             _money(totals['welfare']),
@@ -538,7 +553,7 @@ def _export_my_contributions_pdf(user, active_account, contribution_data, deposi
             _money(totals['fine']),
             _money(totals['shares']),
             _money(totals['loan_repayment']),
-        ],
+        ]],
     ]
     summary_table = Table(summary_data)
     summary_table.setStyle(TableStyle([
@@ -568,14 +583,15 @@ def _export_my_contributions_pdf(user, active_account, contribution_data, deposi
         detail_rows = [['No matching deposits'] + [''] * (len(detail_headers) - 1)]
 
     detail_table = Table(
-        [detail_headers] + detail_rows,
+        [[_pdf_text(header, header_style) for header in detail_headers]] + [
+            [_pdf_text(value, cell_style) for value in row]
+            for row in detail_rows
+        ],
         repeatRows=1,
         colWidths=[54, 40, 46, 42, 42, 42, 48, 38, 40, 50, 44, 54, 46, 54, 66, 82],
     )
     detail_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e8f5ee')),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 6.5),
         ('GRID', (0, 0), (-1, -1), 0.25, colors.lightgrey),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
     ]))
@@ -658,6 +674,13 @@ def _export_my_contributions_excel(user, active_account, contribution_data, depo
     for column_cells in ws.columns:
         max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in column_cells)
         ws.column_dimensions[get_column_letter(column_cells[0].column)].width = min(max_length + 3, 42)
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.alignment = Alignment(
+                horizontal='center' if cell.row in (11, 12) else 'left',
+                vertical='top',
+                wrap_text=True,
+            )
 
     wb.save(response)
     return response
@@ -967,14 +990,29 @@ def download_member_report(request, member_id, format):
     deposits = member.deposits.filter(
         status='APPROVED',
         payment_week__year=selected_year,
-    ).order_by('payment_week')
+    ).select_related('account').order_by('payment_week')
 
     if format == 'pdf':
         response = HttpResponse(content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{member.username}_report_{selected_year}.pdf"'
 
-        doc = SimpleDocTemplate(response, pagesize=A4)
+        doc = SimpleDocTemplate(
+            response,
+            pagesize=landscape(A4),
+            leftMargin=24,
+            rightMargin=24,
+            topMargin=24,
+            bottomMargin=24,
+        )
         styles = getSampleStyleSheet()
+        cell_style = styles['BodyText'].clone('report-cell')
+        cell_style.fontSize = 7
+        cell_style.leading = 8
+        header_style = styles['BodyText'].clone('report-header')
+        header_style.fontSize = 7
+        header_style.leading = 8
+        header_style.textColor = colors.white
+        header_style.alignment = 1
         elements = []
 
         # Title
@@ -984,15 +1022,19 @@ def download_member_report(request, member_id, format):
         elements.append(Spacer(1, 12))
 
         # Table header
-        data = [
-            ['#', 'Week', 'Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Date Submitted', 'Payment Date', 'Payment Time', 'Remarks']
+        headers = [
+            '#', 'Week', 'Savings Account', 'Total', 'Saving', 'Welfare', 'Annual',
+            'Membership', 'Fine', 'Shares', 'Date Submitted', 'Payment Date',
+            'Payment Time', 'Remarks',
         ]
+        data = [[_pdf_text(header, header_style) for header in headers]]
 
         # Table rows
         for i, deposit in enumerate(deposits, start=1):
-            data.append([
+            data.append([_pdf_text(value, cell_style) for value in [
                 i,
                 deposit.payment_week.strftime('%Y-%m-%d'),
+                deposit.account.label if deposit.account else '-',
                 f"{deposit.amount:,.0f}",
                 f"{deposit.saving_amount:,.0f}",
                 f"{deposit.welfare_amount:,.0f}",
@@ -1003,17 +1045,20 @@ def download_member_report(request, member_id, format):
                 deposit.date_submitted.strftime('%Y-%m-%d'),
                 deposit.payment_date.strftime('%Y-%m-%d'),
                 deposit.payment_time.strftime('%H:%M'),
-                deposit.remarks or '-'
-            ])
+                deposit.remarks or '-',
+            ]])
 
         # Table styling
-        table = Table(data, colWidths=[18, 50, 48, 42, 42, 42, 52, 38, 38, 56, 50, 44, 62])
+        table = Table(
+            data,
+            repeatRows=1,
+            colWidths=[18, 52, 64, 48, 42, 42, 42, 52, 38, 42, 58, 54, 48, 120],
+        )
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4CAF50")),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
             ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
         ]))
@@ -1030,7 +1075,7 @@ def download_member_report(request, member_id, format):
         ws.title = "Member Contributions"
 
         full_name = member.get_full_name() or member.username
-        ws.merge_cells('A1:M1')
+        ws.merge_cells('A1:N1')
         ws['A1'] = f"Contribution Report for {full_name} - {selected_year}"
         ws['A1'].font = Font(size=14, bold=True)
         ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
@@ -1044,7 +1089,7 @@ def download_member_report(request, member_id, format):
             ws.add_image(img, 'F1')
 
         # Define headers
-        headers = ['#', 'Week', 'Total (UGX)', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Date Submitted', 'Payment Date', 'Payment Time', 'Remarks']
+        headers = ['#', 'Week', 'Savings Account', 'Total (UGX)', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Date Submitted', 'Payment Date', 'Payment Time', 'Remarks']
         ws.append(headers)
 
         # Header styling
@@ -1071,6 +1116,7 @@ def download_member_report(request, member_id, format):
             row = [
                 i,
                 deposit.payment_week.strftime('%Y-%m-%d'),
+                deposit.account.label if deposit.account else '-',
                 float(deposit.amount),
                 float(deposit.saving_amount),
                 float(deposit.welfare_amount),
@@ -1096,7 +1142,7 @@ def download_member_report(request, member_id, format):
         ws.cell(row=last_data_row + 1, column=3, value=total_amount).font = Font(bold=True)
 
         # Footer with generated timestamp
-        ws.merge_cells(start_row=last_data_row + 3, start_column=1, end_row=last_data_row + 3, end_column=13)
+        ws.merge_cells(start_row=last_data_row + 3, start_column=1, end_row=last_data_row + 3, end_column=14)
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
         footer_cell = ws.cell(row=last_data_row + 3, column=1)
         footer_cell.value = f"Generated on: {timestamp}"
@@ -1106,7 +1152,14 @@ def download_member_report(request, member_id, format):
         # Auto column width
         for col in ws.columns:
             max_length = max(len(str(cell.value)) if cell.value else 0 for cell in col)
-            ws.column_dimensions[get_column_letter(col[0].column)].width = max_length + 2
+            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_length + 2, 36)
+        for row in ws.iter_rows():
+            for cell in row:
+                cell.alignment = Alignment(
+                    horizontal='center' if cell.row == 2 else 'left',
+                    vertical='top',
+                    wrap_text=True,
+                )
 
         # Download response
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -1121,8 +1174,23 @@ def download_all_reports(request, format):
 
     if format == 'pdf':
         buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=landscape(A4),
+            leftMargin=24,
+            rightMargin=24,
+            topMargin=24,
+            bottomMargin=24,
+        )
         styles = getSampleStyleSheet()
+        cell_style = styles['BodyText'].clone('all-report-cell')
+        cell_style.fontSize = 7
+        cell_style.leading = 8
+        header_style = styles['BodyText'].clone('all-report-header')
+        header_style.fontSize = 7
+        header_style.leading = 8
+        header_style.textColor = colors.white
+        header_style.alignment = 1
         elements = [
             Paragraph(f"Group Contribution Report (All Members) - {selected_year}", styles['Heading1']),
             Paragraph(f"Generated on: {now().strftime('%Y-%m-%d %H:%M')}", styles['Normal']),
@@ -1133,17 +1201,19 @@ def download_all_reports(request, format):
             deposits = member.deposits.filter(
                 status='APPROVED',
                 payment_week__year=selected_year,
-            ).order_by('payment_week')
+            ).select_related('account').order_by('payment_week')
             if not deposits.exists():
                 continue
 
             elements.append(Paragraph(f"Member: {member.get_full_name() or member.username}", styles['Heading3']))
-            data = [['Week', 'Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Payment Date', 'Payment Time']]
+            headers = ['Week', 'Savings Account', 'Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Payment Date', 'Payment Time']
+            data = [[_pdf_text(header, header_style) for header in headers]]
             total_amount = 0
 
             for dep in deposits:
-                data.append([
+                data.append([_pdf_text(value, cell_style) for value in [
                     dep.payment_week.strftime('%Y-%m-%d'),
+                    dep.account.label if dep.account else '-',
                     f"{dep.amount:,.0f}",
                     f"{dep.saving_amount:,.0f}",
                     f"{dep.welfare_amount:,.0f}",
@@ -1153,16 +1223,16 @@ def download_all_reports(request, format):
                     f"{dep.shares_amount:,.0f}",
                     dep.payment_date.strftime('%Y-%m-%d'),
                     dep.payment_time.strftime('%H:%M'),
-                ])
+                ]])
                 total_amount += dep.amount
 
-            data.append(['TOTAL', f"{total_amount:,.0f}", '', '', '', '', '', '', '', ''])
-            table = Table(data, colWidths=[54, 50, 48, 48, 48, 56, 42, 42, 58, 52])
+            data.append([_pdf_text(value, cell_style) for value in ['TOTAL', '', f"{total_amount:,.0f}", '', '', '', '', '', '', '', '']])
+            table = Table(data, repeatRows=1, colWidths=[58, 64, 54, 48, 48, 48, 54, 42, 46, 62, 58])
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
                 ('GRID', (0, 0), (-1, -1), 1, colors.grey),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ]))
             elements.append(table)
             elements.append(Spacer(1, 24))
@@ -1179,26 +1249,27 @@ def download_all_reports(request, format):
         ws = wb.active
         ws.title = f"Contributions {selected_year}"
 
-        ws.merge_cells('A1:K1')
+        ws.merge_cells('A1:L1')
         ws['A1'] = f"Group Contribution Report (All Members) - {selected_year}"
         ws['A1'].font = Font(size=14, bold=True)
         ws['A1'].alignment = Alignment(horizontal='center')
 
         ws.append(["Generated on:", now().strftime('%Y-%m-%d %H:%M')])
         ws.append([])
-        ws.append(["Member", "Week", "Total (UGX)", "Saving", "Welfare", "Annual", "Membership", "Fine", "Shares", 'Payment Date', 'Payment Time'])
+        ws.append(["Member", "Week", "Savings Account", "Total (UGX)", "Saving", "Welfare", "Annual", "Membership", "Fine", "Shares", 'Payment Date', 'Payment Time'])
 
         for member in members:
             deposits = member.deposits.filter(
                 status='APPROVED',
                 payment_week__year=selected_year,
-            ).order_by('payment_week')
+            ).select_related('account').order_by('payment_week')
             total_amount = 0
 
             for dep in deposits:
                 ws.append([
                     member.get_full_name() or member.username,
                     dep.payment_week.strftime('%Y-%m-%d'),
+                    dep.account.label if dep.account else '-',
                     float(dep.amount),
                     float(dep.saving_amount),
                     float(dep.welfare_amount),
@@ -1213,24 +1284,22 @@ def download_all_reports(request, format):
 
             if deposits.exists():
                 ws.append([
-                    f"TOTAL for {member.get_full_name() or member.username}",
-                    "",
-                    total_amount,
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
+                    f"TOTAL for {member.get_full_name() or member.username}", "", "", total_amount,
+                    "", "", "", "", "", "", "", "",
                 ])
                 ws.append([])
 
         for i, column_cells in enumerate(ws.columns, 1):
             max_length = max(len(str(cell.value)) if cell.value else 0 for cell in column_cells)
             col_letter = get_column_letter(i)
-            ws.column_dimensions[col_letter].width = max_length + 4
+            ws.column_dimensions[col_letter].width = min(max_length + 4, 36)
+        for row in ws.iter_rows():
+            for cell in row:
+                cell.alignment = Alignment(
+                    horizontal='center' if cell.row == 4 else 'left',
+                    vertical='top',
+                    wrap_text=True,
+                )
 
         output = BytesIO()
         wb.save(output)
@@ -1376,6 +1445,9 @@ def _export_current_week_status_excel(data):
     for column_cells in ws.columns:
         max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in column_cells)
         ws.column_dimensions[get_column_letter(column_cells[0].column)].width = min(max_length + 3, 42)
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.alignment = Alignment(vertical='top', wrap_text=True)
 
     wb.save(response)
     return response

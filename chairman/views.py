@@ -23,8 +23,9 @@ import re
 import calendar
 from calendar import month_name
 from django.http import HttpResponse
+from xml.sax.saxutils import escape as xml_escape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 
@@ -66,6 +67,11 @@ def suggested_username_from_account_label(label):
 
 def is_leadership(user):
     return user.is_authenticated and (user.is_chairman() or user.is_vice_chairman() or user.is_overseer())
+
+
+def _report_pdf_text(value, style):
+    text = '-' if value is None or value == '' else str(value)
+    return Paragraph(xml_escape(text).replace('\n', '<br/>'), style)
 
 @login_required
 def manage_users(request):
@@ -290,8 +296,23 @@ def chairman_deposit_report(request):
         response = HttpResponse(content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="member_deposits_report_{selected_year}.pdf"'
 
-        doc = SimpleDocTemplate(response, pagesize=A4)
+        doc = SimpleDocTemplate(
+            response,
+            pagesize=landscape(A4),
+            leftMargin=24,
+            rightMargin=24,
+            topMargin=24,
+            bottomMargin=24,
+        )
         styles = getSampleStyleSheet()
+        cell_style = styles['BodyText'].clone('chairman-report-cell')
+        cell_style.fontSize = 7
+        cell_style.leading = 8
+        header_style = styles['BodyText'].clone('chairman-report-header')
+        header_style.fontSize = 7
+        header_style.leading = 8
+        header_style.textColor = colors.white
+        header_style.alignment = 1
 
         elements = [
             Paragraph(f"Member Deposits Report - {selected_year}", styles['Heading1']),
@@ -299,13 +320,15 @@ def chairman_deposit_report(request):
         ]
 
         # Table header
-        data = [['#', 'Member', 'Saving Week', 'Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Payment Date', 'Status']]
+        headers = ['#', 'Member', 'Savings Account', 'Saving Week', 'Total', 'Saving', 'Welfare', 'Annual', 'Membership', 'Fine', 'Shares', 'Payment Date', 'Status']
+        data = [[_report_pdf_text(header, header_style) for header in headers]]
 
         # Table rows
         for i, dep in enumerate(export_qs, 1):
-            data.append([
+            data.append([_report_pdf_text(value, cell_style) for value in [
                 i,
                 dep.member.username,
+                dep.account.label if dep.account else '-',
                 dep.payment_week.strftime('%Y-%m-%d') if dep.payment_week else '-',
                 f"{dep.amount:,.0f}",
                 f"{dep.saving_amount:,.0f}",
@@ -315,17 +338,16 @@ def chairman_deposit_report(request):
                 f"{dep.fine_amount:,.0f}",
                 f"{dep.shares_amount:,.0f}",
                 dep.payment_date.strftime('%Y-%m-%d') if dep.payment_date else '-',
-                dep.status
-            ])
+                dep.status,
+            ]])
 
         # Table styling
-        table = Table(data, colWidths=[18, 62, 42, 38, 38, 38, 36, 48, 34, 36, 44, 40])
+        table = Table(data, repeatRows=1, colWidths=[18, 72, 64, 58, 44, 42, 42, 42, 52, 38, 42, 58, 48])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4CAF50")),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
             ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
         ]))
