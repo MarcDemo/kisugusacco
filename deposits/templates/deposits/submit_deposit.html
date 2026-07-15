@@ -13,20 +13,21 @@
     transform: translateY(-6px);
   }
 
-  .calendar-panel { border:1px solid #dfe7e2; border-radius:.75rem; padding:.75rem; background:#fff; }
-  .calendar-panel .month-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem; }
-  .calendar-month { border:1px solid #e3e9e5; border-radius:.65rem; padding:.65rem; }
-  .calendar-month h6 { text-align:center; margin-bottom:.6rem; }
-  .calendar-days { display:flex; flex-wrap:wrap; justify-content:center; gap:.45rem; }
-  .calendar-day { width:2.25rem; height:2.25rem; border-radius:50%; border:1px solid #cbd5cf; background:#fff; position:relative; }
+  .calendar-panel { border:1px solid #dfe7e2; border-radius:.85rem; padding:1rem; background:#fbfdfc; }
+  .month-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.7rem; }
+  .calendar-month { min-width:0; border:1px solid #e3e9e5; border-radius:.75rem; padding:.75rem; background:#fff; }
+  .calendar-month h6 { color:#26352d; text-align:center; margin-bottom:.7rem; font-weight:650; }
+  .calendar-days { display:grid; grid-template-columns:repeat(5,minmax(2.25rem,1fr)); justify-items:center; gap:.55rem .35rem; }
+  .calendar-day { width:2.25rem; height:2.25rem; border-radius:50%; border:1px solid #cbd5cf; background:#fff; position:relative; font-weight:600; }
   .calendar-day.missed, .calendar-day.fine-outstanding { border-color:#dc3545; background:#fff1f2; color:#b42333; }
   .calendar-day.paid-late { border-color:#d97706; background:#fff7ed; color:#a45100; }
   .calendar-day.paid-on-time, .calendar-day.fine-paid { border-color:#198754; background:#e9f7ef; color:#146c43; }
   .calendar-day.upcoming { background:#f1f4f2; color:#6c757d; }
   .calendar-day.selected { background:#166534; border-color:#166534; color:#fff; }
   .calendar-day:disabled { opacity:.8; cursor:not-allowed; }
-  @media (max-width: 991.98px) { .calendar-panel .month-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-  @media (max-width: 575.98px) { .calendar-panel .month-grid { grid-template-columns:1fr; } }
+  .modal-body { max-height: min(70vh, 42rem); overflow-y:auto; background:#f8faf9; }
+  @media (max-width: 991.98px) { .month-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width: 575.98px) { .month-grid { grid-template-columns:1fr; } .calendar-days { grid-template-columns:repeat(5,minmax(2.55rem,1fr)); gap:.7rem .35rem; } .calendar-day { width:2.55rem; height:2.55rem; } }
 
   @media (max-width: 767.98px) {
     .card-body {

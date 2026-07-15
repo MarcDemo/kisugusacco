@@ -1,14 +1,128 @@
 <style>
-  .weekly-calendar-grid{display:grid;grid-template-columns:repeat(8,minmax(105px,1fr));gap:.7rem}.week-card{border:2px solid transparent;border-radius:14px;padding:.75rem;min-height:112px;background:#f4f5f7;cursor:pointer;transition:.18s ease;text-align:left}.week-card:hover{transform:translateY(-3px);box-shadow:0 9px 20px rgba(15,23,42,.12)}.week-card--paid{background:#e8f7ee;color:#17643a}.week-card--paid_late{background:#fff4d8;color:#895c00}.week-card--unpaid{background:#fde8e8;color:#9c2525}.week-card--future{background:#f0f2f5;color:#697386}.week-card--current{border-color:#1976d2;box-shadow:0 0 0 2px rgba(25,118,210,.12)}.week-icon{font-size:1.4rem;line-height:1}@media(max-width:1100px){.weekly-calendar-grid{grid-template-columns:repeat(5,1fr)}}@media(max-width:768px){.weekly-calendar-grid{grid-template-columns:repeat(3,1fr)}}@media(max-width:430px){.weekly-calendar-grid{grid-template-columns:repeat(2,1fr)}}
+  .member-calendar-card {
+    overflow: hidden;
+    border: 1px solid #e5ece8;
+    border-radius: 1.15rem;
+    background: #fff;
+    box-shadow: 0 .45rem 1.4rem rgba(16, 54, 34, .06);
+  }
+
+  .member-calendar-head {
+    padding: 1.15rem 1.25rem;
+    border-bottom: 1px solid #edf2ef;
+    background: linear-gradient(135deg, #fbfefc 0%, #f2faf5 100%);
+  }
+
+  .member-calendar-title {
+    color: #153c29;
+    font-size: 1.08rem;
+    font-weight: 700;
+  }
+
+  .member-calendar-subtitle {
+    color: #6b7a72;
+    font-size: .8rem;
+  }
+
+  .member-calendar-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem .9rem;
+    padding: .75rem 1.25rem 0;
+    color: #66756d;
+    font-size: .75rem;
+  }
+
+  .member-calendar-legend span { display: inline-flex; align-items: center; gap: .35rem; }
+  .member-calendar-legend i { width: .55rem; height: .55rem; border-radius: 50%; }
+  .member-calendar-legend .is-paid { background: #198754; }
+  .member-calendar-legend .is-late { background: #d97706; }
+  .member-calendar-legend .is-missed { background: #dc3545; }
+  .member-calendar-legend .is-future { background: #aab8b0; }
+
+  .member-week-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: .65rem;
+    padding: 1rem 1.25rem 1.25rem;
+  }
+
+  .member-week-card {
+    display: flex;
+    min-width: 0;
+    min-height: 6.2rem;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: .75rem;
+    border: 1px solid #dfe8e2;
+    border-radius: .85rem;
+    background: #fff;
+    color: #244235;
+    text-align: left;
+    transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+  }
+
+  .member-week-card:hover { transform: translateY(-2px); box-shadow: 0 .45rem 1rem rgba(17, 55, 35, .1); }
+  .member-week-card:focus-visible { outline: 3px solid rgba(13, 110, 253, .28); outline-offset: 2px; }
+  .member-week-card--paid { border-color: #bfe3cf; background: #effaf3; color: #176b40; }
+  .member-week-card--paid_late { border-color: #f2d39b; background: #fff8eb; color: #9b5d00; }
+  .member-week-card--unpaid { border-color: #f2c4c8; background: #fff5f5; color: #a52731; }
+  .member-week-card--future { border-color: #e0e6e3; background: #f7f9f8; color: #64736b; }
+  .member-week-card--current { box-shadow: 0 0 0 2px #0d6efd, 0 .45rem 1rem rgba(13, 110, 253, .12); }
+
+  .member-week-number { font-size: .82rem; font-weight: 700; }
+  .member-week-icon { font-size: 1.05rem; line-height: 1; }
+  .member-week-date { font-size: .78rem; opacity: .9; }
+  .member-week-status { font-size: .7rem; font-weight: 700; }
+
+  @media (max-width: 1199.98px) { .member-week-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+  @media (max-width: 767.98px) {
+    .member-week-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding-inline: .8rem; }
+    .member-calendar-head { padding-inline: .9rem; }
+    .member-calendar-legend { padding-inline: .9rem; }
+  }
+  @media (max-width: 480px) { .member-week-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; } }
 </style>
-<div class="modern-card p-3 mb-4">
-  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><div><h5 class="mb-1"><i class="bi bi-calendar3 me-2"></i>Weekly Savings Calendar</h5><small class="text-muted">Friday date · deadline Sunday 11:59 PM (Africa/Kampala)</small></div>{% if active_account %}<span class="badge text-bg-light border">Account {{ active_account.label }}</span>{% endif %}</div>
-  {% if savings_calendar.cycle_open %}
-  <div class="row g-2 mb-3">
-    <div class="col-6 col-md"><div class="purpose-card"><small>Current week</small><div class="fw-bold">{{ savings_calendar.current_week_number }}</div></div></div><div class="col-6 col-md"><div class="purpose-card"><small>Weeks paid</small><div class="fw-bold">{{ savings_calendar.summary.paid }}</div></div></div><div class="col-6 col-md"><div class="purpose-card"><small>Weeks behind</small><div class="fw-bold text-danger">{{ savings_calendar.summary.behind }}</div></div></div><div class="col-6 col-md"><div class="purpose-card"><small>Paid late</small><div class="fw-bold text-warning">{{ savings_calendar.summary.paid_late }}</div></div></div><div class="col-6 col-md"><div class="purpose-card"><small>Outstanding fines</small><div class="fw-bold">UGX {{ savings_calendar.summary.outstanding_fines|floatformat:'0' }}</div></div></div>
+
+<section class="member-calendar-card mb-4" aria-labelledby="memberCalendarTitle">
+  <div class="member-calendar-head d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+      <h5 class="member-calendar-title mb-1" id="memberCalendarTitle"><i class="bi bi-calendar3 me-2" aria-hidden="true"></i>Weekly Savings Calendar</h5>
+      <div class="member-calendar-subtitle">Friday date · deadline Sunday 11:59 PM (Africa/Kampala)</div>
+    </div>
+    {% if active_account %}<span class="badge rounded-pill text-bg-light border">Account {{ active_account.label }}</span>{% endif %}
   </div>
-  <div class="weekly-calendar-grid">
-    {% for week in savings_calendar.weeks %}<button type="button" class="week-card week-card--{{ week.status }} {% if week.is_current %}week-card--current{% endif %}" data-bs-toggle="modal" data-bs-target="#weekDetail{{ week.number }}"><span class="d-flex justify-content-between"><strong>Week {{ week.number }}</strong><span class="week-icon">{% if week.status == 'paid' %}✓{% elif week.status == 'paid_late' %}●{% elif week.status == 'unpaid' %}✕{% else %}□{% endif %}</span></span><span class="d-block small mt-2">Fri {{ week.friday|date:'d M' }}</span><span class="d-block small fw-bold mt-1">{{ week.status_label }}</span></button>
-    <div class="modal fade" id="weekDetail{{ week.number }}" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 rounded-4"><div class="modal-header"><h5 class="modal-title">Week {{ week.number }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><dl class="row mb-0"><dt class="col-5">Friday date</dt><dd class="col-7">{{ week.friday|date:'d F Y' }}</dd><dt class="col-5">Deadline</dt><dd class="col-7">{{ week.deadline|date:'D d M Y, g:i A' }}</dd><dt class="col-5">Savings status</dt><dd class="col-7">{{ week.status_label }}</dd><dt class="col-5">Required savings</dt><dd class="col-7">UGX {{ week.required|floatformat:'0' }}</dd><dt class="col-5">Savings paid</dt><dd class="col-7">UGX {{ week.paid|floatformat:'0' }}</dd><dt class="col-5">Payment date</dt><dd class="col-7">{% if week.payment_date %}{{ week.payment_date|date:'d M Y, g:i A' }}{% else %}—{% endif %}</dd><dt class="col-5">Late fine</dt><dd class="col-7">{% if week.fine %}UGX {{ week.fine.amount|floatformat:'0' }} · {% if week.fine.is_paid %}Paid{% elif week.fine.amount_paid %}Part paid (UGX {{ week.fine_outstanding|floatformat:'0' }} left){% else %}Outstanding{% endif %}{% else %}None{% endif %}</dd></dl></div></div></div></div>{% endfor %}
-  </div>{% else %}<div class="alert alert-info mb-0">Open the savings cycle and select an account to see the calendar.</div>{% endif %}
-</div>
+
+  {% if savings_calendar.cycle_open %}
+  <div class="row g-2 p-3 pb-0">
+    <div class="col-6 col-md"><div class="purpose-card"><small>Current week</small><div class="fw-bold">{{ savings_calendar.current_week_number }}</div></div></div>
+    <div class="col-6 col-md"><div class="purpose-card"><small>Weeks paid</small><div class="fw-bold">{{ savings_calendar.summary.paid }}</div></div></div>
+    <div class="col-6 col-md"><div class="purpose-card"><small>Weeks behind</small><div class="fw-bold text-danger">{{ savings_calendar.summary.behind }}</div></div></div>
+    <div class="col-6 col-md"><div class="purpose-card"><small>Paid late</small><div class="fw-bold text-warning">{{ savings_calendar.summary.paid_late }}</div></div></div>
+    <div class="col-6 col-md"><div class="purpose-card"><small>Outstanding fines</small><div class="fw-bold">UGX {{ savings_calendar.summary.outstanding_fines|floatformat:'0' }}</div></div></div>
+  </div>
+
+  <div class="member-calendar-legend" aria-label="Savings calendar legend">
+    <span><i class="is-paid"></i>Paid on time</span>
+    <span><i class="is-late"></i>Paid late</span>
+    <span><i class="is-missed"></i>Missed</span>
+    <span><i class="is-future"></i>Upcoming</span>
+  </div>
+
+  <div class="member-week-grid">
+    {% for week in savings_calendar.weeks %}
+    <button type="button" class="member-week-card member-week-card--{{ week.status }} {% if week.is_current %}member-week-card--current{% endif %}" data-bs-toggle="modal" data-bs-target="#weekDetail{{ week.number }}" aria-label="Week {{ week.number }}, {{ week.status_label }}">
+      <span class="d-flex justify-content-between align-items-center"><span class="member-week-number">Week {{ week.number }}</span><span class="member-week-icon" aria-hidden="true">{% if week.status == 'paid' %}✓{% elif week.status == 'paid_late' %}◷{% elif week.status == 'unpaid' %}×{% else %}○{% endif %}</span></span>
+      <span class="member-week-date">Fri {{ week.friday|date:'d M' }}</span>
+      <span class="member-week-status">{{ week.status_label }}</span>
+    </button>
+    <div class="modal fade" id="weekDetail{{ week.number }}" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 rounded-4">
+        <div class="modal-header"><h5 class="modal-title">Week {{ week.number }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body"><dl class="row mb-0"><dt class="col-5">Friday date</dt><dd class="col-7">{{ week.friday|date:'d F Y' }}</dd><dt class="col-5">Deadline</dt><dd class="col-7">{{ week.deadline|date:'D d M Y, g:i A' }}</dd><dt class="col-5">Savings status</dt><dd class="col-7">{{ week.status_label }}</dd><dt class="col-5">Required savings</dt><dd class="col-7">UGX {{ week.required|floatformat:'0' }}</dd><dt class="col-5">Savings paid</dt><dd class="col-7">UGX {{ week.paid|floatformat:'0' }}</dd><dt class="col-5">Payment date</dt><dd class="col-7">{% if week.payment_date %}{{ week.payment_date|date:'d M Y, g:i A' }}{% else %}—{% endif %}</dd><dt class="col-5">Late fine</dt><dd class="col-7">{% if week.fine %}UGX {{ week.fine.amount|floatformat:'0' }} · {% if week.fine.is_paid %}Paid{% elif week.fine.amount_paid %}Part paid (UGX {{ week.fine_outstanding|floatformat:'0' }} left){% else %}Outstanding{% endif %}{% else %}None{% endif %}</dd></dl></div>
+      </div></div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}<div class="alert alert-info m-3">Open the savings cycle and select an account to see the calendar.</div>{% endif %}
+</section>
