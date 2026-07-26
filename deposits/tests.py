@@ -1,8 +1,10 @@
 from datetime import date, time, timedelta
 from decimal import Decimal
 from io import BytesIO
+from io import StringIO
 from unittest.mock import patch
 
+from django.core.management import call_command
 from django.test import TestCase
 from django.db import connection
 from django.http import QueryDict
@@ -20,6 +22,82 @@ from groupcore.week_cycle import current_saving_week, saving_year_closing_date
 from loans.models import LoanRequest
 from loans.models import LoanRepayment
 from deposits.welfare_calendar import build_welfare_calendar
+
+
+class WelfareAllocationBackfillTests(TestCase):
+    def setUp(self):
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        self.member = MemberProfile.objects.create_user(
+            username='legacy-welfare', password='pass12345'
+        )
+        self.account = SavingsAccount.objects.create(
+            owner=self.member, label='Main'
+        )
+
+    def _deposit(self, week, amount):
+        return DepositSubmission.objects.create(
+            member=self.member,
+            account=self.account,
+            submitted_by=self.member,
+            payment_week=week,
+            payment_date=week,
+            payment_time=time(9, 0),
+            welfare_amount=Decimal(amount),
+            status='APPROVED',
+        )
+
+    def test_dry_run_does_not_write_and_commit_preserves_recorded_weeks(self):
+        first = self._deposit(date(2026, 1, 2), '1000')
+        later = self._deposit(date(2026, 1, 16), '1000')
+        bulk = self._deposit(date(2026, 1, 30), '3000')
+        output = StringIO()
+
+        call_command('backfill_welfare_allocations', stdout=output)
+
+        self.assertEqual(DepositWelfareAllocation.objects.count(), 0)
+        self.assertIn('Would create 5 welfare-week allocation(s)', output.getvalue())
+
+        call_command(
+            'backfill_welfare_allocations', '--commit', stdout=StringIO()
+        )
+
+        self.assertEqual(
+            list(first.welfare_allocations.values_list('welfare_week', flat=True)),
+            [date(2026, 1, 2)],
+        )
+        self.assertEqual(
+            list(later.welfare_allocations.values_list('welfare_week', flat=True)),
+            [date(2026, 1, 16)],
+        )
+        self.assertEqual(
+            set(bulk.welfare_allocations.values_list('welfare_week', flat=True)),
+            {date(2026, 1, 9), date(2026, 1, 23), date(2026, 1, 30)},
+        )
+        self.assertEqual(
+            sum(
+                DepositWelfareAllocation.objects.values_list(
+                    'amount', flat=True
+                ),
+                Decimal('0.00'),
+            ),
+            Decimal('5000.00'),
+        )
+
+    def test_commit_is_idempotent_and_invalid_amount_is_reported(self):
+        self._deposit(date(2026, 1, 2), '1000')
+        invalid = self._deposit(date(2026, 1, 9), '1500')
+        call_command(
+            'backfill_welfare_allocations', '--commit', stdout=StringIO()
+        )
+        output = StringIO()
+
+        call_command(
+            'backfill_welfare_allocations', '--commit', stdout=output
+        )
+
+        self.assertEqual(DepositWelfareAllocation.objects.count(), 1)
+        self.assertFalse(invalid.welfare_allocations.exists())
+        self.assertIn('Invalid deposits: 1', output.getvalue())
 
 
 class VariableWeeklySavingsAllocationTests(TestCase):
