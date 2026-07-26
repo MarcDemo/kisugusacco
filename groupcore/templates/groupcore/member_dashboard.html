@@ -185,7 +185,7 @@
   <div class="row g-3 mb-4">
     <div class="col-md-3"><div class="kpi-chip cc-green"><div class="d-flex justify-content-between align-items-start"><div><h6>Total Group Savings</h6><div class="val">UGX {{ group_total_savings|floatformat:"0" }}</div></div><i class="bi bi-cash-stack cc-icon"></i></div></div></div>
     <div class="col-md-3"><div class="kpi-chip cc-blue"><div class="d-flex justify-content-between align-items-start"><div><h6>My Savings</h6><div class="val">UGX {{ user_savings_total|floatformat:"0" }}</div></div><i class="bi bi-piggy-bank cc-icon"></i></div></div></div>
-    <div class="col-md-3"><div class="kpi-chip cc-teal"><div class="d-flex justify-content-between align-items-start"><div><h6>Approved Weeks</h6><div class="val">{{ weeks_paid }}</div></div><i class="bi bi-calendar-check cc-icon"></i></div></div></div>
+    <div class="col-md-3"><div class="kpi-chip cc-teal"><div class="d-flex justify-content-between align-items-start"><div><h6>Total Covered Weeks</h6><div class="val">{{ weeks_paid }}</div></div><i class="bi bi-calendar-check cc-icon"></i></div></div></div>
     <div class="col-md-3"><div class="kpi-chip cc-rose"><div class="d-flex justify-content-between align-items-start"><div><h6>Outstanding Fines</h6><div class="val">UGX {{ outstanding_fines|floatformat:"0" }}</div></div><i class="bi bi-exclamation-triangle cc-icon"></i></div></div></div>
     <div class="col-md-3"><div class="kpi-chip cc-purple"><div class="d-flex justify-content-between align-items-start"><div><h6>My Shares</h6><div class="val">UGX {{ share_total|floatformat:"0" }}</div></div><i class="bi bi-bar-chart-steps cc-icon"></i></div></div></div>
     <div class="col-md-3"><div class="kpi-chip cc-amber"><div class="d-flex justify-content-between align-items-start"><div><h6>My Subscriptions</h6><div class="val">UGX {{ subscription_total|floatformat:"0" }}</div></div><i class="bi bi-journal-check cc-icon"></i></div></div></div>
@@ -204,7 +204,7 @@
       <span class="badge text-bg-{{ week_progress.status_class }}">{{ week_progress.status }}</span>
     </div>
     <div class="row g-3 mt-2">
-      <div class="col-md-3 col-6">
+      <div class="col-md col-6">
         <div class="purpose-card">
           <small class="text-muted">Current Week</small>
           <div class="fw-bold">
@@ -212,22 +212,28 @@
           </div>
         </div>
       </div>
-      <div class="col-md-3 col-6">
+      <div class="col-md col-6">
         <div class="purpose-card">
-          <small class="text-muted">Approved Weeks</small>
+          <small class="text-muted">Paid to Date</small>
           <div class="fw-bold">{{ week_progress.paid_weeks_count }}</div>
         </div>
       </div>
-      <div class="col-md-3 col-6">
+      <div class="col-md col-6">
         <div class="purpose-card">
           <small class="text-muted">Behind</small>
           <div class="fw-bold">{{ week_progress.missing_weeks_count }}</div>
         </div>
       </div>
-      <div class="col-md-3 col-6">
+      <div class="col-md col-6">
         <div class="purpose-card">
-          <small class="text-muted">Ahead</small>
+          <small class="text-muted">Prepaid</small>
           <div class="fw-bold">{{ week_progress.future_weeks_count }}</div>
+        </div>
+      </div>
+      <div class="col-md col-6">
+        <div class="purpose-card">
+          <small class="text-muted">Total Covered</small>
+          <div class="fw-bold">{{ week_progress.total_paid_weeks_count }}</div>
         </div>
       </div>
     </div>

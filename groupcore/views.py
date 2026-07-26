@@ -160,6 +160,7 @@ def _member_week_progress(member, active_account=None):
             'status_class': 'secondary',
             'current_week_number': None,
             'paid_weeks_count': 0,
+            'total_paid_weeks_count': 0,
             'missing_weeks_count': 0,
             'future_weeks_count': 0,
             'first_missing_week': None,
@@ -210,6 +211,7 @@ def _member_week_progress(member, active_account=None):
         'current_week': saving_week.week_start,
         'saving_year': saving_week.saving_year,
         'paid_weeks_count': len(paid_due_weeks),
+        'total_paid_weeks_count': len(paid_weeks),
         'missing_weeks_count': len(missing_weeks),
         'future_weeks_count': len(future_weeks),
         'first_missing_week': missing_weeks[0] if missing_weeks else None,
@@ -540,7 +542,11 @@ def _member_dashboard_context(member, active_account=None):
     user_savings_total = approved_member_qs.aggregate(total=Sum('saving_amount'))['total'] or 0
     week_progress = _member_week_progress(member, active_account)
     savings_calendar = build_weekly_calendar(member, active_account)
-    weeks_paid = week_progress['paid_weeks_count'] if week_progress['cycle_open'] else approved_member_qs.values('payment_week').distinct().count()
+    weeks_paid = (
+        week_progress['total_paid_weeks_count']
+        if week_progress['cycle_open']
+        else approved_member_qs.values('payment_week').distinct().count()
+    )
 
     
     outstanding_fines_qs = Fine.objects.filter(member=member, is_paid=False, is_voided=False)

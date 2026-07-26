@@ -1,5 +1,5 @@
 import csv
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -739,6 +739,39 @@ class MemberWeekProgressTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['week_progress']['status'], 'Behind')
         self.assertGreater(response.context['week_progress']['missing_weeks_count'], 0)
+
+    def test_dashboard_separates_paid_to_date_prepaid_and_total_covered(self):
+        saving_week = current_saving_week(
+            self.week_one_start,
+            timezone.localdate(),
+        )
+        due_week = saving_week.cycle_start
+        future_week = saving_week.week_start + timedelta(weeks=1)
+        for week in (due_week, future_week):
+            DepositSubmission.objects.create(
+                member=self.member,
+                account=self.account,
+                submitted_by=self.member,
+                payment_week=week,
+                saving_amount=Decimal('10000.00'),
+                payment_date=week,
+                payment_time=time(9, 0),
+                status='APPROVED',
+            )
+        self.client.login(username='member', password='pass12345')
+
+        response = self.client.get(reverse('member_dashboard'))
+
+        progress = response.context['week_progress']
+        self.assertEqual(progress['paid_weeks_count'], 1)
+        self.assertEqual(progress['future_weeks_count'], 1)
+        self.assertEqual(progress['total_paid_weeks_count'], 2)
+        self.assertEqual(response.context['weeks_paid'], 2)
+        self.assertContains(response, 'Total Covered Weeks')
+        self.assertContains(response, 'Paid to Date')
+        self.assertContains(response, 'Prepaid')
+        self.assertContains(response, 'Total Covered')
+        self.assertNotContains(response, 'Approved Weeks')
 
 
 class YearEndSettlementYearFilterTests(TestCase):
