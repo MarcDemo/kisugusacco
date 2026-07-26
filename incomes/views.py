@@ -6,7 +6,13 @@ from django.core.paginator import Paginator
 from django.utils import timezone
 
 from deposits.models import DepositSubmission
-from groupcore.reporting import merge_year_options, parse_report_year, years_from_dates
+from groupcore.member_query import alphabetical_members
+from groupcore.models import MemberProfile
+from groupcore.reporting import (
+    merge_year_options,
+    parse_report_year,
+    years_from_dates,
+)
 from groupcore.year_close import submissions_locked_for_year
 
 from .models import ShareContribution, AnnualSubscription
@@ -21,7 +27,24 @@ def income_list(request):
         return redirect('member_dashboard')
 
     selected_year = parse_report_year(request.GET.get('year'))
-    approved_deposits_base = DepositSubmission.objects.filter(status='APPROVED')
+    selected_member = None
+    try:
+        selected_member_id = int(request.GET.get('member', ''))
+    except (TypeError, ValueError):
+        selected_member_id = None
+    if selected_member_id:
+        selected_member = MemberProfile.objects.filter(
+            pk=selected_member_id,
+            is_superuser=False,
+        ).first()
+
+    members = alphabetical_members(
+        MemberProfile.objects.filter(is_superuser=False)
+    )
+    approved_deposits_base = DepositSubmission.objects.filter(
+        status='APPROVED',
+        member__is_superuser=False,
+    )
     years = merge_year_options(
         years_from_dates(approved_deposits_base, 'payment_week'),
         years_from_dates(ShareContribution.objects.all(), 'contribution_date'),
@@ -35,6 +58,8 @@ def income_list(request):
         .select_related('member', 'account', 'submitted_by')
         .order_by('-payment_week', 'member__username', 'account__label', '-id')
     )
+    if selected_member:
+        financial_deposits = financial_deposits.filter(member=selected_member)
     raw_totals = financial_deposits.aggregate(
         total=Sum('amount'),
         saving=Sum('saving_amount'),
@@ -61,13 +86,26 @@ def income_list(request):
         .filter(year=selected_year)
         .order_by('-year', 'member__username')
     )
+    if selected_member:
+        shares = shares.filter(member=selected_member)
+        subscriptions = subscriptions.filter(member=selected_member)
+    active_filters = request.GET.copy()
+    active_filters.pop('page', None)
+    active_filters['year'] = selected_year
+    if selected_member:
+        active_filters['member'] = selected_member.id
+    else:
+        active_filters.pop('member', None)
     return render(request, 'incomes/income_list.html', {
         'financial_deposits': financial_deposits,
         'selected_year': selected_year,
+        'selected_member': selected_member,
+        'members': members,
         'years': years,
         'summary_totals': summary_totals,
         'shares': shares,
         'subscriptions': subscriptions,
+        'pagination_query': active_filters.urlencode(),
     })
 
 @login_required

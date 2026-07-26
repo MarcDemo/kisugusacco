@@ -139,7 +139,11 @@
   <div class="finance-header">
     <div>
       <h2 class="mb-1 text-success"><i class="bi bi-cash-stack me-2"></i> Financial Records</h2>
-      <div class="muted-note">Official approved deposits for saving year {{ selected_year }}.</div>
+      <div class="muted-note">
+        Official approved deposits
+        {% if selected_member %}for <strong>{{ selected_member.get_full_name|default:selected_member.username }}</strong>{% endif %}
+        in saving year {{ selected_year }}.
+      </div>
     </div>
 
     <div class="d-flex flex-wrap align-items-end gap-2">
@@ -152,9 +156,29 @@
             {% endfor %}
           </select>
         </div>
+        <div>
+          <label for="member-filter-search" class="form-label small text-muted mb-1">Find Member</label>
+          <input id="member-filter-search" type="search" class="form-control form-control-sm" placeholder="Type a name or username" autocomplete="off">
+        </div>
+        <div>
+          <label for="record-member" class="form-label small text-muted mb-1">Member</label>
+          <select id="record-member" name="member" class="form-select form-select-sm">
+            <option value="">All members</option>
+            {% for member in members %}
+              <option value="{{ member.id }}" {% if selected_member and member.id == selected_member.id %}selected{% endif %}>
+                {% if member.get_full_name %}{{ member.get_full_name }} — {{ member.username }}{% else %}{{ member.username }}{% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
         <button type="submit" class="btn btn-primary btn-sm">
           <i class="bi bi-funnel me-1"></i> View
         </button>
+        {% if selected_member %}
+          <a href="{% url 'other_income_list' %}?year={{ selected_year }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-x-circle me-1"></i> Clear member
+          </a>
+        {% endif %}
       </form>
 
       {% if request.user.is_treasurer %}
@@ -249,7 +273,6 @@
                   <span class="badge text-bg-primary">Live Entry</span>
                 {% endif %}
               </td>
-              <td>{% revision_count 'deposit' deposit.id as edits %}{% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %} <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'deposit' deposit.id %}">Inspect</a> <a class="btn btn-sm btn-outline-primary" href="{% url 'financial_record_edit' 'deposit' deposit.id %}">Edit</a></td>
               <td>
                 {% if deposit.submitted_by %}
                   {{ deposit.submitted_by.get_full_name|default:deposit.submitted_by.username }}
@@ -258,10 +281,11 @@
                 {% endif %}
               </td>
               <td>{{ deposit.remarks|default:"-" }}</td>
+              <td>{% revision_count 'deposit' deposit.id as edits %}{% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %} <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'deposit' deposit.id %}">Inspect</a>{% if request.user.is_treasurer %} <a class="btn btn-sm btn-outline-primary" href="{% url 'financial_record_edit' 'deposit' deposit.id %}">Edit</a>{% endif %}</td>
             </tr>
           {% empty %}
             <tr>
-              <td colspan="15" class="text-center text-muted py-4">No approved financial records found for {{ selected_year }}.</td>
+              <td colspan="16" class="text-center text-muted py-4">No approved financial records found{% if selected_member %} for {{ selected_member.get_full_name|default:selected_member.username }}{% endif %} in {{ selected_year }}.</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -276,7 +300,7 @@
         <ul class="pagination pagination-sm">
           <li class="page-item {% if not financial_deposits.has_previous %}disabled{% endif %}">
             {% if financial_deposits.has_previous %}
-              <a class="page-link" href="?year={{ selected_year }}&amp;page={{ financial_deposits.previous_page_number }}" aria-label="Previous">Previous</a>
+              <a class="page-link" href="?{% if pagination_query %}{{ pagination_query }}&amp;{% endif %}page={{ financial_deposits.previous_page_number }}" aria-label="Previous">Previous</a>
             {% else %}
               <span class="page-link">Previous</span>
             {% endif %}
@@ -286,13 +310,13 @@
             {% if page_number == financial_deposits.number %}
               <li class="page-item active" aria-current="page"><span class="page-link">{{ page_number }}</span></li>
             {% elif page_number >= financial_deposits.number|add:"-2" and page_number <= financial_deposits.number|add:"2" %}
-              <li class="page-item"><a class="page-link" href="?year={{ selected_year }}&amp;page={{ page_number }}">{{ page_number }}</a></li>
+              <li class="page-item"><a class="page-link" href="?{% if pagination_query %}{{ pagination_query }}&amp;{% endif %}page={{ page_number }}">{{ page_number }}</a></li>
             {% endif %}
           {% endfor %}
 
           <li class="page-item {% if not financial_deposits.has_next %}disabled{% endif %}">
             {% if financial_deposits.has_next %}
-              <a class="page-link" href="?year={{ selected_year }}&amp;page={{ financial_deposits.next_page_number }}" aria-label="Next">Next</a>
+              <a class="page-link" href="?{% if pagination_query %}{{ pagination_query }}&amp;{% endif %}page={{ financial_deposits.next_page_number }}" aria-label="Next">Next</a>
             {% else %}
               <span class="page-link">Next</span>
             {% endif %}
@@ -338,11 +362,11 @@
                     -
                   {% endif %}
                 </td>
-                <td>{% revision_count 'share' share.id as edits %}{% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %} <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'share' share.id %}">Inspect</a> <a class="btn btn-sm btn-outline-primary" href="{% url 'financial_record_edit' 'share' share.id %}">Edit</a></td>
+                <td>{% revision_count 'share' share.id as edits %}{% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %} <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'share' share.id %}">Inspect</a>{% if request.user.is_treasurer %} <a class="btn btn-sm btn-outline-primary" href="{% url 'financial_record_edit' 'share' share.id %}">Edit</a>{% endif %}</td>
               </tr>
             {% empty %}
               <tr>
-                <td colspan="7" class="text-center text-muted">No manual share records for {{ selected_year }}.</td>
+                <td colspan="7" class="text-center text-muted">No manual share records{% if selected_member %} for {{ selected_member.get_full_name|default:selected_member.username }}{% endif %} in {{ selected_year }}.</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -376,7 +400,6 @@
                     <span class="badge bg-warning text-dark">Pending</span>
                   {% endif %}
                 </td>
-                <td>{% revision_count 'subscription' subscription.id as edits %}{% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %} <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'subscription' subscription.id %}">Inspect</a> <a class="btn btn-sm btn-outline-primary" href="{% url 'financial_record_edit' 'subscription' subscription.id %}">Edit</a></td>
                 <td>{{ subscription.paid_on|default:"-" }}</td>
                 <td>
                   {% if subscription.recorded_by %}
@@ -385,10 +408,11 @@
                     -
                   {% endif %}
                 </td>
+                <td>{% revision_count 'subscription' subscription.id as edits %}{% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %} <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'subscription' subscription.id %}">Inspect</a>{% if request.user.is_treasurer %} <a class="btn btn-sm btn-outline-primary" href="{% url 'financial_record_edit' 'subscription' subscription.id %}">Edit</a>{% endif %}</td>
               </tr>
             {% empty %}
               <tr>
-                <td colspan="6" class="text-center text-muted">No manual subscription records for {{ selected_year }}.</td>
+                <td colspan="7" class="text-center text-muted">No manual subscription records{% if selected_member %} for {{ selected_member.get_full_name|default:selected_member.username }}{% endif %} in {{ selected_year }}.</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -397,4 +421,18 @@
     </div>
   </div>
 </div>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const search = document.getElementById('member-filter-search');
+    const select = document.getElementById('record-member');
+    if (!search || !select) return;
+    const options = Array.from(select.options);
+    search.addEventListener('input', function () {
+      const query = search.value.trim().toLowerCase();
+      options.forEach(function (option, index) {
+        option.hidden = index > 0 && query && !option.text.toLowerCase().includes(query);
+      });
+    });
+  });
+</script>
 {% endblock %}
