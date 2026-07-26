@@ -14,9 +14,12 @@
 </style>
 <div class="container py-4">
   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-    <div><div class="small text-uppercase text-muted">Financial audit</div><h2 class="mb-0">{{ record_type|title }} #{{ record.pk }}</h2><div class="text-muted">{{ record }}</div></div>
+    <div><div class="small text-uppercase text-muted">Financial audit</div><h2 class="mb-0">{{ record_type|title }} #{{ object_id }}</h2><div class="text-muted">{{ record_display }}</div></div>
     {% if can_edit %}<a class="btn btn-success" href="{% url 'financial_record_edit' record_type record.pk %}">Edit record</a>{% endif %}
   </div>
+  {% if is_deleted %}
+  <div class="alert alert-danger"><i class="bi bi-trash3 me-2"></i><strong>This record was deleted from the database.</strong> Its complete original snapshot remains retained in the audit entry.</div>
+  {% endif %}
   {% for item in revision_items %}
   {% with revision=item.revision %}
   <article class="card border-0 shadow-sm mb-3">

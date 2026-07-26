@@ -1047,20 +1047,42 @@ def financial_record_history(request, record_type, object_id):
     model = RECORD_MODELS.get(record_type)
     if not model:
         raise Http404
-    record = get_object_or_404(model, pk=object_id)
-    if not can_inspect_record(request.user, record):
-        messages.error(request, 'You do not have permission to inspect this record.')
-        return redirect('member_dashboard')
     revisions = FinancialRecordRevision.objects.filter(
         record_type=record_type, object_id=object_id
     ).select_related('edited_by')
+    record = model.objects.filter(pk=object_id).first()
+    is_deleted = record is None and revisions.filter(
+        after_data__record_state='Deleted'
+    ).exists()
+    if record:
+        allowed = can_inspect_record(request.user, record)
+        record_display = str(record)
+    elif is_deleted:
+        deletion = revisions.filter(
+            after_data__record_state='Deleted'
+        ).order_by('-revision_number').first()
+        member_id = (deletion.before_data.get('member') or {}).get('id')
+        allowed = request.user.role in {
+            'TREASURER', 'CHAIRMAN', 'VICE_CHAIRMAN', 'SECRETARY', 'OVERSEER',
+        } or request.user.pk == member_id
+        member_label = (deletion.before_data.get('member') or {}).get('label')
+        amount = deletion.before_data.get('amount')
+        record_display = f'{member_label or "Unknown member"} — UGX {amount or 0} (DELETED)'
+    else:
+        raise Http404
+    if not allowed:
+        messages.error(request, 'You do not have permission to inspect this record.')
+        return redirect('member_dashboard')
     revision_items = [
         {'revision': revision, 'changes': revision_changes(revision)}
         for revision in revisions
     ]
     return render(request, 'groupcore/financial_record_history.html', {
         'record': record,
+        'object_id': object_id,
+        'record_display': record_display,
         'record_type': record_type,
         'revision_items': revision_items,
-        'can_edit': request.user.is_treasurer(),
+        'can_edit': request.user.is_treasurer() and not is_deleted,
+        'is_deleted': is_deleted,
     })

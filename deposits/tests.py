@@ -13,15 +13,24 @@ from django.utils import timezone
 from django.test.utils import CaptureQueriesContext
 from openpyxl import load_workbook
 
-from deposits.models import DepositSubmission, DepositWelfareAllocation
+from deposits.models import (
+    DepositFineAllocation,
+    DepositSubmission,
+    DepositWelfareAllocation,
+)
 from deposits.forms import DepositSubmissionForm, DirectDepositForm
 from fines.models import Fine
 from groupcore.account_context import SESSION_KEY_ACTIVE_ACCOUNT
-from groupcore.models import GroupSettings, MemberProfile, SavingsAccount
+from groupcore.models import (
+    FinancialRecordRevision,
+    GroupSettings,
+    MemberProfile,
+    SavingsAccount,
+)
 from groupcore.week_cycle import current_saving_week, saving_year_closing_date
 from loans.models import LoanRequest
 from loans.models import LoanRepayment
-from deposits.welfare_calendar import build_welfare_calendar
+from deposits.welfare_calendar import build_welfare_calendar, welfare_totals_by_week
 
 
 class WelfareAllocationBackfillTests(TestCase):
@@ -546,6 +555,194 @@ class VariableWeeklySavingsAllocationTests(TestCase):
         self.assertTrue(api_week['paid'])
         self.assertFalse(api_week['selectable'])
         self.assertIn('date_label', api_week)
+
+
+class AuditedDepositDeletionTests(TestCase):
+    def setUp(self):
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        self.treasurer = MemberProfile.objects.create_user(
+            username='delete-treasurer',
+            password='pass12345',
+            role='TREASURER',
+        )
+        self.member = MemberProfile.objects.create_user(
+            username='delete-member',
+            password='pass12345',
+            role='MEMBER',
+        )
+        self.account = SavingsAccount.objects.create(
+            owner=self.member,
+            label='Main account',
+        )
+        self.week = date(2026, 7, 24)
+
+    def _deposit(self, **overrides):
+        values = {
+            'member': self.member,
+            'account': self.account,
+            'submitted_by': self.treasurer,
+            'payment_week': self.week,
+            'payment_date': self.week,
+            'payment_time': time(9, 0),
+            'saving_amount': Decimal('10000'),
+            'status': 'APPROVED',
+        }
+        values.update(overrides)
+        return DepositSubmission.objects.create(**values)
+
+    def test_treasurer_hard_delete_reverses_linked_effects_and_records_revision(self):
+        loan = LoanRequest.objects.create(
+            member=self.member,
+            account=self.account,
+            principal=Decimal('100000'),
+            monthly_interest_rate=Decimal('2'),
+            duration_months=6,
+            status='APPROVED',
+            approved_on=timezone.now(),
+        )
+        fine = Fine.objects.create(
+            member=self.member,
+            account=self.account,
+            reason='Test fine',
+            amount=Decimal('2000'),
+            amount_paid=Decimal('1000'),
+            issued_by=self.treasurer,
+        )
+        deposit = self._deposit(
+            saving_amount=Decimal('0'),
+            welfare_amount=Decimal('1000'),
+            fine_amount=Decimal('1000'),
+            loan_repayment_amount=Decimal('10000'),
+            loan_repayment_loan=loan,
+        )
+        DepositWelfareAllocation.objects.create(
+            deposit=deposit,
+            account=self.account,
+            welfare_week=self.week,
+        )
+        DepositFineAllocation.objects.create(
+            deposit=deposit,
+            fine=fine,
+            amount=Decimal('1000'),
+        )
+        repayment = LoanRepayment.objects.create(
+            loan=loan,
+            amount=Decimal('10000'),
+            paid_on=self.week,
+            recorded_by=self.treasurer,
+            source_deposit=deposit,
+        )
+        self.client.login(username=self.treasurer.username, password='pass12345')
+
+        response = self.client.post(
+            reverse('delete_deposit', args=[deposit.id]),
+            {'deletion_reason': 'Duplicate imported payment'},
+        )
+
+        self.assertRedirects(response, reverse('manage_deposits'))
+        fine.refresh_from_db()
+        self.assertFalse(DepositSubmission.objects.filter(pk=deposit.pk).exists())
+        self.assertEqual(fine.amount_paid, Decimal('0'))
+        self.assertFalse(fine.is_paid)
+        self.assertFalse(LoanRepayment.objects.filter(pk=repayment.pk).exists())
+        self.assertFalse(
+            DepositWelfareAllocation.objects.filter(deposit_id=deposit.pk).exists()
+        )
+        self.assertNotIn(
+            self.week,
+            welfare_totals_by_week(
+                self.member,
+                self.account,
+                [self.week],
+            ),
+        )
+        revision = FinancialRecordRevision.objects.get(
+            record_type='deposit',
+            object_id=deposit.id,
+        )
+        self.assertEqual(revision.reason, 'Duplicate imported payment')
+        self.assertEqual(revision.before_data['status'], 'APPROVED')
+        self.assertEqual(revision.after_data['record_state'], 'Deleted')
+
+    def test_reason_is_required_and_member_cannot_delete(self):
+        deposit = self._deposit(status='PENDING')
+        self.client.login(username=self.treasurer.username, password='pass12345')
+        response = self.client.post(
+            reverse('delete_deposit', args=[deposit.id]),
+            {'deletion_reason': ''},
+        )
+        self.assertRedirects(response, reverse('manage_deposits'))
+        deposit.refresh_from_db()
+        self.assertEqual(deposit.status, 'PENDING')
+        self.assertFalse(FinancialRecordRevision.objects.exists())
+
+        self.client.login(username=self.member.username, password='pass12345')
+        response = self.client.post(
+            reverse('delete_deposit', args=[deposit.id]),
+            {'deletion_reason': 'Member trying deletion'},
+        )
+        self.assertRedirects(response, reverse('member_dashboard'))
+        deposit.refresh_from_db()
+        self.assertEqual(deposit.status, 'PENDING')
+
+    def test_legacy_unlinked_fine_payment_is_not_deleted_ambiguously(self):
+        deposit = self._deposit(
+            saving_amount=Decimal('0'),
+            fine_amount=Decimal('1000'),
+        )
+        self.client.login(username=self.treasurer.username, password='pass12345')
+
+        response = self.client.post(
+            reverse('delete_deposit', args=[deposit.id]),
+            {'deletion_reason': 'Incorrect legacy entry'},
+            follow=True,
+        )
+
+        deposit.refresh_from_db()
+        self.assertEqual(deposit.status, 'APPROVED')
+        self.assertContains(response, 'not linked to a specific fine')
+        self.assertFalse(FinancialRecordRevision.objects.exists())
+
+    def test_manage_page_has_delete_form_audit_buttons_and_deletion_audit(self):
+        deposit = self._deposit(status='PENDING')
+        self.client.login(username=self.treasurer.username, password='pass12345')
+
+        response = self.client.get(reverse('manage_deposits'))
+        self.assertContains(response, 'Reason for deletion')
+        self.assertContains(response, 'Deletion Audit')
+        self.assertContains(response, 'Audit')
+        self.assertContains(
+            response,
+            f'data-delete-url="{reverse("delete_deposit", args=[deposit.id])}"',
+        )
+
+        self.client.post(
+            reverse('delete_deposit', args=[deposit.id]),
+            {'deletion_reason': 'Previously removed'},
+        )
+        audit = self.client.get(reverse('deposit_deletion_audit'))
+        self.assertEqual(audit.status_code, 200)
+        self.assertContains(audit, f'Deposit #{deposit.id}')
+        self.assertContains(audit, 'Previously removed')
+        self.assertContains(audit, self.treasurer.username)
+
+    def test_deleted_deposit_is_read_only_but_audit_remains_visible(self):
+        deposit = self._deposit(status='PENDING')
+        self.client.login(username=self.treasurer.username, password='pass12345')
+        self.client.post(
+            reverse('delete_deposit', args=[deposit.id]),
+            {'deletion_reason': 'Entered for wrong member'},
+        )
+
+        audit_response = self.client.get(
+            reverse('financial_record_history', args=['deposit', deposit.id]),
+        )
+
+        self.assertEqual(audit_response.status_code, 200)
+        self.assertContains(audit_response, 'Entered for wrong member')
+        self.assertContains(audit_response, 'Deleted')
+        self.assertContains(audit_response, 'deleted from the database')
+        self.assertNotContains(audit_response, 'Edit record')
 
 
 class TreasurerReportYearFilterTests(TestCase):

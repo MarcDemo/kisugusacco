@@ -4,7 +4,7 @@ from .forms import DepositSubmissionForm, DirectDepositForm
 from .models import DepositFineAllocation, DepositSubmission, DepositWelfareAllocation
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from groupcore.models import GroupSettings, MemberProfile
+from groupcore.models import FinancialRecordRevision, GroupSettings, MemberProfile
 from groupcore.models import SavingsAccount
 from groupcore.reporting import merge_year_options, pagination_query, parse_report_year, years_from_dates
 from groupcore.week_cycle import current_saving_week
@@ -60,6 +60,7 @@ from deposits.rules import (
 )
 from deposits.welfare_calendar import build_welfare_calendar
 from groupcore.member_query import alphabetical_members
+from groupcore.financial_records import delete_deposit_with_audit
 
 # Create your views here.
 
@@ -426,6 +427,54 @@ def reject_deposit(request, deposit_id):
 
     messages.warning(request, "Deposit rejected and member notified by email.")
     return redirect('treasurer_dashboard')
+
+
+@login_required
+def delete_deposit(request, deposit_id):
+    if not request.user.is_treasurer():
+        messages.error(request, 'Only the treasurer can delete deposit records.')
+        return redirect('member_dashboard')
+    if request.method != 'POST':
+        messages.error(request, 'Use the delete confirmation form to delete a record.')
+        return redirect('manage_deposits')
+    try:
+        record_id = delete_deposit_with_audit(
+            deposit_id,
+            request.user,
+            request.POST.get('deletion_reason'),
+        )
+    except DepositSubmission.DoesNotExist:
+        messages.error(request, 'That deposit record no longer exists.')
+    except ValidationError as exc:
+        messages.error(
+            request,
+            '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc),
+        )
+    else:
+        messages.success(
+            request,
+            f'Deposit #{record_id} was deleted from the database. Its audit history was saved.',
+        )
+    return redirect('manage_deposits')
+
+
+@login_required
+def deposit_deletion_audit(request):
+    if not request.user.is_treasurer():
+        messages.error(request, 'Only the treasurer can view the deletion audit.')
+        return redirect('member_dashboard')
+    deletions = (
+        FinancialRecordRevision.objects
+        .filter(record_type='deposit', after_data__record_state='Deleted')
+        .select_related('edited_by')
+        .order_by('-edited_at', '-id')
+    )
+    page = Paginator(deletions, 25).get_page(request.GET.get('page'))
+    return render(request, 'deposits/deposit_deletion_audit.html', {
+        'deletions': page,
+        'page_obj': page,
+        'pagination_query': pagination_query(request),
+    })
 
 
 

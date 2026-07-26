@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+      <div class="small text-uppercase text-muted">Financial audit</div>
+      <h2 class="mb-1"><i class="bi bi-trash3 me-2 text-danger"></i>Deleted Deposits</h2>
+      <p class="text-muted mb-0">Permanent audit entries retained after deposit records were removed from the database.</p>
+    </div>
+    <a class="btn btn-outline-success" href="{% url 'manage_deposits' %}">
+      <i class="bi bi-arrow-left me-1"></i>Manage Deposits
+    </a>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+      <strong>Deletion history</strong>
+      <span class="badge text-bg-secondary">{{ page_obj.paginator.count }} record{{ page_obj.paginator.count|pluralize }}</span>
+    </div>
+    {% if deletions %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Record</th>
+            <th>Member</th>
+            <th>Account</th>
+            <th>Amount</th>
+            <th>Deleted by</th>
+            <th>Deleted at</th>
+            <th>Reason</th>
+            <th>Audit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for revision in deletions %}
+          <tr>
+            <td><strong>Deposit #{{ revision.object_id }}</strong></td>
+            <td>{{ revision.before_data.member.label|default:"Unknown member" }}</td>
+            <td>{{ revision.before_data.account.label|default:"-" }}</td>
+            <td>UGX {{ revision.before_data.amount|floatformat:"0" }}</td>
+            <td>{{ revision.edited_by.get_full_name|default:revision.edited_by.username }}</td>
+            <td>{{ revision.edited_at|date:"d M Y, H:i" }}</td>
+            <td>{{ revision.reason }}</td>
+            <td>
+              <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'deposit' revision.object_id %}">
+                <i class="bi bi-clock-history me-1"></i>Inspect
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include 'includes/pagination.html' %}
+    {% else %}
+    <div class="p-5 text-center text-muted">
+      <i class="bi bi-shield-check fs-2 d-block mb-2"></i>
+      No deposit records have been deleted.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

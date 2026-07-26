@@ -476,8 +476,11 @@
 
   <!-- Deposit submissions and review history -->
   <div class="card shadow-sm mb-5" id="depositSubmissionsCard">
-    <div class="card-header bg-success text-white">
+    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
       <h5 class="mb-0"><i class="bi bi-inbox me-2"></i> Deposit Submissions</h5>
+      <a class="btn btn-sm btn-light" href="{% url 'deposit_deletion_audit' %}">
+        <i class="bi bi-clock-history me-1"></i> Deletion Audit
+      </a>
     </div>
     <div class="card-body border-bottom">
       <nav class="nav nav-pills flex-wrap gap-2 mb-3" aria-label="Filter deposit submissions by status">
@@ -593,7 +596,9 @@
               <td class="text-nowrap">
                 {% revision_count 'deposit' deposit.id as edits %}
                 {% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %}
-                <a href="{% url 'financial_record_history' 'deposit' deposit.id %}" class="btn btn-sm btn-outline-secondary" title="Inspect"><i class="bi bi-search"></i></a>
+                <a href="{% url 'financial_record_history' 'deposit' deposit.id %}" class="btn btn-sm btn-outline-secondary" title="Open audit trail">
+                  <i class="bi bi-clock-history"></i> Audit
+                </a>
                 <a href="{% url 'financial_record_edit' 'deposit' deposit.id %}" class="btn btn-sm btn-outline-primary" title="Edit"><i class="bi bi-pencil"></i></a>
                 {% if deposit.status == 'PENDING' %}
                 <a href="{% url 'approve_deposit' deposit.id %}" class="btn btn-sm btn-success" title="Approve">
@@ -605,6 +610,17 @@
                 {% else %}
                 <span class="text-muted small">Processed</span>
                 {% endif %}
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-danger js-delete-deposit"
+                  data-bs-toggle="modal"
+                  data-bs-target="#deleteDepositModal"
+                  data-delete-url="{% url 'delete_deposit' deposit.id %}"
+                  data-record-label="Deposit #{{ deposit.id }} — {{ deposit.member.get_full_name|default:deposit.member.username }}"
+                  title="Delete with audit reason"
+                >
+                  <i class="bi bi-trash"></i> Delete
+                </button>
               </td>
             </tr>
             {% endfor %}
@@ -621,6 +637,44 @@
         {% endif %}
       </div>
       {% endif %}
+    </div>
+  </div>
+
+  <div class="modal fade" id="deleteDepositModal" tabindex="-1" aria-labelledby="deleteDepositTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" id="deleteDepositForm">
+          {% csrf_token %}
+          <div class="modal-header bg-danger text-white">
+            <h5 class="modal-title" id="deleteDepositTitle">
+              <i class="bi bi-exclamation-triangle me-2"></i>Delete financial record
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-2">You are deleting <strong id="deleteDepositLabel">this deposit</strong>.</p>
+            <div class="alert alert-warning small">
+              Its financial effect will be reversed, but the original record and this reason will remain permanently visible in the audit trail.
+            </div>
+            <label for="deletionReason" class="form-label fw-semibold">Reason for deletion <span class="text-danger">*</span></label>
+            <textarea
+              class="form-control"
+              id="deletionReason"
+              name="deletion_reason"
+              rows="4"
+              minlength="5"
+              required
+              placeholder="Explain why this record must be deleted"
+            ></textarea>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-danger">
+              <i class="bi bi-trash me-1"></i>Confirm deletion
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -1882,6 +1936,26 @@
   document.getElementById('ddApplyFines')?.addEventListener('click', function () { refresh(); bootstrap.Modal.getOrCreateInstance(document.getElementById('ddFinePickerModal')).hide(); });
   fetchFineStatus();
   refresh();
+})();
+</script>
+<script>
+(function () {
+  const modal = document.getElementById('deleteDepositModal');
+  const form = document.getElementById('deleteDepositForm');
+  const label = document.getElementById('deleteDepositLabel');
+  const reason = document.getElementById('deletionReason');
+  if (!modal || !form) return;
+
+  modal.addEventListener('show.bs.modal', function (event) {
+    const button = event.relatedTarget;
+    if (!button) return;
+    form.action = button.dataset.deleteUrl;
+    label.textContent = button.dataset.recordLabel || 'this deposit';
+    reason.value = '';
+  });
+  modal.addEventListener('shown.bs.modal', function () {
+    reason.focus();
+  });
 })();
 </script>
 <script>

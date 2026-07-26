@@ -80,6 +80,7 @@ AUDIT_FIELD_LABELS = {
     'reviewed_by': 'Reviewed by',
     'date_submitted': 'Date submitted',
     'date_reviewed': 'Date reviewed',
+    'record_state': 'Record status',
     'welfare_weeks': 'Welfare weeks',
     'fine_allocations': 'Fine allocations',
     'reason': 'Reason',
@@ -527,3 +528,85 @@ def save_financial_edit(form, editor):
                 last_correction_at=timezone.now(),
             )
     return record
+
+
+def delete_deposit_with_audit(deposit_id, editor, reason):
+    """Delete a deposit while retaining a complete independent audit snapshot."""
+    reason = (reason or '').strip()
+    if len(reason) < 5:
+        raise ValidationError('Give a clear deletion reason of at least 5 characters.')
+
+    with transaction.atomic():
+        record = (
+            DepositSubmission.objects.select_for_update()
+            .select_related('member', 'account')
+            .get(pk=deposit_id)
+        )
+        before = snapshot_record(record)
+        if record.status == 'APPROVED':
+            allocations = list(
+                record.fine_allocations.select_related('fine').all()
+            )
+            if record.fine_amount > 0 and not allocations:
+                raise ValidationError(
+                    'This legacy fine payment is not linked to a specific fine. '
+                    'Edit the record and select its fine before deleting it.'
+                )
+            for allocation in allocations:
+                fine = Fine.objects.select_for_update().get(pk=allocation.fine_id)
+                fine.amount_paid = max(
+                    fine.amount_paid - allocation.amount,
+                    Decimal('0.00'),
+                )
+                fine.is_paid = fine.amount_paid >= fine.amount
+                fine.save(update_fields=['amount_paid', 'is_paid'])
+            # Generated repayments are internal effects of this deposit. Their
+            # removal makes the selected loan's live balance increase again.
+            record.generated_loan_repayments.all().delete()
+
+        settlement_year = record.payment_week.year if record.payment_week else None
+        member = record.member
+        account = record.account
+        saving_amount = record.saving_amount
+        record_id = record.pk
+        latest = (
+            FinancialRecordRevision.objects.select_for_update()
+            .filter(record_type='deposit', object_id=record_id)
+            .order_by('-revision_number')
+            .first()
+        )
+        audit_before = dict(before)
+        audit_before['record_state'] = 'Active'
+        audit_after = dict(before)
+        audit_after['record_state'] = 'Deleted'
+        FinancialRecordRevision.objects.create(
+            record_type='deposit',
+            object_id=record_id,
+            revision_number=(latest.revision_number + 1) if latest else 1,
+            before_data=audit_before,
+            after_data=audit_after,
+            reason=reason,
+            edited_by=editor,
+        )
+        record.delete()
+
+        if settlement_year:
+            from groupcore.models import FinancialYearClose
+            FinancialYearClose.objects.filter(
+                year=settlement_year,
+                state=FinancialYearClose.STATE_FINALIZED,
+            ).update(
+                needs_regeneration=True,
+                last_correction_at=timezone.now(),
+            )
+
+        # Once the saving credit is removed, an elapsed unpaid week must again
+        # be considered by the normal idempotent missed-week fine processor.
+        if saving_amount > 0 and account:
+            from groupcore.savings_calendar import ensure_overdue_fines
+            ensure_overdue_fines(
+                member=member,
+                account=account,
+                now=timezone.now(),
+            )
+    return record_id
