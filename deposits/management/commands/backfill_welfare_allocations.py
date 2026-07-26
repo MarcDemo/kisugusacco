@@ -74,10 +74,27 @@ class Command(BaseCommand):
         invalid = []
         overflow = []
         already_complete = 0
+        inferred_accounts = 0
+        normalized_weeks = 0
+        carried_forward = 0
+        entries = []
 
         for deposit in deposits:
-            if not deposit.account_id or not deposit.payment_week:
-                invalid.append((deposit.id, 'missing account or payment week'))
+            account = deposit.account
+            if not account:
+                possible_accounts = list(
+                    deposit.member.savings_accounts.filter(is_active=True)[:2]
+                )
+                if len(possible_accounts) != 1:
+                    invalid.append((
+                        deposit.id,
+                        'missing account and member does not have exactly one active account',
+                    ))
+                    continue
+                account = possible_accounts[0]
+                inferred_accounts += 1
+            if not deposit.payment_week:
+                invalid.append((deposit.id, 'missing payment week'))
                 continue
             amount = deposit.welfare_amount or Decimal('0.00')
             units, remainder = divmod(amount, WEEKLY_WELFARE)
@@ -103,39 +120,84 @@ class Command(BaseCommand):
                 already_complete += 1
                 continue
 
-            year = deposit.payment_week.year
-            weeks = weeks_cache.setdefault(year, cycle_weeks(year, settings))
-            available = [
-                week for week in weeks
-                if week not in occupied[deposit.account_id]
-            ]
-            selected = []
-            if deposit.payment_week in available:
-                selected.append(deposit.payment_week)
-                available.remove(deposit.payment_week)
-            selected.extend(available[:remaining - len(selected)])
+            preferred_week = deposit.payment_week + timedelta(
+                days=4 - deposit.payment_week.weekday()
+            )
+            if preferred_week != deposit.payment_week:
+                normalized_weeks += 1
+            entries.append({
+                'deposit': deposit,
+                'account': account,
+                'preferred_week': preferred_week,
+                'source_year': preferred_week.year,
+                'remaining': remaining,
+            })
 
-            if len(selected) != remaining:
+        # Reserve every deposit's explicit week before bulk-payment extras are
+        # spread. This prevents an early bulk deposit from consuming the exact
+        # weeks recorded by later weekly deposits.
+        for entry in entries:
+            preferred = entry['preferred_week']
+            account_id = entry['account'].id
+            weeks = weeks_cache.setdefault(
+                preferred.year, cycle_weeks(preferred.year, settings)
+            )
+            if (
+                entry['remaining'] > 0
+                and preferred in weeks
+                and preferred not in occupied[account_id]
+            ):
+                occupied[account_id].add(preferred)
+                planned.append((
+                    entry['deposit'], entry['account'], preferred
+                ))
+                entry['remaining'] -= 1
+
+        # Allocate bulk extras FIFO. If the closing-year calendar is full,
+        # preserve the money as future-year welfare prepayment.
+        for entry in entries:
+            account_id = entry['account'].id
+            selected = []
+            allocation_year = entry['source_year']
+            years_checked = 0
+            while entry['remaining'] > 0 and years_checked < 100:
+                weeks = weeks_cache.setdefault(
+                    allocation_year, cycle_weeks(allocation_year, settings)
+                )
+                available = [
+                    week for week in weeks
+                    if week not in occupied[account_id]
+                    and week not in selected
+                ]
+                take = available[:entry['remaining']]
+                selected.extend(take)
+                entry['remaining'] -= len(take)
+                allocation_year += 1
+                years_checked += 1
+            if entry['remaining'] > 0:
                 overflow.append((
-                    deposit.id,
-                    remaining,
+                    entry['deposit'].id,
+                    entry['remaining'],
                     len(selected),
                 ))
                 continue
-
             for week in selected:
-                occupied[deposit.account_id].add(week)
-                planned.append((deposit, week))
+                occupied[account_id].add(week)
+                planned.append((
+                    entry['deposit'], entry['account'], week
+                ))
+                if week.year > entry['source_year']:
+                    carried_forward += 1
 
         if commit:
             DepositWelfareAllocation.objects.bulk_create([
                 DepositWelfareAllocation(
                     deposit=deposit,
-                    account=deposit.account,
+                    account=account,
                     welfare_week=week,
                     amount=WEEKLY_WELFARE,
                 )
-                for deposit, week in planned
+                for deposit, account, week in planned
             ])
         else:
             transaction.set_rollback(True)
@@ -146,6 +208,9 @@ class Command(BaseCommand):
             f'from {len(deposits)} legacy deposit(s).'
         ))
         self.stdout.write(f'Already complete: {already_complete}')
+        self.stdout.write(f'Inferred unique accounts: {inferred_accounts}')
+        self.stdout.write(f'Normalized legacy weeks to Friday: {normalized_weeks}')
+        self.stdout.write(f'Carried into later saving years: {carried_forward}')
         self.stdout.write(f'Invalid deposits: {len(invalid)}')
         self.stdout.write(f'Overflow deposits: {len(overflow)}')
         for deposit_id, reason in invalid[:20]:

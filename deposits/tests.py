@@ -99,6 +99,38 @@ class WelfareAllocationBackfillTests(TestCase):
         self.assertFalse(invalid.welfare_allocations.exists())
         self.assertIn('Invalid deposits: 1', output.getvalue())
 
+    def test_unique_account_is_inferred_and_excess_carries_to_next_year(self):
+        deposit = DepositSubmission.objects.create(
+            member=self.member,
+            account=None,
+            submitted_by=self.member,
+            payment_week=date(2026, 7, 13),
+            payment_date=date(2026, 7, 13),
+            payment_time=time(9, 0),
+            welfare_amount=Decimal('51000'),
+            status='APPROVED',
+        )
+        output = StringIO()
+
+        call_command(
+            'backfill_welfare_allocations', '--commit', stdout=output
+        )
+
+        allocations = deposit.welfare_allocations.order_by('welfare_week')
+        self.assertEqual(allocations.count(), 51)
+        self.assertTrue(
+            allocations.filter(
+                account=self.account,
+                welfare_week=date(2026, 7, 17),
+            ).exists()
+        )
+        self.assertEqual(
+            allocations.filter(welfare_week__year=2027).count(), 1
+        )
+        self.assertIn('Inferred unique accounts: 1', output.getvalue())
+        self.assertIn('Normalized legacy weeks to Friday: 1', output.getvalue())
+        self.assertIn('Carried into later saving years: 1', output.getvalue())
+
 
 class VariableWeeklySavingsAllocationTests(TestCase):
     def setUp(self):
