@@ -939,6 +939,47 @@
               <i class="bi bi-cash-stack me-2"></i> View Expenditures
             </a>
           </li>
+
+          <li class="nav-item mt-3" id="treasurer-member-panel">
+            <div class="sidebar-heading px-3">Personal Member Panel</div>
+          </li>
+          {% if has_multiple_savings_accounts %}
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'select_savings_account' %}active{% endif %}" href="{% url 'select_savings_account' %}">
+              <i class="bi bi-diagram-3 me-2"></i> Switch My Savings Account
+            </a>
+          </li>
+          {% endif %}
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'member_dashboard' %}active{% endif %}" href="{% url 'member_dashboard' %}">
+              <i class="bi bi-house-door me-2"></i> My Member Dashboard
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'submit_deposit' %}active{% endif %}" href="{% url 'submit_deposit' %}">
+              <i class="bi bi-wallet2 me-2"></i> Submit My Deposit
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_contributions' %}active{% endif %}" href="{% url 'my_contributions' %}">
+              <i class="bi bi-cash-stack me-2"></i> My Contributions
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'request_loan' %}active{% endif %}" href="{% url 'request_loan' %}">
+              <i class="bi bi-cash-coin me-2"></i> Request My Loan
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_loans' %}active{% endif %}" href="{% url 'my_loans' %}">
+              <i class="bi bi-bank me-2"></i> My Loans
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_fines' %}active{% endif %}" href="{% url 'my_fines' %}">
+              <i class="bi bi-exclamation-circle me-2"></i> My Fines
+            </a>
+          </li>
         {% endif %}
 
         {% if request.user.is_chairman or request.user.is_vice_chairman or request.user.is_overseer %}

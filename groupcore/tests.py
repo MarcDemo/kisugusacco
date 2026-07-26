@@ -542,6 +542,33 @@ class TreasurerMemberDashboardPreviewTests(TestCase):
         self.assertRedirects(response, reverse('member_dashboard'))
 
 
+class TreasurerPersonalMemberPanelTests(TestCase):
+    def setUp(self):
+        self.treasurer = MemberProfile.objects.create_user(
+            username='personal-panel-treasurer',
+            password='pass12345',
+            role='TREASURER',
+        )
+        SavingsAccount.objects.create(owner=self.treasurer, label='Personal')
+
+    def test_treasurer_sidebar_contains_personal_member_tools(self):
+        self.client.login(
+            username=self.treasurer.username, password='pass12345'
+        )
+
+        response = self.client.get(reverse('treasurer_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="treasurer-member-panel"')
+        self.assertContains(response, 'Personal Member Panel')
+        self.assertContains(response, reverse('member_dashboard'))
+        self.assertContains(response, reverse('submit_deposit'))
+        self.assertContains(response, reverse('my_contributions'))
+        self.assertContains(response, reverse('request_loan'))
+        self.assertContains(response, reverse('my_loans'))
+        self.assertContains(response, reverse('my_fines'))
+
+
 class GroupSettingsSetupTests(TestCase):
     def setUp(self):
         self.treasurer = MemberProfile.objects.create_user(
