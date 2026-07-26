@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+  .audit-timeline { position: relative; }
+  .audit-change { border: 1px solid #e3e9e5; border-radius: .85rem; overflow: hidden; }
+  .audit-field { background: #f8faf9; border-bottom: 1px solid #e3e9e5; font-weight: 650; padding: .65rem 1rem; }
+  .audit-value { min-height: 100%; padding: .85rem 1rem; overflow-wrap: anywhere; }
+  .audit-before { background: #fff5f5; color: #842029; }
+  .audit-after { background: #eefaf3; color: #146c43; }
+  .audit-arrow { color: #6c757d; font-size: 1.1rem; }
+  @media (max-width: 767.98px) {
+    .audit-arrow { transform: rotate(90deg); }
+  }
+</style>
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div><div class="small text-uppercase text-muted">Financial audit</div><h2 class="mb-0">{{ record_type|title }} #{{ record.pk }}</h2><div class="text-muted">{{ record }}</div></div>
+    {% if can_edit %}<a class="btn btn-success" href="{% url 'financial_record_edit' record_type record.pk %}">Edit record</a>{% endif %}
+  </div>
+  {% for item in revision_items %}
+  {% with revision=item.revision %}
+  <article class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2 py-3">
+      <div><span class="badge text-bg-success me-2">Revision {{ revision.revision_number }}</span><strong>{{ item.changes|length }} change{{ item.changes|length|pluralize }}</strong></div>
+      <span class="text-muted"><i class="bi bi-clock me-1"></i>{{ revision.edited_at|date:"d M Y, H:i" }}</span>
+    </div>
+    <div class="card-body">
+      <div class="d-flex flex-wrap gap-3 mb-3">
+        <span><i class="bi bi-person-check text-success me-1"></i><strong>Edited by:</strong> {{ revision.edited_by.get_full_name|default:revision.edited_by.username }}</span>
+        <span><i class="bi bi-chat-left-text text-success me-1"></i><strong>Reason:</strong> {{ revision.reason }}</span>
+      </div>
+      <div class="d-grid gap-3">
+        {% for change in item.changes %}
+        <section class="audit-change">
+          <div class="audit-field">{{ change.label }}</div>
+          <div class="row g-0 align-items-stretch">
+            <div class="col-md audit-value audit-before"><small class="d-block text-uppercase fw-semibold mb-1">Before</small>{{ change.before }}</div>
+            <div class="col-md-auto d-flex align-items-center justify-content-center bg-white px-3 py-2 audit-arrow"><i class="bi bi-arrow-right"></i></div>
+            <div class="col-md audit-value audit-after"><small class="d-block text-uppercase fw-semibold mb-1">After</small><strong>{{ change.after }}</strong></div>
+          </div>
+        </section>
+        {% empty %}
+        <div class="alert alert-secondary mb-0">No visible field changes were recorded in this revision.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </article>
+  {% endwith %}
+  {% empty %}<div class="alert alert-info">This record has not been edited.</div>{% endfor %}
+</div>
+{% endblock %}

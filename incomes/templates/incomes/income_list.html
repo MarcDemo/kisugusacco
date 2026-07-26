@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load humanize %}
+{% load humanize financial_audit %}
 
 {% block content %}
 <style>
@@ -224,6 +224,7 @@
             <th>Source</th>
             <th>Submitted By</th>
             <th>Remarks</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -248,6 +249,7 @@
                   <span class="badge text-bg-primary">Live Entry</span>
                 {% endif %}
               </td>
+              <td>{% revision_count 'deposit' deposit.id as edits %}{% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %} <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'deposit' deposit.id %}">Inspect</a> <a class="btn btn-sm btn-outline-primary" href="{% url 'financial_record_edit' 'deposit' deposit.id %}">Edit</a></td>
               <td>
                 {% if deposit.submitted_by %}
                   {{ deposit.submitted_by.get_full_name|default:deposit.submitted_by.username }}
@@ -318,6 +320,7 @@
               <th class="amount-cell">Amount</th>
               <th>Remarks</th>
               <th>Recorded By</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -335,10 +338,11 @@
                     -
                   {% endif %}
                 </td>
+                <td>{% revision_count 'share' share.id as edits %}{% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %} <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'share' share.id %}">Inspect</a> <a class="btn btn-sm btn-outline-primary" href="{% url 'financial_record_edit' 'share' share.id %}">Edit</a></td>
               </tr>
             {% empty %}
               <tr>
-                <td colspan="6" class="text-center text-muted">No manual share records for {{ selected_year }}.</td>
+                <td colspan="7" class="text-center text-muted">No manual share records for {{ selected_year }}.</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -356,6 +360,7 @@
               <th>Status</th>
               <th>Paid On</th>
               <th>Recorded By</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -371,6 +376,7 @@
                     <span class="badge bg-warning text-dark">Pending</span>
                   {% endif %}
                 </td>
+                <td>{% revision_count 'subscription' subscription.id as edits %}{% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %} <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'subscription' subscription.id %}">Inspect</a> <a class="btn btn-sm btn-outline-primary" href="{% url 'financial_record_edit' 'subscription' subscription.id %}">Edit</a></td>
                 <td>{{ subscription.paid_on|default:"-" }}</td>
                 <td>
                   {% if subscription.recorded_by %}

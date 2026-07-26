@@ -12,6 +12,7 @@ class LoanRequest(models.Model):
     STATUS_APPROVED = 'APPROVED'
     STATUS_REJECTED = 'REJECTED'
     STATUS_REJECTED_GUARANTOR = 'REJECTED_GUARANTOR'
+    STATUS_SETTLED = 'SETTLED'
 
     STATUS_CHOICES = [
         (STATUS_PENDING_GUARANTOR, 'Pending Guarantor Approval'),
@@ -19,6 +20,7 @@ class LoanRequest(models.Model):
         (STATUS_APPROVED, 'Approved'),
         (STATUS_REJECTED, 'Rejected'),
         (STATUS_REJECTED_GUARANTOR, 'Rejected by Guarantor'),
+        (STATUS_SETTLED, 'Closed at Year-End Settlement'),
     ]
 
     member = models.ForeignKey(MemberProfile, on_delete=models.CASCADE, related_name='loan_requests')
@@ -45,6 +47,10 @@ class LoanRequest(models.Model):
     )
     import_batch = models.CharField(max_length=120, blank=True, null=True)
     imported_at = models.DateTimeField(blank=True, null=True)
+    settlement_closed_on = models.DateTimeField(null=True, blank=True)
+    settlement_loss = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00')
+    )
 
     def clean(self):
         if self.principal <= 0:
@@ -100,7 +106,7 @@ class LoanRequest(models.Model):
         return max(months, 0)
 
     def amount_paid_as_of(self, as_of_date=None):
-        as_of_date = as_of_date or timezone.now().date()
+        as_of_date = as_of_date or timezone.localdate()
         total = Decimal('0.00')
         for repayment in self.repayments.all():
             if repayment.paid_on <= as_of_date:
@@ -119,7 +125,36 @@ class LoanRequest(models.Model):
           month's interest charge.
         - This continues beyond the agreed duration (extra/overdue months).
         """
-        as_of_date = as_of_date or timezone.now().date()
+        as_of_date = as_of_date or timezone.localdate()
+        if self.status == self.STATUS_SETTLED:
+            return {
+                'balance': Decimal('0.00'),
+                'paid': self.amount_paid_as_of(as_of_date),
+                'interest': Decimal('0.00'),
+                'months_elapsed': 0,
+            }
+        if self.pk:
+            frozen = (
+                self.year_end_snapshots.filter(
+                    financial_year__state='LOCKED_REVIEW',
+                    frozen_at__date__lte=as_of_date,
+                )
+                .order_by('-financial_year__year')
+                .first()
+            )
+            if frozen:
+                paid = self.amount_paid_as_of(frozen.frozen_at.date())
+                return {
+                    'balance': frozen.frozen_balance,
+                    'paid': paid,
+                    'interest': max(
+                        frozen.frozen_balance + paid - self.principal,
+                        Decimal('0.00'),
+                    ),
+                    'months_elapsed': self._elapsed_full_months(
+                        self._accrual_anchor_date(), frozen.frozen_at.date()
+                    ),
+                }
         anchor = self._accrual_anchor_date()
         if as_of_date < anchor:
             return {
@@ -178,7 +213,7 @@ class LoanRequest(models.Model):
     def overdue_months_as_of(self, as_of_date=None):
         if self.status != 'APPROVED' or not self.duration_months:
             return 0
-        as_of_date = as_of_date or timezone.now().date()
+        as_of_date = as_of_date or timezone.localdate()
         months_elapsed = self._elapsed_full_months(self._accrual_anchor_date(), as_of_date)
         return max(months_elapsed - self.duration_months, 0)
 
@@ -186,7 +221,7 @@ class LoanRequest(models.Model):
         if self.status != 'APPROVED':
             return Decimal('0.00')
 
-        as_of_date = as_of_date or timezone.now().date()
+        as_of_date = as_of_date or timezone.localdate()
         overdue_months = self.overdue_months_as_of(as_of_date)
         if overdue_months <= 0:
             return Decimal('0.00')
@@ -359,6 +394,12 @@ class LoanApprovalAudit(models.Model):
 class LoanRepayment(models.Model):
     loan = models.ForeignKey(LoanRequest, on_delete=models.CASCADE, related_name='repayments')
     amount = models.DecimalField(max_digits=12, decimal_places=2)
+    principal_component = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00')
+    )
+    interest_component = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00')
+    )
     paid_on = models.DateField(default=timezone.now)
     recorded_by = models.ForeignKey(
         MemberProfile,
@@ -366,6 +407,13 @@ class LoanRepayment(models.Model):
         null=True,
         blank=True,
         related_name='recorded_loan_repayments',
+    )
+    source_deposit = models.ForeignKey(
+        'deposits.DepositSubmission',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='generated_loan_repayments',
     )
     notes = models.CharField(max_length=255, blank=True)
     import_reference = models.CharField(
@@ -387,6 +435,30 @@ class LoanRepayment(models.Model):
             raise ValidationError({'amount': 'Repayment amount must be greater than zero.'})
         if self.loan_id and self.loan.status != 'APPROVED':
             raise ValidationError({'loan': 'Repayments can only be recorded for approved loans.'})
+        component_total = (
+            (self.principal_component or Decimal('0.00'))
+            + (self.interest_component or Decimal('0.00'))
+        )
+        if component_total and component_total != self.amount:
+            raise ValidationError(
+                'Principal and interest components must equal the repayment amount.'
+            )
+
+    def save(self, *args, **kwargs):
+        if self.loan_id and not self.pk and not (
+            self.principal_component or self.interest_component
+        ):
+            accrued = self.loan._simulate_balance_as_of(self.paid_on)['interest']
+            previously_collected = (
+                self.loan.repayments.aggregate(
+                    total=models.Sum('interest_component')
+                )['total']
+                or Decimal('0.00')
+            )
+            interest_due = max(accrued - previously_collected, Decimal('0.00'))
+            self.interest_component = min(self.amount, interest_due)
+            self.principal_component = self.amount - self.interest_component
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Repayment {self.id} - Loan {self.loan_id} - UGX {self.amount}"

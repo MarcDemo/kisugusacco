@@ -209,7 +209,7 @@
                 <td>{{ fine.date_issued|date:"M d, Y" }}</td>
                 <td>{{ fine.member.username }}</td>
                 <td>UGX {{ fine.amount|intcomma }}</td>
-                <td>{% if fine.is_paid %}<span class="badge bg-success">Paid</span>{% else %}<span class="badge bg-danger">Unpaid</span>{% endif %}</td>
+                <td>{% if fine.is_voided %}<span class="badge bg-secondary">Voided</span>{% elif fine.is_paid %}<span class="badge bg-success">Paid</span>{% else %}<span class="badge bg-danger">Unpaid</span>{% endif %}</td>
               </tr>
               {% empty %}
               <tr><td colspan="4" class="text-center text-muted">No recent fines.</td></tr>

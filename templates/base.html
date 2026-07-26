@@ -860,6 +860,11 @@
               <i class="bi bi-exclamation-circle me-2"></i> My Fines
             </a>
           </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'year_end_settlement' %}active{% endif %}" href="{% url 'year_end_settlement' %}">
+              <i class="bi bi-cash-stack me-2"></i> My Settlement
+            </a>
+          </li>
         {% endif %}
 
         {% if request.user.is_treasurer %}
@@ -953,6 +958,11 @@
           <li class="nav-item">
             <a class="nav-link {% if request.resolver_match.url_name == 'manage_users' or request.resolver_match.url_name == 'user_detail' or request.resolver_match.url_name == 'edit_user' %}active{% endif %}" href="{% url 'manage_users' %}">
               <i class="bi bi-person-gear me-2"></i> Manage Users
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'year_end_settlement' %}active{% endif %}" href="{% url 'year_end_settlement' %}">
+              <i class="bi bi-calendar2-check me-2"></i> Year-End Settlement
             </a>
           </li>
           <li class="nav-item">
@@ -1077,6 +1087,11 @@
               <i class="bi bi-bank me-2"></i> Loan Statuses
             </a>
           </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'year_end_settlement' %}active{% endif %}" href="{% url 'year_end_settlement' %}">
+              <i class="bi bi-calendar2-check me-2"></i> Year-End Settlement
+            </a>
+          </li>
 
           <li class="nav-item mt-3"><div class="sidebar-heading px-3">Member Panel</div></li>
           <li class="nav-item">
@@ -1143,6 +1158,11 @@
           <li class="nav-item">
             <a class="nav-link {% if request.resolver_match.url_name == 'my_fines' %}active{% endif %}" href="{% url 'my_fines' %}">
               <i class="bi bi-exclamation-circle me-2"></i> My Fines
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'year_end_settlement' %}active{% endif %}" href="{% url 'year_end_settlement' %}">
+              <i class="bi bi-cash-stack me-2"></i> My Settlement
             </a>
           </li>
         {% endif %}

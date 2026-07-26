@@ -1,6 +1,7 @@
 from django import forms
 from .models import Fine
 from groupcore.models import MemberProfile, SavingsAccount
+from groupcore.member_query import alphabetical_members
 
 class FineForm(forms.ModelForm):
     class Meta:
@@ -9,6 +10,9 @@ class FineForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['member'].queryset = alphabetical_members(
+            MemberProfile.objects.filter(is_superuser=False)
+        )
 
         member_id = None
         if self.is_bound:

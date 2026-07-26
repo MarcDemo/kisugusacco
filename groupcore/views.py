@@ -4,7 +4,8 @@ from django.conf import settings as django_settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import JsonResponse, Http404
+from django.core.exceptions import ValidationError
 from .models import MemberProfile
 from .forms import GroupSettingsForm, MemberRegistrationForm
 from django.contrib.auth.decorators import login_required
@@ -14,12 +15,19 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from deposits.models import DepositSubmission
 from django.utils import timezone
 from fines.models import Fine
+from deposits.welfare_calendar import build_welfare_calendar
 from django.db.models import Sum, Q
 from incomes.models import ShareContribution, AnnualSubscription
 from Assets_Expenditures.models import Expenditure, Asset
 from documents.models import Document
 from .forms import ProfileForm
-from groupcore.models import GroupSettings
+from groupcore.models import (
+    AccountSettlement,
+    FinancialRecordRevision,
+    FinancialYearClose,
+    GroupSettings,
+    SettlementLoanAllocation,
+)
 from groupcore.reporting import merge_year_options, parse_report_year, years_from_dates
 from groupcore.week_cycle import current_saving_week, first_friday_of_year
 from datetime import date, timedelta
@@ -30,8 +38,24 @@ from django.core.mail import send_mail
 import random, datetime
 from django.core.mail import EmailMultiAlternatives
 from groupcore.account_context import get_active_account, get_user_active_accounts, set_active_account
-from groupcore.savings_calendar import build_weekly_calendar
+from groupcore.savings_calendar import build_weekly_calendar, second_friday_of_december
 from deposits.rules import weekly_savings_paid
+from groupcore.financial_records import (
+    RECORD_MODELS,
+    can_inspect_record,
+    financial_record_form_class,
+    revision_changes,
+    save_financial_edit,
+)
+from groupcore.member_query import alphabetical_members
+from groupcore.year_close import (
+    ensure_automatic_year_lock,
+    financial_year,
+    finalize_financial_year,
+    lock_financial_year,
+    pending_at_cutoff,
+    record_payout,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -456,7 +480,7 @@ def treasurer_dashboard(request):
     pending_deposits_amount = DepositSubmission.objects.filter(status='PENDING', member__is_superuser=False).aggregate(total=Sum('amount'))['total'] or 0
 
     # Sum of unpaid fines
-    total_unpaid_fines = sum((fine.outstanding_amount for fine in Fine.objects.filter(is_paid=False, member__is_superuser=False)), Decimal('0'))
+    total_unpaid_fines = sum((fine.outstanding_amount for fine in Fine.objects.filter(is_paid=False, is_voided=False, member__is_superuser=False)), Decimal('0'))
 
     # Recent deposit submissions
     recent_deposits = DepositSubmission.objects.filter(member__is_superuser=False).select_related('member').order_by('-date_submitted')[:10]
@@ -498,8 +522,15 @@ def treasurer_dashboard(request):
 
 def _member_dashboard_context(member, active_account=None):
     """Build the dashboard data used by both members and Treasurer previews."""
+    settings = GroupSettings.get_active()
+    saving_year = (
+        current_saving_week(settings.week_one_start, timezone.localdate()).saving_year
+        if settings else timezone.localdate().year
+    )
     approved_group_qs = DepositSubmission.objects.filter(status='APPROVED', member__is_superuser=False)
     approved_member_qs = DepositSubmission.objects.filter(member=member, status='APPROVED')
+    approved_group_qs = approved_group_qs.filter(payment_week__year=saving_year)
+    approved_member_qs = approved_member_qs.filter(payment_week__year=saving_year)
 
     if active_account:
         approved_member_qs = approved_member_qs.filter(account=active_account)
@@ -512,7 +543,7 @@ def _member_dashboard_context(member, active_account=None):
     weeks_paid = week_progress['paid_weeks_count'] if week_progress['cycle_open'] else approved_member_qs.values('payment_week').distinct().count()
 
     
-    outstanding_fines_qs = Fine.objects.filter(member=member, is_paid=False)
+    outstanding_fines_qs = Fine.objects.filter(member=member, is_paid=False, is_voided=False)
     if active_account:
         outstanding_fines_qs = outstanding_fines_qs.filter(account=active_account)
     outstanding_fines = sum((fine.outstanding_amount for fine in outstanding_fines_qs), Decimal('0'))
@@ -526,16 +557,9 @@ def _member_dashboard_context(member, active_account=None):
     member_purpose_totals = _deposit_purpose_totals(approved_member_qs)
     group_purpose_totals = _deposit_purpose_totals(approved_group_qs)
 
-    current_year = timezone.now().year
-    welfare_due_qs = DepositSubmission.objects.filter(
-        member=member,
-        status='APPROVED',
-        payment_week__year=current_year,
-        saving_amount__gt=0,
-    )
-    if active_account:
-        welfare_due_qs = welfare_due_qs.filter(account=active_account)
-    welfare_due = welfare_due_qs.count() * 1000
+    current_year = saving_year
+    welfare_calendar = build_welfare_calendar(member, active_account)
+    welfare_due = welfare_calendar.get('summary', {}).get('outstanding', Decimal('0.00'))
     annual_subscription_due = 10000
     annual_subscription_paid = AnnualSubscription.objects.filter(member=member, year=current_year, is_paid=True).exists()
     share_total = approved_member_qs.aggregate(total=Sum('shares_amount'))['total'] or 0
@@ -543,7 +567,10 @@ def _member_dashboard_context(member, active_account=None):
     approved_loans_qs = LoanRequest.objects.filter(member=member, status='APPROVED')
     if active_account:
         approved_loans_qs = approved_loans_qs.filter(account=active_account)
-    outstanding_loans = approved_loans_qs.aggregate(total=Sum('principal'))['total'] or 0
+    outstanding_loans = sum(
+        (loan.outstanding_balance for loan in approved_loans_qs.prefetch_related('repayments')),
+        Decimal('0.00'),
+    )
     my_total_loan_interest = _loan_interest_total(approved_loans_qs)
 
     return {
@@ -564,6 +591,8 @@ def _member_dashboard_context(member, active_account=None):
         'my_total_loan_interest': my_total_loan_interest,
         'week_progress': week_progress,
         'savings_calendar': savings_calendar,
+        'welfare_calendar': welfare_calendar,
+        'current_saving_year': saving_year,
     }
 
 
@@ -587,7 +616,7 @@ def treasurer_member_preview(request, member_id=None):
         return redirect('member_dashboard')
 
     search_query = request.GET.get('q', '').strip()
-    members = MemberProfile.objects.exclude(is_superuser=True).order_by('first_name', 'last_name', 'username')
+    members = alphabetical_members(MemberProfile.objects.exclude(is_superuser=True))
     if search_query:
         members = members.filter(
             Q(username__icontains=search_query)
@@ -856,76 +885,182 @@ def overseer_dashboard(request):
 
 @login_required
 def year_end_settlement(request):
-    if not (request.user.is_treasurer() or _is_leadership(request.user)):
-        messages.error(request, "Access denied.")
-        return redirect('member_dashboard')
-
-    current_year = timezone.now().year
+    group_viewer = (
+        request.user.is_treasurer()
+        or _is_leadership(request.user)
+        or request.user.is_secretary()
+    )
+    ensure_automatic_year_lock()
+    current_year = timezone.localdate().year
     target_year = parse_report_year(request.GET.get('year'), default_year=current_year)
-    members = MemberProfile.objects.exclude(is_superuser=True)
-    rows = []
-
-    approved_deposits_base = DepositSubmission.objects.filter(status='APPROVED', member__is_superuser=False)
-    approved_loans_base = LoanRequest.objects.filter(status='APPROVED', member__is_superuser=False)
-    years = merge_year_options(
-        years_from_dates(approved_deposits_base, 'payment_week'),
-        years_from_dates(approved_loans_base, 'approved_on'),
-        selected_year=target_year,
-        default_year=current_year,
+    state = financial_year(target_year)
+    years = sorted(
+        set(FinancialYearClose.objects.values_list('year', flat=True))
+        | {current_year, target_year},
+        reverse=True,
     )
+    versions = state.versions.all()
+    try:
+        selected_version = int(request.GET.get('version') or state.current_version or 1)
+    except (TypeError, ValueError):
+        selected_version = state.current_version or 1
+    version = versions.filter(version=selected_version).first()
+    if not version and state.current_version:
+        version = versions.filter(version=state.current_version).first()
+    rows = AccountSettlement.objects.none()
+    if version:
+        rows = version.account_settlements.select_related(
+            'member', 'account'
+        ).prefetch_related('payments')
+        if not group_viewer:
+            rows = rows.filter(member=request.user)
 
-    approved_deposits_year = approved_deposits_base.filter(payment_week__year=target_year)
-    group_savings_total = Decimal(
-        approved_deposits_year.aggregate(total=Sum('saving_amount'))['total'] or 0
+    pending_count = pending_at_cutoff(state).count()
+    can_lock = (
+        request.user.is_treasurer()
+        and state.state == FinancialYearClose.STATE_OPEN
+        and timezone.localdate() >= state.scheduled_closing_date
     )
-    approved_loans_year = approved_loans_base.filter(approved_on__year=target_year)
-    loan_interest_pool = _loan_interest_total(approved_loans_year)
-
-    for member in members:
-        approved_deposits = member.deposits.filter(status='APPROVED', payment_week__year=target_year)
-        agg = approved_deposits.aggregate(
-            save=Sum('saving_amount'),
-            welfare=Sum('welfare_amount'),
-            annual=Sum('annual_subscription_amount'),
-            fine=Sum('fine_amount'),
-            shares=Sum('shares_amount'),
+    can_finalize = (
+        request.user.is_treasurer()
+        and state.state == FinancialYearClose.STATE_LOCKED
+        and pending_count == 0
+    )
+    can_regenerate = (
+        request.user.is_treasurer()
+        and state.state == FinancialYearClose.STATE_FINALIZED
+        and state.needs_regeneration
+    )
+    allocations = SettlementLoanAllocation.objects.none()
+    if version and group_viewer:
+        allocations = version.loan_allocations.select_related(
+            'loan_snapshot__loan', 'member', 'account'
         )
-        saving_total = Decimal(agg['save'] or 0)
-        welfare_total = Decimal(agg['welfare'] or 0)
-        annual_total = Decimal(agg['annual'] or 0)
-        fine_total = Decimal(agg['fine'] or 0)
-        shares_total = Decimal(agg['shares'] or 0)
-        if group_savings_total > 0:
-            interest_share = (loan_interest_pool * saving_total) / group_savings_total
-        else:
-            interest_share = Decimal('0')
-
-        total_deductions = welfare_total + fine_total + annual_total
-        gross_distribution = saving_total + interest_share
-        net_share = gross_distribution - total_deductions
-
-        rows.append({
-            'member': member,
-            'saving_total': saving_total,
-            'interest_share': interest_share,
-            'gross_distribution': gross_distribution,
-            'shares_total': shares_total,
-            'welfare_total': welfare_total,
-            'fine_total': fine_total,
-            'annual_total': annual_total,
-            'net_share': net_share,
-        })
-
-    today = timezone.localdate()
-    is_current_year = target_year == current_year
-    is_settlement_day = today == date(target_year, 12, 11)
-
     return render(request, 'groupcore/year_end_settlement.html', {
         'rows': rows,
+        'state': state,
+        'version': version,
+        'versions': versions,
         'target_year': target_year,
         'years': years,
-        'is_current_year': is_current_year,
-        'is_settlement_day': is_settlement_day,
-        'loan_interest_pool': loan_interest_pool,
-        'group_savings_total': group_savings_total,
+        'pending_count': pending_count,
+        'group_viewer': group_viewer,
+        'can_lock': can_lock,
+        'can_finalize': can_finalize,
+        'can_regenerate': can_regenerate,
+        'can_manage': request.user.is_treasurer(),
+        'allocations': allocations,
+    })
+
+
+@login_required
+def lock_year_end(request, year):
+    if request.method != 'POST' or not request.user.is_treasurer():
+        messages.error(request, 'Only the treasurer can close the financial year.')
+        return redirect('year_end_settlement')
+    try:
+        lock_financial_year(year, request.user)
+    except ValidationError as exc:
+        messages.error(request, '; '.join(exc.messages))
+    else:
+        messages.success(
+            request,
+            f'{year} submissions are locked. Resolve the pending queue before finalizing.',
+        )
+    return redirect(f"{reverse('year_end_settlement')}?year={year}")
+
+
+@login_required
+def finalize_year_end(request, year):
+    if request.method != 'POST' or not request.user.is_treasurer():
+        messages.error(request, 'Only the treasurer can finalize the settlement.')
+        return redirect('year_end_settlement')
+    try:
+        version = finalize_financial_year(year, request.user)
+    except (ValidationError, FinancialYearClose.DoesNotExist) as exc:
+        messages.error(
+            request,
+            '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc),
+        )
+    else:
+        messages.success(
+            request, f'{year} settlement version {version.version} was finalized.'
+        )
+    return redirect(f"{reverse('year_end_settlement')}?year={year}")
+
+
+@login_required
+def record_settlement_payout(request, settlement_id):
+    item = get_object_or_404(AccountSettlement, pk=settlement_id)
+    year = item.settlement_version.financial_year.year
+    if request.method != 'POST' or not request.user.is_treasurer():
+        messages.error(request, 'Only the treasurer can record payouts.')
+        return redirect(f"{reverse('year_end_settlement')}?year={year}")
+    try:
+        record_payout(
+            item,
+            request.POST.get('amount'),
+            date.fromisoformat(request.POST.get('paid_on')),
+            (request.POST.get('reference') or '').strip(),
+            (request.POST.get('notes') or '').strip(),
+            request.user,
+        )
+    except (ValidationError, ValueError, TypeError) as exc:
+        messages.error(
+            request,
+            '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc),
+        )
+    else:
+        messages.success(request, 'Settlement payout recorded.')
+    return redirect(f"{reverse('year_end_settlement')}?year={year}")
+
+
+@login_required
+def financial_record_edit(request, record_type, object_id):
+    if not request.user.is_treasurer():
+        messages.error(request, 'Only the treasurer can edit financial records.')
+        return redirect('member_dashboard')
+    model = RECORD_MODELS.get(record_type)
+    if not model:
+        raise Http404
+    record = get_object_or_404(model, pk=object_id)
+    form_class = financial_record_form_class(record_type)
+    if request.method == 'POST':
+        form = form_class(request.POST, request.FILES, instance=record, record_type=record_type)
+        if form.is_valid():
+            try:
+                record = save_financial_edit(form, request.user)
+            except ValidationError as exc:
+                form.add_error(None, exc)
+            else:
+                messages.success(request, 'Financial record corrected and audit history saved.')
+                return redirect('financial_record_history', record_type=record_type, object_id=record.pk)
+    else:
+        form = form_class(instance=record, record_type=record_type)
+    return render(request, 'groupcore/financial_record_edit.html', {
+        'form': form, 'record': record, 'record_type': record_type,
+    })
+
+
+@login_required
+def financial_record_history(request, record_type, object_id):
+    model = RECORD_MODELS.get(record_type)
+    if not model:
+        raise Http404
+    record = get_object_or_404(model, pk=object_id)
+    if not can_inspect_record(request.user, record):
+        messages.error(request, 'You do not have permission to inspect this record.')
+        return redirect('member_dashboard')
+    revisions = FinancialRecordRevision.objects.filter(
+        record_type=record_type, object_id=object_id
+    ).select_related('edited_by')
+    revision_items = [
+        {'revision': revision, 'changes': revision_changes(revision)}
+        for revision in revisions
+    ]
+    return render(request, 'groupcore/financial_record_history.html', {
+        'record': record,
+        'record_type': record_type,
+        'revision_items': revision_items,
+        'can_edit': request.user.is_treasurer(),
     })

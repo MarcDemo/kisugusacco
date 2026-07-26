@@ -1,88 +1,109 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="container py-4">
-  <h2 class="mb-3 text-primary">Year-End Settlement {{ target_year }}</h2>
-
-  <form method="get" class="d-flex flex-wrap align-items-end gap-2 mb-3">
+<div class="container-fluid py-4">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
     <div>
-      <label for="settlement-year" class="form-label small text-muted mb-1">Settlement Year</label>
-      <select id="settlement-year" name="year" class="form-select form-select-sm">
-        {% for year in years %}
-          <option value="{{ year }}" {% if year == target_year %}selected{% endif %}>{{ year }}</option>
-        {% endfor %}
-      </select>
+      <div class="text-uppercase small text-muted fw-semibold">Controlled financial-year close</div>
+      <h2 class="mb-1">Settlement {{ target_year }}</h2>
+      <div class="text-muted">Scheduled close: {{ state.scheduled_closing_date|date:"d F Y" }}</div>
     </div>
-    <button type="submit" class="btn btn-primary btn-sm">View Year</button>
-  </form>
-
-  <div class="d-flex flex-wrap align-items-center gap-2 small mb-3">
-    <span class="text-muted fw-semibold">Legend:</span>
-    <span class="badge text-bg-primary">Savings</span>
-    <span class="badge text-bg-secondary">Distributed Interest</span>
-    <span class="badge text-bg-dark">Gross Distribution</span>
-    <span class="badge text-bg-info text-dark">Shares</span>
-    <span class="badge text-bg-success">Welfare</span>
-    <span class="badge text-bg-danger">Fines</span>
-    <span class="badge text-bg-warning text-dark">Annual</span>
-    <span class="badge text-bg-dark">Net Share</span>
+    <form method="get" class="d-flex gap-2">
+      <select name="year" class="form-select">
+        {% for year in years %}<option value="{{ year }}" {% if year == target_year %}selected{% endif %}>{{ year }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-outline-primary">View</button>
+    </form>
   </div>
 
-  {% if is_current_year and not is_settlement_day %}
-  <div class="alert alert-warning">
-    Settlement closing day is December 11. This page currently shows a live preview.
+  <div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><small class="text-muted">State</small><div class="fs-5 fw-bold">{% if state.state == 'OPEN' %}<span class="text-success">Open</span>{% elif state.state == 'LOCKED_REVIEW' %}<span class="text-warning">Locked — Review</span>{% else %}<span class="text-primary">Finalized</span>{% endif %}</div></div></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><small class="text-muted">Eligible pending</small><div class="fs-5 fw-bold {% if pending_count %}text-danger{% endif %}">{{ pending_count }}</div></div></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><small class="text-muted">Actual cutoff</small><div class="fw-bold">{{ state.cutoff_at|date:"d M Y, H:i"|default:"Not locked" }}</div></div></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><small class="text-muted">Current version</small><div class="fs-5 fw-bold">{{ state.current_version|default:"—" }}</div></div></div></div>
   </div>
-  {% elif not is_current_year %}
-  <div class="alert alert-info">
-    Viewing the historical settlement calculation for {{ target_year }}.
+
+  {% if can_manage %}
+  {% if state.needs_regeneration %}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>A finalized financial record was corrected on {{ state.last_correction_at|date:"d M Y, H:i" }}. Regenerate the settlement to publish a new immutable version.</div>{% endif %}
+  <div class="card border-0 shadow-sm mb-4"><div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-3">
+    <div>
+      {% if state.state == 'OPEN' %}<strong>Ready to lock submissions?</strong><div class="small text-muted">All records submitted before the lock time remain eligible.</div>
+      {% elif pending_count %}<strong>Settlement is blocked.</strong><div class="small text-danger">Approve or reject all {{ pending_count }} eligible pending record{{ pending_count|pluralize }}.</div>
+      {% else %}<strong>{% if state.state == 'FINALIZED' %}Regenerate after an audited correction{% else %}Ready to finalize{% endif %}</strong><div class="small text-muted">This creates a new immutable settlement version.</div>{% endif %}
+    </div>
+    {% if can_lock %}
+    <form method="post" action="{% url 'lock_year_end' target_year %}" onsubmit="return confirm('Lock all old-year submissions and freeze loans?');">{% csrf_token %}<button class="btn btn-warning"><i class="bi bi-lock me-1"></i>Lock financial year</button></form>
+    {% elif can_finalize or can_regenerate %}
+    <form method="post" action="{% url 'finalize_year_end' target_year %}" onsubmit="return confirm('Create a new immutable settlement version?');">{% csrf_token %}<button class="btn btn-success"><i class="bi bi-check2-circle me-1"></i>{% if state.state == 'FINALIZED' %}Regenerate settlement{% else %}Finalize settlement{% endif %}</button></form>
+    {% endif %}
+  </div></div>
+  {% endif %}
+
+  {% if versions %}
+  <div class="d-flex align-items-end gap-2 mb-3">
+    <form method="get" class="d-flex align-items-end gap-2">
+      <input type="hidden" name="year" value="{{ target_year }}">
+      <div><label class="form-label small text-muted">Settlement version</label><select name="version" class="form-select form-select-sm">{% for item in versions %}<option value="{{ item.version }}" {% if version and item.version == version.version %}selected{% endif %}>Version {{ item.version }} · {{ item.created_at|date:"d M Y H:i" }}</option>{% endfor %}</select></div>
+      <button class="btn btn-sm btn-outline-secondary">Open version</button>
+    </form>
   </div>
   {% endif %}
 
-  <div class="row g-3 mb-3">
-    <div class="col-md-6">
-      <div class="alert alert-info mb-0">
-        Group Savings Pool: <strong>UGX {{ group_savings_total|floatformat:'0' }}</strong>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="alert alert-success mb-0">
-        Loan Interest Pool to Distribute: <strong>UGX {{ loan_interest_pool|floatformat:'0' }}</strong>
-      </div>
-    </div>
+  {% if version %}
+  <div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="alert alert-primary mb-0">Savings<br><strong>UGX {{ version.total_savings|floatformat:"0" }}</strong></div></div>
+    <div class="col-md-3"><div class="alert alert-success mb-0">Collected interest<br><strong>UGX {{ version.collected_interest_pool|floatformat:"0" }}</strong></div></div>
+    <div class="col-md-3"><div class="alert alert-dark mb-0">Net payouts<br><strong>UGX {{ version.total_payout|floatformat:"0" }}</strong></div></div>
+    <div class="col-md-3"><div class="alert alert-danger mb-0">Group loss<br><strong>UGX {{ version.total_group_loss|floatformat:"0" }}</strong></div></div>
   </div>
-
-  <div class="table-responsive">
-    <table class="table table-bordered table-striped align-middle">
-      <thead class="table-light">
-        <tr>
-          <th>Member</th>
-          <th>Savings</th>
-          <th>Distributed Interest</th>
-          <th>Gross Distribution</th>
-          <th>Shares</th>
-          <th>Welfare</th>
-          <th>Fines</th>
-          <th>Annual Subscription</th>
-          <th>Net Share</th>
-        </tr>
-      </thead>
+  <div class="card border-0 shadow-sm"><div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light"><tr><th>Member / Account</th><th>Savings</th><th>Interest</th><th>Unpaid welfare</th><th>Unpaid fines</th><th>Annual due</th><th>Borrower offset</th><th>Guarantor offset</th><th>Net payout</th><th>Status</th><th>Payout history</th>{% if can_manage %}<th>Record payout</th>{% endif %}</tr></thead>
       <tbody>
         {% for row in rows %}
         <tr>
-          <td>{{ row.member.get_full_name|default:row.member.username }}</td>
-          <td>UGX {{ row.saving_total|floatformat:'0' }}</td>
-          <td>UGX {{ row.interest_share|floatformat:'0' }}</td>
-          <td>UGX {{ row.gross_distribution|floatformat:'0' }}</td>
-          <td>UGX {{ row.shares_total|floatformat:'0' }}</td>
-          <td>UGX {{ row.welfare_total|floatformat:'0' }}</td>
-          <td>UGX {{ row.fine_total|floatformat:'0' }}</td>
-          <td>UGX {{ row.annual_total|floatformat:'0' }}</td>
-          <td class="fw-bold">UGX {{ row.net_share|floatformat:'0' }}</td>
+          <td><strong>{{ row.member.get_full_name|default:row.member.username }}</strong><div class="small text-muted">{{ row.account.label }}</div></td>
+          <td>UGX {{ row.savings_total|floatformat:"0" }}</td>
+          <td>UGX {{ row.interest_share|floatformat:"0" }}</td>
+          <td>UGX {{ row.welfare_due|floatformat:"0" }}</td>
+          <td>UGX {{ row.fine_due|floatformat:"0" }}</td>
+          <td>UGX {{ row.annual_due|floatformat:"0" }}</td>
+          <td>UGX {{ row.borrower_loan_offset|floatformat:"0" }}</td>
+          <td>UGX {{ row.guarantor_offset|floatformat:"0" }}</td>
+          <td><strong>UGX {{ row.net_payout|floatformat:"0" }}</strong><div class="small text-muted">UGX {{ row.outstanding_payout|floatformat:"0" }} left</div></td>
+          <td>{% if row.payout_status == 'PAID' %}<span class="badge text-bg-success">Paid</span>{% elif row.payout_status == 'PARTIAL' %}<span class="badge text-bg-warning">Part paid</span>{% else %}<span class="badge text-bg-secondary">Unpaid</span>{% endif %}</td>
+          <td>{% for payment in row.payments.all %}<div class="small mb-1"><strong>UGX {{ payment.amount|floatformat:"0" }}</strong> · {{ payment.paid_on|date:"d M Y" }}{% if payment.reference %}<br><span class="text-muted">{{ payment.reference }}</span>{% endif %}</div>{% empty %}<span class="text-muted">No payments</span>{% endfor %}</td>
+          {% if can_manage %}<td>{% if row.outstanding_payout > 0 %}<form method="post" action="{% url 'record_settlement_payout' row.id %}" class="d-grid gap-1" style="min-width:12rem">{% csrf_token %}<input class="form-control form-control-sm" type="number" step="0.01" max="{{ row.outstanding_payout }}" name="amount" value="{{ row.outstanding_payout }}" required><input class="form-control form-control-sm" type="date" name="paid_on" required><input class="form-control form-control-sm" name="reference" placeholder="Payment reference"><button class="btn btn-sm btn-success">Record payout</button></form>{% else %}<span class="text-muted">Complete</span>{% endif %}</td>{% endif %}
         </tr>
-        {% empty %}
-        <tr><td colspan="9" class="text-center text-muted">No members found.</td></tr>
-        {% endfor %}
+        {% empty %}<tr><td colspan="12" class="text-center text-muted py-4">No settlement accounts are visible.</td></tr>{% endfor %}
       </tbody>
     </table>
+  </div></div>
+  {% if group_viewer and allocations %}
+  <div class="card border-0 shadow-sm mt-4">
+    <div class="card-header bg-white py-3">
+      <h5 class="mb-1">Loan recovery ledger</h5>
+      <div class="small text-muted">Exact borrower offsets, guarantor deductions, and uncovered group losses captured in this version.</div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light"><tr><th>Loan</th><th>Recovery type</th><th>Member / account</th><th>Amount</th><th>Explanation</th></tr></thead>
+        <tbody>
+          {% for allocation in allocations %}
+          <tr>
+            <td>#{{ allocation.loan_snapshot.loan_id }}</td>
+            <td>{% if allocation.allocation_type == 'GROUP_LOSS' %}<span class="badge text-bg-danger">Group loss</span>{% elif allocation.allocation_type == 'GUARANTOR' %}<span class="badge text-bg-warning">Guarantor</span>{% else %}<span class="badge text-bg-info">Borrower</span>{% endif %}</td>
+            <td>{{ allocation.member.get_full_name|default:allocation.member.username }}{% if allocation.account %}<div class="small text-muted">{{ allocation.account.label }}</div>{% endif %}</td>
+            <td>UGX {{ allocation.amount|floatformat:"0" }}</td>
+            <td class="small text-muted">{{ allocation.note }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
+  {% endif %}
+  {% else %}
+  <div class="alert alert-info">No finalized settlement version exists for {{ target_year }} yet.</div>
+  {% endif %}
 </div>
 {% endblock %}

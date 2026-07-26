@@ -5,14 +5,15 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from deposits.models import DepositSubmission
-from deposits.rules import MIN_WEEKLY_SAVINGS
+from deposits.rules import MIN_WEEKLY_SAVINGS, saving_year_weeks
 from fines.models import Fine
 from groupcore.models import GroupSettings
-from groupcore.week_cycle import current_saving_week
+from groupcore.week_cycle import saving_year_closing_date
 
 
 WEEKLY_SAVINGS_AMOUNT = MIN_WEEKLY_SAVINGS
-LATE_FINE_AMOUNT = Decimal('1000.00')
+LATE_FINE_AMOUNT = Decimal('2000.00')
+YEAR_END_RELIEF_AMOUNT = Decimal('1000.00')
 
 
 def week_deadline(friday):
@@ -24,12 +25,61 @@ def week_deadline(friday):
     )
 
 
+def second_friday_of_december(year):
+    return saving_year_closing_date(year)
+
+
+def apply_year_end_fine_relief(year=None, as_of=None):
+    """Permanently reduce qualifying open missed-week fines after annual closing."""
+    as_of = as_of or timezone.localdate()
+    years = [year] if year else list(
+        Fine.objects.filter(
+            fine_type='MISSED_WEEKLY_SAVING',
+            is_paid=False,
+            is_voided=False,
+            reference_week__isnull=False,
+            reference_week__year__lte=as_of.year,
+        )
+        .dates('reference_week', 'year')
+    )
+    normalized_years = [value.year if hasattr(value, 'year') else value for value in years]
+    changed = 0
+    for saving_year in normalized_years:
+        closing = second_friday_of_december(saving_year)
+        if as_of < closing:
+            continue
+        fines = Fine.objects.filter(
+            fine_type='MISSED_WEEKLY_SAVING',
+            is_paid=False,
+            is_voided=False,
+            relief_applied_on__isnull=True,
+            reference_week__year=saving_year,
+            reference_week__lte=closing,
+        ).select_related('member', 'account')
+        for fine in fines:
+            paid_by_closing = (
+                DepositSubmission.objects.filter(
+                    member=fine.member,
+                    account=fine.account,
+                    payment_week=fine.reference_week,
+                    payment_date__lte=closing,
+                    status__in=('PENDING', 'APPROVED'),
+                ).aggregate(total=Sum('saving_amount'))['total']
+                or Decimal('0.00')
+            )
+            if paid_by_closing >= WEEKLY_SAVINGS_AMOUNT:
+                continue
+            fine.original_amount = fine.original_amount or fine.amount
+            fine.amount = max(YEAR_END_RELIEF_AMOUNT, fine.amount_paid)
+            fine.relief_applied_on = closing
+            fine.is_paid = fine.amount_paid >= fine.amount
+            fine.save(update_fields=['original_amount', 'amount', 'relief_applied_on', 'is_paid'])
+            changed += 1
+    return changed
+
+
 def cycle_weeks(week_one_start, today=None):
-    today = today or timezone.localdate()
-    active = current_saving_week(week_one_start, today)
-    next_cycle = current_saving_week(week_one_start, date(today.year + 1, 7, 1)).cycle_start
-    count = max(((next_cycle - active.cycle_start).days // 7), active.week_number)
-    return active, [active.cycle_start + timedelta(weeks=index) for index in range(count)]
+    return saving_year_weeks(week_one_start, today or timezone.localdate())
 
 
 def completion_for_week(member, account, friday, statuses=('APPROVED',)):
@@ -64,6 +114,7 @@ def ensure_overdue_fines(member=None, account=None, now=None):
     now = now or timezone.now()
     group_settings = GroupSettings.get_active()
     if not group_settings:
+        apply_year_end_fine_relief(as_of=timezone.localdate(now))
         return 0
 
     accounts = account.__class__.objects.filter(is_active=True, owner__is_superuser=False) if account else None
@@ -102,11 +153,12 @@ def ensure_overdue_fines(member=None, account=None, now=None):
                 },
             )
             created += int(was_created)
+    apply_year_end_fine_relief(as_of=timezone.localdate(now))
     return created
 
 
 def clear_on_time_missed_fine(member, account, payment_week):
-    """Remove an overdue fine created before an on-time deposit was approved."""
+    """Clear an overdue fine created before an on-time deposit was approved."""
     paid, completed_at = completion_for_week(
         member, account, payment_week, statuses=('APPROVED',)
     )
@@ -115,13 +167,8 @@ def clear_on_time_missed_fine(member, account, payment_week):
     deadline = week_deadline(payment_week)
     if completed_at > deadline:
         return 0
-    deleted, _ = Fine.objects.filter(
-        member=member,
-        account=account,
-        fine_type='MISSED_WEEKLY_SAVING',
-        reference_week=payment_week,
-    ).delete()
-    return deleted
+    from fines.services import delete_missed_saving_fines_covered
+    return delete_missed_saving_fines_covered(member, account, payment_week)
 
 
 def build_weekly_calendar(member, account, today=None, create_fines=True):
@@ -140,6 +187,7 @@ def build_weekly_calendar(member, account, today=None, create_fines=True):
             member=member,
             account=account,
             fine_type='MISSED_WEEKLY_SAVING',
+            is_voided=False,
             reference_week__in=weeks,
         )
     }

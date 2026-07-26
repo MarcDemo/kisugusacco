@@ -23,6 +23,7 @@ import re
 import calendar
 from calendar import month_name
 from django.http import HttpResponse
+from groupcore.member_query import alphabetical_members
 from xml.sax.saxutils import escape as xml_escape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.pagesizes import A4, landscape
@@ -94,7 +95,7 @@ def manage_users(request):
             | Q(role__icontains=search_query)
             | Q(savings_accounts__label__icontains=search_query)
         ).distinct()
-    users = users.order_by('username')
+    users = alphabetical_members(users)
     page_obj = Paginator(users, 25).get_page(request.GET.get('page'))
     return render(request, 'chairman/manage_users.html', {
         'users': page_obj,

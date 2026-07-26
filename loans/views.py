@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -9,6 +10,7 @@ from .forms import GuarantorDecisionForm, LoanRepaymentForm, LoanRequestForm, Tr
 from .models import LoanApprovalAudit, LoanGuarantorApproval, LoanRequest
 from groupcore.account_context import get_active_account, get_user_active_accounts
 from groupcore.models import MemberProfile
+from groupcore.year_close import loan_activity_frozen
 from messaging.services import send_notification
 
 
@@ -80,11 +82,18 @@ def my_loans(request):
     if active_account:
         loans = loans.filter(account=active_account)
     loans = loans.order_by('-requested_on')
-    return render(request, 'loans/my_loans.html', {'loans': loans, 'active_account': active_account})
+    return render(request, 'loans/my_loans.html', {
+        'loans': loans,
+        'active_account': active_account,
+        'loans_frozen': loan_activity_frozen(),
+    })
 
 
 @login_required
 def request_loan(request):
+    if loan_activity_frozen():
+        messages.warning(request, 'Loan activity is frozen for financial-year closing.')
+        return redirect('my_loans')
     active_account = get_active_account(request, request.user)
     if get_user_active_accounts(request.user).count() > 1 and not active_account:
         messages.info(request, 'Please select a savings account first.')
@@ -123,6 +132,9 @@ def request_loan(request):
 @login_required
 def approve_loan(request, loan_id):
     loan = get_object_or_404(LoanRequest, id=loan_id, status=LoanRequest.STATUS_PENDING)
+    if loan_activity_frozen(loan):
+        messages.warning(request, 'This loan is frozen for financial-year closing.')
+        return redirect('pending_loans')
 
     if request.user.is_treasurer() and not loan.treasurer_approved_by:
         rate_form = TreasurerRateForm(request.POST if request.method == 'POST' else None, instance=loan)
@@ -158,6 +170,9 @@ def override_loan_approval(request, loan_id):
         id=loan_id,
         status__in=[LoanRequest.STATUS_PENDING_GUARANTOR, LoanRequest.STATUS_PENDING],
     )
+    if loan_activity_frozen(loan):
+        messages.warning(request, 'This loan is frozen for financial-year closing.')
+        return redirect('pending_loans')
     role = request.POST.get('original_approver_role')
     reason = (request.POST.get('override_reason') or '').strip()
     valid_roles = {choice[0] for choice in LoanApprovalAudit.ROLE_CHOICES}
@@ -198,6 +213,9 @@ def override_loan_approval(request, loan_id):
 @login_required
 def reject_loan(request, loan_id):
     loan = get_object_or_404(LoanRequest, id=loan_id, status=LoanRequest.STATUS_PENDING)
+    if loan_activity_frozen(loan):
+        messages.warning(request, 'This loan is frozen for financial-year closing.')
+        return redirect('pending_loans')
 
     if not (
         request.user.is_treasurer()
@@ -260,7 +278,18 @@ def loan_statuses(request):
         messages.error(request, 'Access denied.')
         return redirect('member_dashboard')
 
-    all_loans = LoanRequest.objects.filter(member__is_superuser=False).select_related('member', 'account').prefetch_related('repayments').order_by('-requested_on')
+    search_query = (request.GET.get('q') or '').strip()
+    all_loans = LoanRequest.objects.filter(member__is_superuser=False).select_related('member', 'account').prefetch_related('repayments')
+    if search_query:
+        all_loans = all_loans.filter(
+            Q(member__first_name__icontains=search_query)
+            | Q(member__last_name__icontains=search_query)
+            | Q(member__username__icontains=search_query)
+            | Q(member__email__icontains=search_query)
+            | Q(member__phone_number__icontains=search_query)
+            | Q(account__label__icontains=search_query)
+        )
+    all_loans = all_loans.order_by('member__first_name', 'member__last_name', 'member__username', 'account__label', '-requested_on')
     approved_loans = all_loans.filter(status=LoanRequest.STATUS_APPROVED)
     pending_loans_qs = all_loans.filter(status__in=[
         LoanRequest.STATUS_PENDING_GUARANTOR,
@@ -270,6 +299,7 @@ def loan_statuses(request):
         LoanRequest.STATUS_REJECTED,
         LoanRequest.STATUS_REJECTED_GUARANTOR,
     ])
+    settled_loans = all_loans.filter(status=LoanRequest.STATUS_SETTLED)
 
     fully_paid_loans = []
     progress_loans = []
@@ -288,10 +318,13 @@ def loan_statuses(request):
         'approved_loans': approved_loans,
         'pending_loans': pending_loans_qs,
         'rejected_loans': rejected_loans,
+        'settled_loans': settled_loans,
         'fully_paid_loans': fully_paid_loans,
         'progress_loans': progress_loans,
         'unpaid_loans': unpaid_loans,
         'is_treasurer': request.user.is_treasurer(),
+        'search_query': search_query,
+        'loans_frozen': loan_activity_frozen(),
     }
     return render(request, 'loans/loan_statuses.html', context)
 
@@ -315,6 +348,9 @@ def guarantor_request_detail(request, approval_id):
         guarantor=request.user,
     )
     loan = approval.loan
+    if request.method == 'POST' and loan_activity_frozen(loan):
+        messages.warning(request, 'This loan is frozen for financial-year closing.')
+        return redirect('guarantor_requests')
 
     if request.method == 'POST':
         form = GuarantorDecisionForm(request.POST, instance=approval)
@@ -392,6 +428,9 @@ def record_loan_repayment(request, loan_id):
         return redirect('loan_statuses')
 
     loan = get_object_or_404(LoanRequest, id=loan_id, status=LoanRequest.STATUS_APPROVED)
+    if loan_activity_frozen(loan):
+        messages.warning(request, 'This loan is frozen for financial-year closing.')
+        return redirect('loan_statuses')
 
     if request.method != 'POST':
         return redirect('loan_statuses')

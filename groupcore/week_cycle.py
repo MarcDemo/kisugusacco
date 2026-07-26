@@ -19,6 +19,11 @@ def first_friday_of_year(year):
     return _first_matching_weekday_on_or_after(date(year, 1, 1), 4)
 
 
+def saving_year_closing_date(year):
+    """Return the second Friday of December for a saving year."""
+    return _first_matching_weekday_on_or_after(date(year, 12, 1), 4) + timedelta(weeks=1)
+
+
 def current_saving_week(week_one_start, today=None):
     """
     Return the active saving week for the group.
@@ -45,7 +50,10 @@ def current_saving_week(week_one_start, today=None):
             saving_year=cycle_start.year,
         )
 
-    weeks_since_start = ((today - cycle_start).days) // 7
+    # Once the second Friday of December has passed, keep the active week on
+    # the closing week until the next saving year begins.
+    effective_day = min(today, saving_year_closing_date(cycle_start.year))
+    weeks_since_start = ((effective_day - cycle_start).days) // 7
     return SavingWeek(
         cycle_start=cycle_start,
         week_start=cycle_start + timedelta(weeks=weeks_since_start),

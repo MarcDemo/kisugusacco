@@ -1,15 +1,22 @@
 from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from .forms import DepositSubmissionForm, DirectDepositForm
-from .models import DepositFineAllocation, DepositSubmission
+from .models import DepositFineAllocation, DepositSubmission, DepositWelfareAllocation
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from groupcore.models import GroupSettings, MemberProfile
 from groupcore.models import SavingsAccount
 from groupcore.reporting import merge_year_options, pagination_query, parse_report_year, years_from_dates
 from groupcore.week_cycle import current_saving_week
+from groupcore.year_close import (
+    apply_eligible_locked_repayment,
+    financial_year,
+    loan_activity_frozen,
+    pending_at_cutoff,
+    submissions_locked_for_year,
+)
 from django.utils import timezone
-from django.db.models import Sum
+from django.db.models import Count, Sum, Q
 from django.db import transaction
 from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
@@ -39,7 +46,7 @@ from fines.services import (
     missed_saving_fines_can_be_created,
 )
 from groupcore.account_context import get_active_account, get_user_active_accounts
-from groupcore.savings_calendar import completion_for_week, week_deadline
+from groupcore.savings_calendar import LATE_FINE_AMOUNT, completion_for_week, week_deadline
 from loans.models import LoanRepayment, LoanRequest
 from decimal import Decimal
 from deposits.rules import (
@@ -51,6 +58,8 @@ from deposits.rules import (
     weekly_savings_total,
     weekly_savings_totals_by_week,
 )
+from deposits.welfare_calendar import build_welfare_calendar
+from groupcore.member_query import alphabetical_members
 
 # Create your views here.
 
@@ -62,38 +71,54 @@ def _loan_interest_total(queryset):
     return total
 
 
-def _apply_loan_repayment(member, account, repayment_amount, paid_on, recorded_by, notes=''):
-    amount_left = repayment_amount
-    if amount_left <= 0:
-        return repayment_amount, amount_left
+def _apply_loan_repayment(
+    member, account, loan, repayment_amount, paid_on, recorded_by,
+    source_deposit=None, notes='',
+):
+    if repayment_amount <= 0:
+        return Decimal('0.00'), Decimal('0.00')
+    if not loan or loan.member_id != member.id or loan.account_id != getattr(account, 'id', None):
+        return Decimal('0.00'), repayment_amount
+    locked_loan = (
+        LoanRequest.objects.select_for_update().prefetch_related('repayments')
+        .get(pk=loan.pk, status='APPROVED')
+    )
+    outstanding = locked_loan.outstanding_balance_as_of(paid_on)
+    if repayment_amount > outstanding:
+        return Decimal('0.00'), repayment_amount
+    repayment = LoanRepayment(
+        loan=locked_loan,
+        amount=repayment_amount,
+        paid_on=paid_on,
+        recorded_by=recorded_by,
+        source_deposit=source_deposit,
+        notes=notes or 'Recorded from deposit submission.',
+    )
+    repayment.full_clean()
+    repayment.save()
+    return repayment_amount, Decimal('0.00')
 
-    base_qs = LoanRequest.objects.filter(member=member, status='APPROVED').prefetch_related('repayments').order_by('approved_on', 'requested_on', 'id')
-    loans_qs = base_qs
-    if account:
-        account_loans = loans_qs.filter(account=account)
-        loans_qs = account_loans if account_loans.exists() else base_qs
 
-    for loan in loans_qs:
-        if amount_left <= 0:
-            break
-        outstanding = loan.outstanding_balance_as_of(paid_on)
-        if outstanding <= 0:
-            continue
-
-        allocation = min(amount_left, outstanding)
-        repayment = LoanRepayment(
-            loan=loan,
-            amount=allocation,
-            paid_on=paid_on,
-            recorded_by=recorded_by,
-            notes=notes or 'Recorded from deposit submission.',
+def _create_welfare_allocations(deposit, account, welfare_weeks):
+    if welfare_weeks and not account:
+        raise ValidationError('Select an account before allocating welfare weeks.')
+    for welfare_week in welfare_weeks:
+        occupied = (
+            DepositWelfareAllocation.objects.select_for_update()
+            .filter(
+                account=account,
+                welfare_week=welfare_week,
+                deposit__status__in=('PENDING', 'APPROVED'),
+            )
+            .exists()
         )
-        repayment.full_clean()
-        repayment.save()
-        amount_left -= allocation
-
-    allocated = repayment_amount - amount_left
-    return allocated, amount_left
+        if occupied:
+            raise ValidationError(f'Welfare for {welfare_week:%d %b %Y} is already paid or pending.')
+        DepositWelfareAllocation.objects.create(
+            deposit=deposit,
+            account=account,
+            welfare_week=welfare_week,
+        )
 
 @login_required
 def submit_deposit(request):
@@ -123,6 +148,13 @@ def submit_deposit(request):
 
     saving_week = current_saving_week(group_settings.week_one_start, timezone.localdate())
     current_week_start = saving_week.week_start
+    current_year_state = financial_year(saving_week.saving_year)
+    if current_year_state.state != current_year_state.STATE_OPEN:
+        messages.warning(
+            request,
+            f'The {saving_week.saving_year} financial year is closed for new submissions.',
+        )
+        return redirect('member_dashboard')
 
     if request.method == 'POST':
         form = DepositSubmissionForm(
@@ -148,7 +180,31 @@ def submit_deposit(request):
             fine_amount = form.cleaned_data.get('fine_amount') or 0
             shares_amount = form.cleaned_data.get('shares_amount') or 0
             loan_repayment_amount = form.cleaned_data.get('loan_repayment_amount') or 0
+            loan_repayment_loan = form.cleaned_data.get('loan_repayment_loan')
             fine_allocations = form.cleaned_data.get('fine_allocations') or []
+            welfare_weeks = form.cleaned_data.get('welfare_week_dates') or []
+            selected_years = {week.year for week in selected_weeks + welfare_weeks}
+            selected_years.update(
+                week.year
+                for week in Fine.objects.filter(
+                    id__in=[fine_id for fine_id, _amount in fine_allocations],
+                    reference_week__isnull=False,
+                ).values_list('reference_week', flat=True)
+            )
+            if any(submissions_locked_for_year(year) for year in selected_years):
+                form.add_error(
+                    None,
+                    'One or more selected weeks belong to a closed financial year.',
+                )
+            if loan_repayment_loan and loan_activity_frozen(loan_repayment_loan):
+                form.add_error(
+                    'loan_repayment_amount',
+                    'This loan is frozen for financial-year settlement.',
+                )
+            if form.errors:
+                return render(request, 'deposits/submit_deposit.html', {
+                    'form': form, 'loan_account_ids_json': '[]',
+                })
 
             deposits_created = []
             with transaction.atomic():
@@ -167,6 +223,7 @@ def submit_deposit(request):
                         fine_amount=fine_amount if index == 0 else 0,
                         shares_amount=shares_amount if index == 0 else 0,
                         loan_repayment_amount=loan_repayment_amount if index == 0 else 0,
+                        loan_repayment_loan=loan_repayment_loan if index == 0 else None,
                         proof=proof if index == 0 else None,
                         remarks=remarks if index == 0 else '',
                         payment_date=payment_date,
@@ -183,6 +240,7 @@ def submit_deposit(request):
                         fine_id=fine_id,
                         amount=amount,
                     )
+                _create_welfare_allocations(first_deposit, account, welfare_weeks)
             amount = sum((deposit.amount for deposit in deposits_created), Decimal('0.00'))
 
             # Send acknowledgment email
@@ -253,12 +311,20 @@ def submit_deposit(request):
 
 
 @login_required
+@transaction.atomic
 def approve_deposit(request, deposit_id):
     if not request.user.is_treasurer():
         messages.error(request, "Access denied.")
         return redirect('member_dashboard')
 
     deposit = get_object_or_404(DepositSubmission, id=deposit_id, status='PENDING')
+    close_state = financial_year(deposit.payment_week.year)
+    if (
+        close_state.cutoff_at
+        and deposit.date_submitted > close_state.cutoff_at
+    ):
+        messages.error(request, 'This deposit was submitted after the financial-year cutoff.')
+        return redirect('manage_deposits')
     if deposit.saving_amount > 0 and not (
         MIN_WEEKLY_SAVINGS <= deposit.saving_amount <= MAX_WEEKLY_SAVINGS
     ):
@@ -269,6 +335,9 @@ def approve_deposit(request, deposit_id):
     ) >= MIN_WEEKLY_SAVINGS:
         messages.error(request, 'This savings week is already paid and locked. The duplicate submission was not approved.')
         return redirect('manage_deposits')
+    if deposit.loan_repayment_amount > 0 and not deposit.loan_repayment_loan_id:
+        messages.error(request, 'Select the exact loan before approving this repayment deposit.')
+        return redirect('financial_record_edit', record_type='deposit', object_id=deposit.id)
     selected_fine_allocations = list(
         deposit.fine_allocations.select_related('fine').all()
     )
@@ -294,12 +363,17 @@ def approve_deposit(request, deposit_id):
         allocated, unallocated = _apply_loan_repayment(
             member=deposit.member,
             account=deposit.account,
+            loan=deposit.loan_repayment_loan,
             repayment_amount=deposit.loan_repayment_amount,
             paid_on=deposit.payment_date,
             recorded_by=request.user,
+            source_deposit=deposit,
             notes=f'Deposit approval repayment (Deposit #{deposit.id}).',
         )
         if allocated > 0:
+            repayment = deposit.generated_loan_repayments.order_by('-id').first()
+            if repayment:
+                apply_eligible_locked_repayment(repayment)
             messages.success(request, f"UGX {allocated:,.0f} was posted to loan repayment.")
         if unallocated > 0:
             messages.warning(request, f"UGX {unallocated:,.0f} could not be posted because no outstanding approved loan balance was found.")
@@ -739,15 +813,50 @@ def manage_deposits(request):
     # Keep the review queue and the submission history together on this page.
     # Pending records still expose approve/reject actions, while approved and
     # rejected records remain visible for a complete audit trail.
-    deposit_submissions = (
+    search_query = (request.GET.get('q') or '').strip()
+    status_filter = (request.GET.get('status') or '').strip().upper()
+    valid_statuses = {value for value, _label in DepositSubmission.STATUS_CHOICES}
+    if status_filter not in valid_statuses:
+        status_filter = ''
+
+    deposit_submissions_base = (
         DepositSubmission.objects
         .filter(member__is_superuser=False)
         .select_related('member', 'account')
-        .order_by('-date_submitted')
     )
-    pending_deposits = deposit_submissions.filter(status='PENDING')
+    status_counts = deposit_submissions_base.aggregate(
+        all=Count('id'),
+        pending=Count('id', filter=Q(status='PENDING')),
+        approved=Count('id', filter=Q(status='APPROVED')),
+        rejected=Count('id', filter=Q(status='REJECTED')),
+    )
+    deposit_submissions = deposit_submissions_base
+    if search_query:
+        deposit_submissions = deposit_submissions.filter(
+            Q(member__first_name__icontains=search_query)
+            | Q(member__last_name__icontains=search_query)
+            | Q(member__username__icontains=search_query)
+            | Q(member__email__icontains=search_query)
+            | Q(member__phone_number__icontains=search_query)
+            | Q(account__label__icontains=search_query)
+        )
+    if status_filter:
+        deposit_submissions = deposit_submissions.filter(status=status_filter)
+    deposit_submissions = deposit_submissions.order_by(
+        'member__first_name', 'member__last_name', 'member__username',
+        'account__label', '-date_submitted',
+    )
     deposit_submissions_page = Paginator(deposit_submissions, 25).get_page(request.GET.get('page'))
     form = DirectDepositForm(request.POST or None, request.FILES or None)
+    group_settings = GroupSettings.get_active()
+    active_saving_year = (
+        current_saving_week(
+            group_settings.week_one_start, timezone.localdate()
+        ).saving_year
+        if group_settings else timezone.localdate().year
+    )
+    close_state = financial_year(active_saving_year)
+    close_pending_count = pending_at_cutoff(close_state).count()
 
     if request.method == 'POST':
         form = DirectDepositForm(request.POST, request.FILES)
@@ -767,6 +876,39 @@ def manage_deposits(request):
             fine_allocations = form.cleaned_data.get('fine_allocations') or []
             shares_amount = form.cleaned_data.get('shares_amount') or 0
             loan_repayment_amount = form.cleaned_data.get('loan_repayment_amount') or 0
+            loan_repayment_loan = form.cleaned_data.get('loan_repayment_loan')
+            welfare_weeks = form.cleaned_data.get('welfare_week_dates') or []
+            selected_years = {week.year for week in selected_weeks + welfare_weeks}
+            selected_years.update(
+                week.year
+                for week in Fine.objects.filter(
+                    id__in=[fine_id for fine_id, _amount in fine_allocations],
+                    reference_week__isnull=False,
+                ).values_list('reference_week', flat=True)
+            )
+            if any(submissions_locked_for_year(year) for year in selected_years):
+                form.add_error(
+                    None,
+                    'One or more selected weeks belong to a closed financial year.',
+                )
+            if loan_repayment_loan and loan_activity_frozen(loan_repayment_loan):
+                form.add_error(
+                    'loan_repayment_amount',
+                    'This loan is frozen for financial-year settlement.',
+                )
+            if form.errors:
+                return render(request, 'deposits/manage_deposits.html', {
+                    'deposit_submissions': deposit_submissions_page,
+                    'page_obj': deposit_submissions_page,
+                    'pagination_query': pagination_query(request),
+                    'form': form,
+                    'search_query': search_query,
+                    'status_filter': status_filter,
+                    'status_counts': status_counts,
+                    'close_state': close_state,
+                    'active_saving_year': active_saving_year,
+                    'close_pending_count': close_pending_count,
+                })
 
             deposits_created = []
             with transaction.atomic():
@@ -784,6 +926,7 @@ def manage_deposits(request):
                         fine_amount=fine_amount if first else 0,
                         shares_amount=shares_amount if first else 0,
                         loan_repayment_amount=loan_repayment_amount if first else 0,
+                        loan_repayment_loan=loan_repayment_loan if first else None,
                         proof=proof if first else None, remarks=remarks,
                         status='APPROVED', payment_date=payment_date,
                         payment_time=payment_time, date_reviewed=timezone.now(),
@@ -798,6 +941,7 @@ def manage_deposits(request):
                                 fine_id=fine_id,
                                 amount=amount,
                             )
+                        _create_welfare_allocations(deposit, account, welfare_weeks)
                 if fine_allocations:
                     apply_selected_fine_allocations(
                         (allocation.fine, allocation.amount)
@@ -806,21 +950,22 @@ def manage_deposits(request):
                 for saved_deposit in deposits_created:
                     if saved_deposit.saving_amount > 0:
                         delete_deposit_week_missed_saving_fines(saved_deposit)
-            deposit = deposits_created[0]
-            if not fine_allocations and deposit.fine_amount > 0:
-                allocate_fine_payment(deposit.member, deposit.account, deposit.fine_amount)
-
-            if deposit.loan_repayment_amount and deposit.loan_repayment_amount > 0:
-                allocated, unallocated = _apply_loan_repayment(
-                    member=deposit.member,
-                    account=deposit.account,
-                    repayment_amount=deposit.loan_repayment_amount,
-                    paid_on=deposit.payment_date,
-                    recorded_by=request.user,
-                    notes=f'Direct deposit repayment (Deposit #{deposit.id}).',
-                )
-                if unallocated > 0:
-                    messages.warning(request, f"UGX {unallocated:,.0f} could not be posted because no outstanding approved loan balance was found.")
+                deposit = deposits_created[0]
+                if not fine_allocations and deposit.fine_amount > 0:
+                    allocate_fine_payment(deposit.member, deposit.account, deposit.fine_amount)
+                if deposit.loan_repayment_amount and deposit.loan_repayment_amount > 0:
+                    allocated, unallocated = _apply_loan_repayment(
+                        member=deposit.member,
+                        account=deposit.account,
+                        loan=deposit.loan_repayment_loan,
+                        repayment_amount=deposit.loan_repayment_amount,
+                        paid_on=deposit.payment_date,
+                        recorded_by=request.user,
+                        source_deposit=deposit,
+                        notes=f'Direct deposit repayment (Deposit #{deposit.id}).',
+                    )
+                    if unallocated > 0:
+                        raise ValidationError('Loan repayment exceeds the selected loan balance.')
 
             if weekly_allocations:
                 messages.success(
@@ -833,23 +978,39 @@ def manage_deposits(request):
             return redirect('manage_deposits')
 
     return render(request, 'deposits/manage_deposits.html', {
-        'pending_deposits': pending_deposits,
         'deposit_submissions': deposit_submissions_page,
         'page_obj': deposit_submissions_page,
         'pagination_query': pagination_query(request),
         'form': form,
+        'search_query': search_query,
+        'status_filter': status_filter,
+        'status_counts': status_counts,
+        'close_state': close_state,
+        'active_saving_year': active_saving_year,
+        'close_pending_count': close_pending_count,
     })
 
 @login_required
 def treasurer_reports(request):
     selected_year = parse_report_year(request.GET.get('year'))
+    search_query = (request.GET.get('q') or '').strip()
     approved_deposits_base = DepositSubmission.objects.filter(status='APPROVED', member__is_superuser=False)
     years = merge_year_options(
         years_from_dates(approved_deposits_base, 'payment_week'),
         years_from_dates(LoanRequest.objects.filter(status='APPROVED'), 'approved_on'),
         selected_year=selected_year,
     )
-    members = MemberProfile.objects.exclude(is_superuser=True).order_by('username')
+    members = MemberProfile.objects.exclude(is_superuser=True)
+    if search_query:
+        members = members.filter(
+            Q(first_name__icontains=search_query)
+            | Q(last_name__icontains=search_query)
+            | Q(username__icontains=search_query)
+            | Q(email__icontains=search_query)
+            | Q(phone_number__icontains=search_query)
+            | Q(savings_accounts__label__icontains=search_query)
+        ).distinct()
+    members = alphabetical_members(members)
     members_page = Paginator(members, 25).get_page(request.GET.get('page'))
 
     report_data = []
@@ -902,6 +1063,7 @@ def treasurer_reports(request):
         'pagination_query': pagination_query(request),
         'selected_year': selected_year,
         'years': years,
+        'search_query': search_query,
     })
 
 
@@ -980,7 +1142,30 @@ def treasurer_week_options(request):
                 for item in state['fine_allocations']
             ],
         })
-    return JsonResponse({'weeks': weeks, 'fines': fines})
+    welfare = [
+        {
+            'date': item['friday'].isoformat(),
+            'label': f"Welfare Week {item['number']} · {item['friday']:%d %b %Y}",
+            'month': f"{item['friday']:%B %Y}",
+            'day': item['friday'].day,
+            'status': item['status'],
+            'selectable': item['selectable'],
+        }
+        for item in build_welfare_calendar(member, account, today).get('weeks', [])
+    ]
+    loans = []
+    if account:
+        for loan in LoanRequest.objects.filter(
+            member=member, account=account, status='APPROVED'
+        ).prefetch_related('repayments').order_by('approved_on', 'id'):
+            balance = loan.outstanding_balance_as_of(today)
+            if balance > 0:
+                loans.append({
+                    'id': loan.id,
+                    'label': f'Loan #{loan.id} · Balance UGX {balance:,.0f}',
+                    'balance': str(balance),
+                })
+    return JsonResponse({'weeks': weeks, 'fines': fines, 'welfare': welfare, 'loans': loans})
 
 
 
@@ -1170,7 +1355,18 @@ def download_member_report(request, member_id, format):
 
 def download_all_reports(request, format):
     selected_year = parse_report_year(request.GET.get('year'))
+    search_query = (request.GET.get('q') or '').strip()
     members = MemberProfile.objects.filter(is_superuser=False)
+    if search_query:
+        members = members.filter(
+            Q(first_name__icontains=search_query)
+            | Q(last_name__icontains=search_query)
+            | Q(username__icontains=search_query)
+            | Q(email__icontains=search_query)
+            | Q(phone_number__icontains=search_query)
+            | Q(savings_accounts__label__icontains=search_query)
+        ).distinct()
+    members = alphabetical_members(members)
 
     if format == 'pdf':
         buffer = BytesIO()
@@ -1357,7 +1553,18 @@ def _current_week_payment_status_data(request, create_fines=False):
     paid_entries = []
     unpaid_entries = []
 
-    members = MemberProfile.objects.filter(is_superuser=False).order_by('username')
+    search_query = (request.GET.get('q') or '').strip()
+    members = MemberProfile.objects.filter(is_superuser=False)
+    if search_query:
+        members = members.filter(
+            Q(first_name__icontains=search_query)
+            | Q(last_name__icontains=search_query)
+            | Q(username__icontains=search_query)
+            | Q(email__icontains=search_query)
+            | Q(phone_number__icontains=search_query)
+            | Q(savings_accounts__label__icontains=search_query)
+        ).distinct()
+    members = alphabetical_members(members)
     for member in members:
         member_accounts = list(SavingsAccount.objects.filter(owner=member, is_active=True).order_by('label'))
         accounts_to_check = member_accounts or [None]
@@ -1396,7 +1603,7 @@ def _current_week_payment_status_data(request, create_fines=False):
                     reference_week=current_week_start,
                     defaults={
                         'reason': f'Failed to save{account_note} for week closing {current_week_start}',
-                        'amount': 1000,
+                        'amount': LATE_FINE_AMOUNT,
                         'issued_by': request.user,
                     }
                 )
@@ -1410,6 +1617,7 @@ def _current_week_payment_status_data(request, create_fines=False):
         'all_entries': paid_entries + unpaid_entries,
         'fines_can_be_created': fines_can_be_created,
         'grace_ends_on': grace_ends_on,
+        'search_query': search_query,
     }
 
 

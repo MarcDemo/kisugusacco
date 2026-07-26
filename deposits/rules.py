@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.db.models import Q, Sum
 
-from groupcore.week_cycle import current_saving_week
+from groupcore.week_cycle import current_saving_week, saving_year_closing_date
 
 
 MIN_WEEKLY_SAVINGS = Decimal('10000.00')
@@ -110,7 +110,11 @@ def fine_week_options(member, account, payment_weeks=None):
     """Return fine state grouped by week, including all account fallbacks."""
     from fines.models import Fine
 
-    queryset = Fine.objects.filter(member=member, fine_type='MISSED_WEEKLY_SAVING')
+    queryset = Fine.objects.filter(
+        member=member,
+        fine_type='MISSED_WEEKLY_SAVING',
+        is_voided=False,
+    )
     if account is not None:
         queryset = queryset.filter(Q(account=account) | Q(account__isnull=True))
     else:
@@ -130,6 +134,8 @@ def fine_week_options(member, account, payment_weeks=None):
     })
     for fine in queryset.order_by('reference_week', 'id'):
         if not fine.reference_week:
+            continue
+        if fine.reference_week > saving_year_closing_date(fine.reference_week.year):
             continue
         outstanding = max((fine.amount or Decimal('0.00')) - (fine.amount_paid or Decimal('0.00')), Decimal('0.00'))
         item = grouped[fine.reference_week]
@@ -155,14 +161,14 @@ def fine_week_options(member, account, payment_weeks=None):
 
 
 def saving_year_weeks(week_one_start, today=None):
-    """Return every configured weekly start in the saving year containing today."""
+    """Return configured Fridays from Week 1 through the annual closing Friday."""
     today = today or date.today()
     saving_week = current_saving_week(week_one_start, today)
-    next_cycle = current_saving_week(
-        week_one_start,
-        date(saving_week.saving_year + 1, 1, 1),
+    closing_date = saving_year_closing_date(saving_week.saving_year)
+    week_count = max(
+        ((closing_date - saving_week.cycle_start).days // 7) + 1,
+        0,
     )
-    week_count = (next_cycle.cycle_start - saving_week.cycle_start).days // 7
     weeks = [
         saving_week.cycle_start + timedelta(weeks=index)
         for index in range(week_count)

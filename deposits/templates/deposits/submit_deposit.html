@@ -22,10 +22,17 @@
   .calendar-day.missed, .calendar-day.fine-outstanding { border-color:#dc3545; background:#fff1f2; color:#b42333; }
   .calendar-day.paid-late { border-color:#d97706; background:#fff7ed; color:#a45100; }
   .calendar-day.paid-on-time, .calendar-day.fine-paid { border-color:#198754; background:#e9f7ef; color:#146c43; }
+  .calendar-day.welfare-pending { border-color:#f0ad4e; background:#fff8e6; color:#805b00; }
+  .calendar-day.welfare-current { border:2px solid #0d6efd; background:#eef5ff; color:#084298; }
   .calendar-day.upcoming { background:#f1f4f2; color:#6c757d; }
   .calendar-day.selected { background:#166534; border-color:#166534; color:#fff; }
   .calendar-day:disabled { opacity:.8; cursor:not-allowed; }
   .modal-body { max-height: min(70vh, 42rem); overflow-y:auto; background:#f8faf9; }
+  .welfare-legend { display:flex; flex-wrap:wrap; gap:.5rem 1rem; font-size:.8rem; color:#5d6862; }
+  .welfare-legend i { display:inline-block; width:.7rem; height:.7rem; border-radius:50%; margin-right:.3rem; }
+  .welfare-selection-summary { border:1px solid #dce7e0; border-radius:.75rem; padding:.75rem 1rem; background:#fff; }
+  .selected-welfare-list { display:flex; flex-wrap:wrap; gap:.45rem; margin-top:.75rem; }
+  .selected-welfare-list .badge { padding:.55rem .7rem; font-weight:500; }
   @media (max-width: 991.98px) { .month-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width: 575.98px) { .month-grid { grid-template-columns:1fr; } .calendar-days { grid-template-columns:repeat(5,minmax(2.55rem,1fr)); gap:.7rem .35rem; } .calendar-day { width:2.55rem; height:2.55rem; } }
 
@@ -179,7 +186,11 @@
                 </div>
                 <div class="col-md-3 col-6 purpose-box" data-purpose="loan_repayment">
                   <label for="id_loan_repayment_amount" class="form-label small">Loan Repayment (UGX)</label>
+                  {{ form.loan_repayment_loan|add_class:"form-select mb-2" }}
                   {{ form.loan_repayment_amount|add_class:"form-control purpose-amount" }}
+                  {% if form.loan_repayment_loan.errors %}
+                  <div class="text-danger small mt-1">{{ form.loan_repayment_loan.errors|join:", " }}</div>
+                  {% endif %}
                   {% if form.loan_repayment_amount.errors %}
                   <div class="text-danger small mt-1">{{ form.loan_repayment_amount.errors|join:", " }}</div>
                   {% endif %}
@@ -212,6 +223,20 @@
                 </div>
                 <div id="fineAllocationRows" class="small mt-2"></div>
                 {% if form.selected_fine_weeks.errors %}<div class="text-danger small mt-2">{{ form.selected_fine_weeks.errors|join:", " }}</div>{% endif %}
+              </div>
+            </div>
+
+            <div class="col-12 d-none" id="welfareAllocationPanel">
+              <div class="calendar-panel">
+                <div class="d-flex justify-content-between align-items-center gap-2">
+                  <div><strong>Allocate welfare weeks</strong><small class="d-block text-muted">Each selected week is UGX 1,000.</small></div>
+                  <button type="button" class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#welfareWeekModal">Choose welfare weeks</button>
+                </div>
+                <div class="welfare-selection-summary mt-3">
+                  <div class="d-flex justify-content-between align-items-center"><span><strong id="memberWelfareSelectedCount">0</strong> week(s) selected</span><strong id="memberWelfareSelectedTotal">UGX 0</strong></div>
+                  <div id="welfareAllocationRows" class="selected-welfare-list"></div>
+                </div>
+                {% if form.selected_welfare_weeks.errors %}<div class="text-danger small mt-2">{{ form.selected_welfare_weeks.errors|join:", " }}</div>{% endif %}
               </div>
             </div>
 
@@ -272,9 +297,22 @@
   </div></div>
 </div>
 
+<div class="modal fade" id="welfareWeekModal" tabindex="-1" aria-labelledby="welfareWeekModalTitle">
+  <div class="modal-dialog modal-dialog-centered modal-xl modal-fullscreen-sm-down"><div class="modal-content">
+    <div class="modal-header"><div><h5 class="modal-title" id="welfareWeekModalTitle"><i class="bi bi-heart-pulse text-success me-2"></i>Select welfare weeks</h5><small class="text-muted">Choose the exact Friday(s) this UGX 1,000 weekly welfare payment covers.</small></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <div class="welfare-selection-summary mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2"><span><strong id="memberWelfareModalCount">0</strong> week(s) selected</span><strong id="memberWelfareModalTotal">UGX 0</strong></div>
+      <div class="welfare-legend mb-3"><span><i class="bg-success"></i>Paid</span><span><i class="bg-warning"></i>Pending</span><span><i class="bg-danger"></i>Missed</span><span><i class="bg-primary"></i>Current</span><span><i class="bg-secondary"></i>Future</span></div>
+      <div id="memberWelfareMonths" class="month-grid"></div>
+    </div>
+    <div class="modal-footer"><span class="me-auto small text-muted">Paid and pending weeks are locked</span><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-success" id="applyMemberWelfare"><i class="bi bi-check2 me-1"></i>Apply selection</button></div>
+  </div></div>
+</div>
+
 <div id="memberCalendarStore" hidden>
   {% for week in form.week_options %}<span data-member-week data-week="{{ week.value }}" data-label="{{ week.date_label }}" data-month="{{ week.month_name }} {{ week.year }}" data-day="{{ week.day }}" data-status="{{ week.savings_status }}" data-selectable="{{ week.selectable|yesno:'true,false' }}" data-selected="{{ week.selected|yesno:'true,false' }}"><input type="checkbox" name="selected_weeks" value="{{ week.value }}" {% if week.selected %}checked{% endif %} {% if not week.selectable %}disabled{% endif %}><input type="hidden" name="week_amount_{{ week.value }}" value="{{ week.amount }}" disabled></span>{% endfor %}
   {% for week in form.fine_options %}<span data-member-fine data-week="{{ week.value }}" data-label="{{ week.accessible_label }}" data-month="{{ week.month_name }} {{ week.year }}" data-day="{{ week.day }}" data-status="{{ week.status }}" data-outstanding="{{ week.outstanding }}" data-selectable="{{ week.selectable|yesno:'true,false' }}"><input type="checkbox" name="selected_fine_weeks" value="{{ week.value }}" {% if week.selected %}checked{% endif %} {% if not week.selectable %}disabled{% endif %}></span>{% endfor %}
+  {% for week in form.welfare_options %}<span data-member-welfare data-week="{{ week.value }}" data-label="Welfare Week {{ week.number }}, {{ week.friday|date:'d F Y' }}" data-month="{{ week.month_name }} {{ week.year }}" data-day="{{ week.day }}" data-status="{{ week.status }}" data-selectable="{{ week.selectable|yesno:'true,false' }}"><input type="checkbox" name="selected_welfare_weeks" value="{{ week.value }}" {% if week.selected %}checked{% endif %} {% if not week.selectable %}disabled{% endif %}></span>{% endfor %}
 </div>
 
 <!-- Loader Script -->
@@ -418,16 +456,23 @@ updateTotal();
     return {el: el, date: el.dataset.week, label: el.dataset.label, month: el.dataset.month, day: el.dataset.day,
       status: el.dataset.status, outstanding: Number(el.dataset.outstanding || 0), selectable: el.dataset.selectable === 'true', checkbox: el.querySelector('input[type=checkbox]')};
   });
+  const welfare = Array.from(document.querySelectorAll('[data-member-welfare]')).map(function (el) {
+    return {el: el, date: el.dataset.week, label: el.dataset.label, month: el.dataset.month, day: el.dataset.day,
+      status: el.dataset.status, selectable: el.dataset.selectable === 'true', checkbox: el.querySelector('input[type=checkbox]')};
+  });
   const savingInput = document.getElementById('id_saving_amount');
   const fineInput = document.getElementById('id_fine_amount');
+  const welfareInput = document.getElementById('id_welfare_amount');
   const savingPanel = document.getElementById('savingsAllocationPanel');
   const finePanel = document.getElementById('fineAllocationPanel');
+  const welfarePanel = document.getElementById('welfareAllocationPanel');
   const savingRows = document.getElementById('savingsAllocationRows');
   const fineRows = document.getElementById('fineAllocationRows');
+  const welfareRows = document.getElementById('welfareAllocationRows');
   const selectedPurposes = function () { return Array.from(document.querySelectorAll('input[name="selected_purposes"]:checked')).map(function (x) { return x.value; }); };
   const money = function (n) { return 'UGX ' + Math.max(0, n || 0).toLocaleString('en-UG', {maximumFractionDigits: 0}); };
   function grouped(items) { const map = new Map(); items.forEach(function (x) { if (!map.has(x.month)) map.set(x.month, []); map.get(x.month).push(x); }); return map; }
-  function renderMonths(container, items, fineMode) {
+  function renderMonths(container, items, fineMode, welfareMode) {
     if (!container) return;
     container.replaceChildren();
     grouped(items).forEach(function (monthItems, month) {
@@ -442,12 +487,16 @@ updateTotal();
         b.classList.toggle('paid-late', !fineMode && item.status === 'paid_late');
         b.classList.toggle('paid-on-time', !fineMode && item.status === 'paid_on_time');
         b.classList.toggle('upcoming', !fineMode && item.status === 'upcoming');
+        b.classList.toggle('upcoming', !fineMode && item.status === 'future');
         b.classList.toggle('fine-outstanding', fineMode && item.status === 'outstanding');
         b.classList.toggle('fine-paid', fineMode && item.status === 'paid');
+        b.classList.toggle('paid-on-time', welfareMode && item.status === 'paid');
+        b.classList.toggle('welfare-pending', welfareMode && item.status === 'pending');
+        b.classList.toggle('welfare-current', welfareMode && item.status === 'current');
         b.disabled = !item.selectable;
         b.title = item.label + (fineMode ? (item.status === 'outstanding' ? ' — outstanding fine' : ' — paid') : ' — ' + item.status.replaceAll('_', ' '));
         b.setAttribute('aria-label', b.title);
-        if (item.selectable) b.addEventListener('click', function () { item.checkbox.checked = !item.checkbox.checked; renderMonths(container, items, fineMode); });
+        if (item.selectable) b.addEventListener('click', function () { item.checkbox.checked = !item.checkbox.checked; renderMonths(container, items, fineMode, welfareMode); refreshPanels(); });
         days.appendChild(b);
       });
       panel.appendChild(days); container.appendChild(panel);
@@ -464,6 +513,23 @@ updateTotal();
   function renderRows() {
     if (savingRows) { savingRows.replaceChildren(); weeks.filter(function (x) { return x.checkbox.checked; }).forEach(function (x) { const row = document.createElement('div'); row.className = 'd-flex align-items-center gap-2 mb-1'; row.innerHTML = '<span class="flex-grow-1">' + x.label + '</span>'; const input = document.createElement('input'); input.type = 'number'; input.min = '10000'; input.max = '50000'; input.step = '100'; input.className = 'form-control form-control-sm'; input.value = x.amount.value; input.addEventListener('input', function () { x.amount.value = input.value; }); row.appendChild(input); const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-sm btn-outline-danger'; remove.textContent = 'Remove'; remove.addEventListener('click', function () { x.checkbox.checked = false; x.amount.value = ''; x.amount.disabled = true; renderRows(); }); row.appendChild(remove); savingRows.appendChild(row); }); }
     if (fineRows) { fineRows.textContent = ''; const selected = fines.filter(function (x) { return x.checkbox.checked; }); if (selected.length) fineRows.textContent = selected.map(function (x) { return x.label + ' (' + money(x.outstanding) + ')'; }).join(' · '); }
+    if (welfareRows) {
+      const selected = welfare.filter(function (x) { return x.checkbox.checked; });
+      welfareRows.replaceChildren();
+      if (!selected.length) {
+        const empty = document.createElement('span'); empty.className = 'text-muted'; empty.textContent = 'No welfare weeks selected yet.'; welfareRows.appendChild(empty);
+      } else {
+        selected.forEach(function (x) { const chip = document.createElement('span'); chip.className = 'badge text-bg-light border text-dark'; chip.textContent = x.label; welfareRows.appendChild(chip); });
+      }
+      const count = document.getElementById('memberWelfareSelectedCount');
+      const total = document.getElementById('memberWelfareSelectedTotal');
+      const modalCount = document.getElementById('memberWelfareModalCount');
+      const modalTotal = document.getElementById('memberWelfareModalTotal');
+      if (count) count.textContent = selected.length;
+      if (total) total.textContent = money(selected.length * 1000);
+      if (modalCount) modalCount.textContent = selected.length;
+      if (modalTotal) modalTotal.textContent = money(selected.length * 1000);
+    }
   }
   function refreshPanels() {
     const savingReady = selectedPurposes().includes('saving') && Number(savingInput && savingInput.value || 0) >= 10000;
@@ -474,14 +540,20 @@ updateTotal();
     const fineReady = selectedPurposes().includes('fine') && fineAvailable;
     if (finePanel) finePanel.classList.toggle('d-none', !fineReady);
     if (fineInput) { fineInput.readOnly = true; fineInput.value = fines.filter(function (x) { return x.checkbox.checked; }).reduce(function (s, x) { return s + x.outstanding; }, 0) || ''; }
+    const welfareReady = selectedPurposes().includes('welfare');
+    if (welfarePanel) welfarePanel.classList.toggle('d-none', !welfareReady);
+    if (welfareInput) { welfareInput.readOnly = true; welfareInput.value = welfare.filter(function (x) { return x.checkbox.checked; }).length * 1000 || ''; }
     renderRows();
   }
   document.querySelectorAll('[data-member-week] input[type=checkbox]').forEach(function (cb) { cb.addEventListener('change', function () { splitSaving(); renderRows(); }); });
   document.querySelectorAll('[data-member-fine] input[type=checkbox]').forEach(function (cb) { cb.addEventListener('change', refreshPanels); });
+  document.querySelectorAll('[data-member-welfare] input[type=checkbox]').forEach(function (cb) { cb.addEventListener('change', refreshPanels); });
   document.getElementById('applyMemberSavings')?.addEventListener('click', function () { splitSaving(); renderRows(); bootstrap.Modal.getOrCreateInstance(document.getElementById('savingsWeekModal')).hide(); });
   document.getElementById('applyMemberFines')?.addEventListener('click', function () { refreshPanels(); bootstrap.Modal.getOrCreateInstance(document.getElementById('fineWeekModal')).hide(); });
+  document.getElementById('applyMemberWelfare')?.addEventListener('click', function () { refreshPanels(); bootstrap.Modal.getOrCreateInstance(document.getElementById('welfareWeekModal')).hide(); });
   document.getElementById('savingsWeekModal')?.addEventListener('show.bs.modal', function () { renderMonths(document.getElementById('memberSavingsMonths'), weeks, false); });
   document.getElementById('fineWeekModal')?.addEventListener('show.bs.modal', function () { renderMonths(document.getElementById('memberFineMonths'), fines, true); });
+  document.getElementById('welfareWeekModal')?.addEventListener('show.bs.modal', function () { renderMonths(document.getElementById('memberWelfareMonths'), welfare, false, true); });
   savingInput?.addEventListener('input', function () { splitSaving(); refreshPanels(); });
   document.querySelectorAll('input[name="selected_purposes"]').forEach(function (cb) { cb.addEventListener('change', refreshPanels); });
   refreshPanels();

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load financial_audit %}
 {% block content %}
 <style>
   .proof-modal {
@@ -103,6 +104,7 @@
               <th>Payment Time</th>
               <th>Remarks</th>
               <th>Submitted By</th>
+              <th>Audit</th>
             </tr>
           </thead>
           <tbody>
@@ -170,6 +172,7 @@
               </td>
 
               <td>{{ deposit.submitted_by.username|default:"-" }}</td>
+              <td>{% revision_count 'deposit' deposit.id as edits %}{% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %} <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'deposit' deposit.id %}">Inspect</a></td>
 
             </tr>
             {% endfor %}

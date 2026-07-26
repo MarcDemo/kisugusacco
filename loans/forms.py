@@ -2,6 +2,7 @@ from django import forms
 
 from groupcore.models import MemberProfile, SavingsAccount
 from .models import LoanGuarantorApproval, LoanRepayment, LoanRequest
+from groupcore.member_query import alphabetical_members
 
 
 class LoanRequestForm(forms.ModelForm):
@@ -31,11 +32,10 @@ class LoanRequestForm(forms.ModelForm):
         self.fields['duration_months'].required = True
         if user:
             self.fields['account'].queryset = SavingsAccount.objects.filter(owner=user, is_active=True)
-            self.fields['guarantors'].queryset = (
+            self.fields['guarantors'].queryset = alphabetical_members(
                 MemberProfile.objects
                 .filter(is_active=True, is_superuser=False, role='MEMBER')
                 .exclude(id=user.id)
-                .order_by('username')
             )
 
     def clean_guarantors(self):

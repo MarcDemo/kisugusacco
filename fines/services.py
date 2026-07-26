@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.utils import timezone
+from django.db.models.deletion import ProtectedError
 from django.db.models import Q
 
 from .models import Fine
@@ -34,8 +35,25 @@ def delete_missed_saving_fines_covered(member, account, payment_week):
     else:
         fines = fines.filter(account__isnull=True)
 
-    deleted_count, _deleted_by_model = fines.delete()
-    return deleted_count
+    cleared_count = 0
+    for fine in fines:
+        if fine.deposit_allocations.exists():
+            cleared_count += int(fine.void(
+                'Voided automatically because the weekly saving was completed on time. '
+                'The fine is retained because a deposit allocation references it.'
+            ))
+        else:
+            try:
+                fine.delete()
+                cleared_count += 1
+            except ProtectedError:
+                # An allocation may have been created after the existence check.
+                fine.refresh_from_db()
+                cleared_count += int(fine.void(
+                    'Voided automatically because the weekly saving was completed on time. '
+                    'The fine is retained because a deposit allocation references it.'
+                ))
+    return cleared_count
 
 
 def delete_deposit_week_missed_saving_fines(deposit):
@@ -54,7 +72,9 @@ def allocate_fine_payment(member, account, amount):
     account_filter = Q(account=account)
     if account is not None:
         account_filter |= Q(account__isnull=True)
-    fines = Fine.objects.filter(account_filter, member=member, is_paid=False).order_by(
+    fines = Fine.objects.filter(
+        account_filter, member=member, is_paid=False, is_voided=False,
+    ).order_by(
         'reference_week', 'date_issued', 'id'
     )
     for fine in fines:
@@ -82,10 +102,22 @@ def apply_selected_fine_allocations(allocations):
         locked = []
         for fine, amount in allocations:
             fine = Fine.objects.select_for_update().get(pk=fine.pk)
+            if fine.is_voided:
+                week_label = (
+                    f'{fine.reference_week:%d %b %Y}'
+                    if fine.reference_week else f'#{fine.pk}'
+                )
+                raise ValidationError(
+                    f'Fine {week_label} was voided before approval.'
+                )
             outstanding = fine.outstanding_amount
             if outstanding < amount:
+                week_label = (
+                    f'{fine.reference_week:%d %b %Y}'
+                    if fine.reference_week else f'#{fine.pk}'
+                )
                 raise ValidationError(
-                    f'Fine for week {fine.reference_week:%d %b %Y} changed before approval.'
+                    f'Fine {week_label} changed before approval.'
                 )
             locked.append((fine, amount))
         for fine, amount in locked:

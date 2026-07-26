@@ -1,6 +1,9 @@
 {% extends 'base.html' %}
+{% load financial_audit %}
 
 {% block content %}
+{% if loans_frozen %}<div class="alert alert-warning"><i class="bi bi-snow me-2"></i><strong>Year-end loan freeze is active.</strong> Loan decisions, approvals, interest accrual, and repayments are locked according to the closing state.</div>{% endif %}
+<form method="get" class="input-group mb-3"><input type="search" name="q" value="{{ search_query }}" class="form-control" placeholder="Search name, username, account, email, or phone"><button class="btn btn-success">Search</button></form>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&display=swap');
 
@@ -270,7 +273,7 @@
             <th>Outstanding</th>
             <th>Progress</th>
             <th>Approved On</th>
-            {% if is_treasurer %}<th>Record Payment</th>{% endif %}
+            {% if is_treasurer %}<th>Record Payment / Audit</th>{% endif %}
           </tr>
         </thead>
         <tbody>
@@ -306,6 +309,8 @@
             <td><small class="text-muted">{{ loan.approved_on|date:'d M Y' }}</small></td>
             {% if is_treasurer %}
             <td>
+              {% revision_count 'loan' loan.id as edits %}
+              <div class="mb-2">{% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %} <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'loan' loan.id %}">Inspect</a> <a class="btn btn-sm btn-outline-primary" href="{% url 'financial_record_edit' 'loan' loan.id %}">Edit</a></div>
               <form method="post" action="{% url 'record_loan_repayment' loan.id %}" class="pay-form">
                 {% csrf_token %}
                 <input type="number" name="amount" step="0.01" min="0.01" class="form-control form-control-sm" placeholder="Amount" required>
@@ -313,6 +318,13 @@
                 <input type="text" name="notes" class="form-control form-control-sm" placeholder="Notes (optional)">
                 <button type="submit" class="btn-save">Save Payment</button>
               </form>
+              {% for repayment in loan.repayments.all %}
+              <div class="small border-top mt-2 pt-2">
+                {{ repayment.paid_on|date:'d M Y' }} · UGX {{ repayment.amount|floatformat:'0' }}
+                <a href="{% url 'financial_record_history' 'repayment' repayment.id %}">Inspect</a>
+                {% if not repayment.source_deposit_id %}· <a href="{% url 'financial_record_edit' 'repayment' repayment.id %}">Edit</a>{% endif %}
+              </div>
+              {% endfor %}
             </td>
             {% endif %}
           </tr>
@@ -327,6 +339,21 @@
       </table>
     </div>
   </div>
+
+  {% if settled_loans %}
+  <div class="soft-card mb-4">
+    <div class="p-3 border-bottom d-flex align-items-center gap-2">
+      <span class="section-pill pill-indigo"><i class="bi bi-archive-fill"></i> Closed by Year-End Settlement</span>
+      <span class="badge text-bg-primary">{{ settled_loans|length }}</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table loans-table align-middle mb-0">
+        <thead><tr><th>Member</th><th>Account</th><th>Original principal</th><th>Closed on</th><th>Group loss</th><th>Audit</th></tr></thead>
+        <tbody>{% for loan in settled_loans %}<tr><td class="fw-semibold">{{ loan.member.get_full_name|default:loan.member.username }}</td><td>{{ loan.account.label|default:"—" }}</td><td>UGX {{ loan.principal|floatformat:"0" }}</td><td>{{ loan.settlement_closed_on|date:"d M Y, H:i" }}</td><td>UGX {{ loan.settlement_loss|floatformat:"0" }}</td><td><a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'loan' loan.id %}">Inspect</a></td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- ── Pending & Rejected ── -->
   <div class="row g-3 mb-4 section-2">

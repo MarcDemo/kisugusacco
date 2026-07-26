@@ -17,6 +17,7 @@
       </a>
     </div>
   </div>
+  <form method="get" class="input-group mb-4"><input type="search" name="q" value="{{ search_query }}" class="form-control" placeholder="Search name, username, account, email, or phone"><button class="btn btn-primary">Search</button></form>
 
   {% if unpaid_entries and not fines_can_be_created %}
   <div class="alert alert-info">

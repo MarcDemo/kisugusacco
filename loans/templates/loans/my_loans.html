@@ -1,8 +1,13 @@
 {% extends 'base.html' %}
+{% load financial_audit %}
 {% block content %}
 <div class="container py-4">
   <h2 class="mb-4 text-success">My Loans</h2>
+  {% if loans_frozen %}
+  <div class="alert alert-warning"><i class="bi bi-snow me-2"></i><strong>Year-end loan freeze is active.</strong> New requests, decisions, approvals, and repayments are temporarily unavailable. Loans captured in an unfinished settlement remain frozen until finalization.</div>
+  {% else %}
   <a class="btn btn-primary btn-sm mb-3" href="{% url 'request_loan' %}">Request Loan</a>
+  {% endif %}
   <div class="table-responsive">
     <table class="table table-bordered table-sm align-middle">
       <thead>
@@ -12,7 +17,9 @@
           <th>Duration</th>
           <th>Monthly Repayment</th>
           <th>Total Repayment</th>
+          <th>Outstanding</th>
           <th>Status</th>
+          <th>Audit</th>
         </tr>
       </thead>
       <tbody>
@@ -23,9 +30,13 @@
           <td>{% if loan.duration_months %}{{ loan.duration_months }} months{% else %}<span class="text-muted">—</span>{% endif %}</td>
           <td>{% if loan.duration_months %}UGX {{ loan.monthly_repayment|floatformat:'0' }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
           <td>{% if loan.duration_months %}UGX {{ loan.total_repayment|floatformat:'0' }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td>{% if loan.status == 'APPROVED' %}UGX {{ loan.outstanding_balance|floatformat:'0' }}{% elif loan.status == 'SETTLED' %}UGX 0{% else %}<span class="text-muted">—</span>{% endif %}</td>
           <td>
             {% if loan.status == 'APPROVED' %}
               <span class="badge text-bg-success">Approved</span>
+            {% elif loan.status == 'SETTLED' %}
+              <span class="badge text-bg-primary">Closed in settlement</span>
+              {% if loan.settlement_loss %}<div class="small text-danger mt-1">Group loss: UGX {{ loan.settlement_loss|floatformat:'0' }}</div>{% endif %}
             {% elif loan.status == 'PENDING_GUARANTOR' %}
               <span class="badge text-bg-secondary">Awaiting Guarantors</span>
               <div class="small text-muted mt-1">{{ loan.guarantor_approval_count }} of 3 approved</div>
@@ -37,9 +48,10 @@
               <span class="badge text-bg-warning">Pending Management Review</span>
             {% endif %}
           </td>
+          <td>{% revision_count 'loan' loan.id as edits %}{% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %} <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'loan' loan.id %}">Inspect</a></td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-center">No loan requests yet.</td></tr>
+        <tr><td colspan="8" class="text-center">No loan requests yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

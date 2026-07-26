@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+  .correction-choice-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem; }
+  .correction-choice { display:flex; align-items:flex-start; gap:.6rem; height:100%; border:1px solid #dfe7e2; border-radius:.75rem; padding:.7rem .8rem; background:#fff; cursor:pointer; transition:border-color .15s ease, background-color .15s ease, box-shadow .15s ease; }
+  .correction-choice:hover { border-color:#75b798; background:#f7fcf9; }
+  .correction-choice:has(input:checked) { border-color:#198754; background:#edf8f1; box-shadow:0 0 0 2px rgba(25,135,84,.1); }
+  .correction-choice input { margin-top:.2rem; flex:0 0 auto; }
+  .correction-choice span { overflow-wrap:anywhere; }
+  .correction-choice-grid.is-fines { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  @media (max-width:767.98px) { .correction-choice-grid, .correction-choice-grid.is-fines { grid-template-columns:1fr; } }
+</style>
+<div class="container py-4" style="max-width:900px">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div><div class="small text-uppercase text-muted">Treasurer correction</div><h2 class="mb-0">{{ record_type|title }} #{{ record.pk }}</h2></div>
+    <a class="btn btn-outline-secondary" href="{% url 'financial_record_history' record_type record.pk %}">Inspect history</a>
+  </div>
+  <div class="alert alert-warning">Saving creates a permanent audit revision. Workflow status and approval identities cannot be changed here.</div>
+  <form method="post" enctype="multipart/form-data" class="card border-0 shadow-sm"><div class="card-body row g-3">
+    {% csrf_token %}
+    {% for field in form %}
+    <div class="{% if field.name == 'edit_reason' or field.name == 'welfare_weeks' or field.name == 'selected_fines' %}col-12{% else %}col-md-6{% endif %}">
+      <label class="form-label fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {% if field.name == 'welfare_weeks' %}
+      <div class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Only available weeks are shown. Weeks paid or pending in another deposit are excluded.</div>
+      <div class="correction-choice-grid">
+        {% for choice in field %}
+        <label class="correction-choice">{{ choice.tag }}<span>{{ choice.choice_label }}</span></label>
+        {% empty %}<div class="alert alert-light border mb-0">No welfare weeks are available for correction.</div>{% endfor %}
+      </div>
+      {% elif field.name == 'selected_fines' %}
+      <div class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Only outstanding fines and fines already attached to this deposit are shown.</div>
+      <div class="correction-choice-grid is-fines">
+        {% for choice in field %}
+        <label class="correction-choice">{{ choice.tag }}<span>{{ choice.choice_label }}</span></label>
+        {% empty %}<div class="alert alert-light border mb-0">No fine allocations are available for correction.</div>{% endfor %}
+      </div>
+      {% else %}
+      {{ field }}
+      {% endif %}
+      {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+      {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+    </div>
+    {% endfor %}
+    {% for error in form.non_field_errors %}<div class="col-12 alert alert-danger py-2">{{ error }}</div>{% endfor %}
+    <div class="col-12"><button class="btn btn-success" type="submit">Save correction</button></div>
+  </div></form>
+</div>
+{% endblock %}

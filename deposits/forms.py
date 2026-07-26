@@ -8,6 +8,8 @@ from .models import DepositSubmission
 from groupcore.models import GroupSettings, MemberProfile, SavingsAccount
 from groupcore.week_cycle import current_saving_week
 from loans.models import LoanRequest
+from deposits.welfare_calendar import WEEKLY_WELFARE_AMOUNT, build_welfare_calendar
+from groupcore.member_query import alphabetical_members
 from deposits.rules import (
     MAX_WEEKLY_SAVINGS,
     MIN_WEEKLY_SAVINGS,
@@ -40,6 +42,12 @@ PURPOSE_AMOUNT_FIELDS = {
 }
 
 
+class LoanChoiceField(forms.ModelChoiceField):
+    def label_from_instance(self, loan):
+        balance = loan.outstanding_balance
+        return f'Loan #{loan.id} — balance UGX {balance:,.0f}'
+
+
 class DepositSubmissionForm(forms.ModelForm):
     payment_date = forms.DateField(widget=forms.DateInput(attrs={'type': 'date'}))
     payment_time = forms.TimeField(widget=forms.TimeInput(attrs={'type': 'time'}))
@@ -50,6 +58,10 @@ class DepositSubmissionForm(forms.ModelForm):
     selected_fine_weeks = forms.MultipleChoiceField(
         choices=(), required=False, widget=forms.CheckboxSelectMultiple,
         label='Fine weeks',
+    )
+    selected_welfare_weeks = forms.MultipleChoiceField(
+        choices=(), required=False, widget=forms.CheckboxSelectMultiple,
+        label='Welfare weeks',
     )
     account = forms.ModelChoiceField(queryset=SavingsAccount.objects.none(), required=True, empty_label="-- Select Account --")
     proof = forms.ImageField(
@@ -101,11 +113,14 @@ class DepositSubmissionForm(forms.ModelForm):
         label="Loan Repayment",
         widget=forms.NumberInput(attrs={'placeholder': '0', 'min': '0', 'step': '100'}),
     )
+    loan_repayment_loan = LoanChoiceField(
+        queryset=LoanRequest.objects.none(), required=False, label='Loan to repay',
+    )
 
     class Meta:
         model = DepositSubmission
         fields = [
-            'account', 'payment_date', 'payment_time',
+            'account', 'payment_date', 'payment_time', 'loan_repayment_loan',
             'saving_amount', 'welfare_amount', 'annual_subscription_amount', 'membership_amount', 'fine_amount', 'shares_amount', 'loan_repayment_amount',
             'proof', 'remarks',
         ]
@@ -158,6 +173,7 @@ class DepositSubmissionForm(forms.ModelForm):
         self._account = account
         self._submitted_week_values = self._data_values('selected_weeks') if self.is_bound else []
         self._submitted_fine_values = self._data_values('selected_fine_weeks') if self.is_bound else []
+        self._submitted_welfare_values = self._data_values('selected_welfare_weeks') if self.is_bound else []
         self._saving_statuses = saving_week_statuses(
             user,
             account,
@@ -217,6 +233,28 @@ class DepositSubmissionForm(forms.ModelForm):
                 'fine_allocations': state['fine_allocations'],
             })
         self.has_outstanding_fines = any(item['selectable'] for item in self.fine_options)
+        welfare_calendar = build_welfare_calendar(user, account, self.today)
+        submitted_welfare = set(self._submitted_welfare_values)
+        self.welfare_options = []
+        for item in welfare_calendar.get('weeks', []):
+            value = item['friday'].isoformat()
+            self.welfare_options.append({
+                **item,
+                'value': value,
+                'month_name': item['friday'].strftime('%B'),
+                'year': item['friday'].year,
+                'day': item['friday'].day,
+                'selected': value in submitted_welfare and item['selectable'],
+            })
+        self.fields['selected_welfare_weeks'].choices = [
+            (item['value'], f"Welfare · Week {item['number']} · {item['friday']:%d %b %Y}")
+            for item in self.welfare_options
+        ]
+        if user:
+            loan_qs = LoanRequest.objects.filter(member=user, status='APPROVED')
+            if account:
+                loan_qs = loan_qs.filter(account=account)
+            self.fields['loan_repayment_loan'].queryset = loan_qs.order_by('approved_on', 'id')
 
         initial_purposes = []
         if self.instance and self.instance.pk:
@@ -246,18 +284,21 @@ class DepositSubmissionForm(forms.ModelForm):
         if invalid_values:
             raise forms.ValidationError("Selected purpose is not allowed for this account.")
 
-        # Per-account check: loan repayment is only valid for accounts that have an active loan.
         if 'loan_repayment' in selected_purposes:
             account = cleaned_data.get('account')
             user = getattr(self, '_user', None)
-            if account and user:
-                account_has_loan = LoanRequest.objects.filter(
-                    member=user, account=account, status='APPROVED'
-                ).exists()
-                if not account_has_loan:
-                    raise forms.ValidationError(
-                        "The selected account has no active loan. Loan Repayment cannot be used."
-                    )
+            selected_loan = cleaned_data.get('loan_repayment_loan')
+            if not selected_loan:
+                self.add_error('loan_repayment_loan', 'Select the exact loan being repaid.')
+            elif not account or selected_loan.member_id != getattr(user, 'id', None) or selected_loan.account_id != account.id:
+                self.add_error('loan_repayment_loan', 'Select an approved loan for this account.')
+            else:
+                amount = cleaned_data.get('loan_repayment_amount') or Decimal('0.00')
+                payment_date = cleaned_data.get('payment_date') or self.today
+                if amount > selected_loan.outstanding_balance_as_of(payment_date):
+                    self.add_error('loan_repayment_amount', 'Repayment cannot exceed the selected loan balance.')
+        else:
+            cleaned_data['loan_repayment_loan'] = None
 
         selected_weeks = []
         weekly_allocations = []
@@ -345,9 +386,28 @@ class DepositSubmissionForm(forms.ModelForm):
             cleaned_data['fine_amount'] = sum((amount for _fine_id, amount in fine_allocations), Decimal('0.00'))
         else:
             cleaned_data['fine_amount'] = Decimal('0.00')
+
+        welfare_weeks = []
+        if 'welfare' in selected_purposes:
+            option_by_value = {item['value']: item for item in self.welfare_options}
+            for value in self._submitted_welfare_values:
+                option = option_by_value.get(value)
+                if not option or not option['selectable']:
+                    self.add_error('selected_welfare_weeks', 'Select only available welfare weeks.')
+                    continue
+                if option['friday'] not in welfare_weeks:
+                    welfare_weeks.append(option['friday'])
+            if not welfare_weeks and not self._submitted_welfare_values and cleaned_data.get('payment_week'):
+                welfare_weeks = [cleaned_data['payment_week']]
+            if not welfare_weeks:
+                self.add_error('selected_welfare_weeks', 'Select at least one welfare week.')
+            cleaned_data['welfare_amount'] = WEEKLY_WELFARE_AMOUNT * len(welfare_weeks)
+        else:
+            cleaned_data['welfare_amount'] = Decimal('0.00')
         cleaned_data['selected_week_dates'] = selected_weeks
         cleaned_data['weekly_allocations'] = weekly_allocations
         cleaned_data['fine_allocations'] = fine_allocations
+        cleaned_data['welfare_week_dates'] = welfare_weeks
 
         total = Decimal('0.00')
         for purpose_key, amount_field in PURPOSE_AMOUNT_FIELDS.items():
@@ -381,7 +441,14 @@ class DirectDepositForm(forms.ModelForm):
         choices=(), required=False, widget=forms.CheckboxSelectMultiple,
         label='Fine weeks',
     )
-    member = forms.ModelChoiceField(queryset=MemberProfile.objects.filter(is_superuser=False), label="Member")
+    selected_welfare_weeks = forms.MultipleChoiceField(
+        choices=(), required=False, widget=forms.CheckboxSelectMultiple,
+        label='Welfare weeks',
+    )
+    member = forms.ModelChoiceField(
+        queryset=alphabetical_members(MemberProfile.objects.filter(is_superuser=False)),
+        label="Member",
+    )
     account = forms.ModelChoiceField(queryset=SavingsAccount.objects.none(), required=False)
     proof = forms.ImageField(
         required=False,
@@ -437,11 +504,14 @@ class DirectDepositForm(forms.ModelForm):
         label="Loan Repayment",
         widget=forms.NumberInput(attrs={'placeholder': '0', 'min': '0', 'step': '100'}),
     )
+    loan_repayment_loan = LoanChoiceField(
+        queryset=LoanRequest.objects.none(), required=False, label='Loan to repay',
+    )
 
     class Meta:
         model = DepositSubmission
         fields = [
-            'member', 'account', 'payment_week', 'payment_date', 'payment_time',
+            'member', 'account', 'payment_week', 'payment_date', 'payment_time', 'loan_repayment_loan',
             'saving_amount', 'welfare_amount', 'annual_subscription_amount', 'membership_amount', 'fine_amount', 'shares_amount', 'loan_repayment_amount',
             'proof', 'remarks',
         ]
@@ -516,6 +586,7 @@ class DirectDepositForm(forms.ModelForm):
 
         selected_values = set(self._data_values('selected_weeks')) if self.is_bound else set()
         selected_fine_values = set(self._data_values('selected_fine_weeks')) if self.is_bound else set()
+        selected_welfare_values = set(self._data_values('selected_welfare_weeks')) if self.is_bound else set()
         member = (
             MemberProfile.objects.filter(pk=member_id, is_superuser=False).first()
             if member_id else None
@@ -597,6 +668,28 @@ class DirectDepositForm(forms.ModelForm):
                 'fine_allocations': fine_state['fine_allocations'],
             })
         self.has_outstanding_fines = any(item['selectable'] for item in self.fine_options)
+        welfare_calendar = build_welfare_calendar(member, account, self.today)
+        self.welfare_options = []
+        for item in welfare_calendar.get('weeks', []):
+            value = item['friday'].isoformat()
+            self.welfare_options.append({
+                **item,
+                'value': value,
+                'month_name': item['friday'].strftime('%B'),
+                'year': item['friday'].year,
+                'day': item['friday'].day,
+                'selected': value in selected_welfare_values and item['selectable'],
+            })
+        self.fields['selected_welfare_weeks'].choices = [
+            (item['value'], f"Welfare · Week {item['number']} · {item['friday']:%d %b %Y}")
+            for item in self.welfare_options
+        ]
+        loan_qs = LoanRequest.objects.none()
+        if member and account:
+            loan_qs = LoanRequest.objects.filter(
+                member=member, account=account, status='APPROVED'
+            ).order_by('approved_on', 'id')
+        self.fields['loan_repayment_loan'].queryset = loan_qs
 
         initial_purposes = []
         if self.instance and self.instance.pk:
@@ -637,10 +730,19 @@ class DirectDepositForm(forms.ModelForm):
             if SavingsAccount.objects.filter(owner=member, is_active=True).count() > 1:
                 self.add_error('account', 'Select an account for this member.')
 
-        if member and 'loan_repayment' in selected_purposes:
-            has_approved_loan = LoanRequest.objects.filter(member=member, status='APPROVED').exists()
-            if not has_approved_loan:
-                self.add_error('selected_purposes', 'This member has no approved loan for repayment.')
+        if 'loan_repayment' in selected_purposes:
+            selected_loan = cleaned_data.get('loan_repayment_loan')
+            if not selected_loan:
+                self.add_error('loan_repayment_loan', 'Select the exact loan being repaid.')
+            elif not member or not account or selected_loan.member_id != member.id or selected_loan.account_id != account.id:
+                self.add_error('loan_repayment_loan', 'Select an approved loan for this member and account.')
+            else:
+                repayment_amount = cleaned_data.get('loan_repayment_amount') or Decimal('0.00')
+                payment_date = cleaned_data.get('payment_date') or self.today
+                if repayment_amount > selected_loan.outstanding_balance_as_of(payment_date):
+                    self.add_error('loan_repayment_amount', 'Repayment cannot exceed the selected loan balance.')
+        else:
+            cleaned_data['loan_repayment_loan'] = None
 
         weekly_allocations = []
         submitted_saving_amount = cleaned_data.get('saving_amount') or Decimal('0.00')
@@ -792,9 +894,31 @@ class DirectDepositForm(forms.ModelForm):
         else:
             cleaned_data['fine_amount'] = Decimal('0.00')
 
+        welfare_weeks = []
+        raw_welfare_values = self._data_values('selected_welfare_weeks')
+        if 'welfare' in selected_purposes:
+            if len(raw_welfare_values) != len(set(raw_welfare_values)):
+                self.add_error('selected_welfare_weeks', 'Select each welfare week only once.')
+            welfare_by_value = {item['value']: item for item in self.welfare_options}
+            for value in raw_welfare_values:
+                option = welfare_by_value.get(value)
+                if not option or not option['selectable']:
+                    self.add_error('selected_welfare_weeks', 'Select only available welfare weeks.')
+                    continue
+                if option['friday'] not in welfare_weeks:
+                    welfare_weeks.append(option['friday'])
+            if not welfare_weeks and not raw_welfare_values and cleaned_data.get('payment_week'):
+                welfare_weeks = [cleaned_data['payment_week']]
+            if not welfare_weeks:
+                self.add_error('selected_welfare_weeks', 'Select at least one welfare week.')
+            cleaned_data['welfare_amount'] = WEEKLY_WELFARE_AMOUNT * len(welfare_weeks)
+        else:
+            cleaned_data['welfare_amount'] = Decimal('0.00')
+
         cleaned_data['selected_week_dates'] = selected_weeks
         cleaned_data['weekly_allocations'] = weekly_allocations
         cleaned_data['fine_allocations'] = fine_allocations
+        cleaned_data['welfare_week_dates'] = welfare_weeks
 
         if not selected_purposes:
             raise forms.ValidationError("Please tick at least one purpose.")

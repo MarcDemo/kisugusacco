@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load financial_audit %}
 {% block content %}
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&display=swap');
@@ -128,6 +129,7 @@
             <th>Amount</th>
             <th>Reason</th>
             <th>Status</th>
+            <th>Audit</th>
           </tr>
         </thead>
         <tbody>
@@ -137,12 +139,15 @@
             <td>UGX {{ fine.amount|floatformat:"0" }}{% if fine.amount_paid %}<div class="small text-muted">UGX {{ fine.outstanding_amount|floatformat:"0" }} left</div>{% endif %}</td>
             <td class="reason-col" title="{{ fine.reason }}">{{ fine.reason }}</td>
             <td>
-              {% if fine.is_paid %}
+              {% if fine.is_voided %}
+              <span class="badge text-bg-secondary"><i class="bi bi-slash-circle me-1"></i>Voided</span>
+              {% elif fine.is_paid %}
               <span class="badge text-bg-success"><i class="bi bi-check-circle me-1"></i>Paid</span>
               {% else %}
               <span class="badge text-bg-danger"><i class="bi bi-x-circle me-1"></i>Unpaid</span>
               {% endif %}
             </td>
+            <td>{% revision_count 'fine' fine.id as edits %}{% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %} <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'fine' fine.id %}">Inspect</a></td>
           </tr>
           {% endfor %}
         </tbody>

@@ -1,6 +1,8 @@
 from django import forms
 from .models import OtherIncome, ShareContribution, AnnualSubscription
 from groupcore.models import SavingsAccount
+from groupcore.models import MemberProfile
+from groupcore.member_query import alphabetical_members
 
 class OtherIncomeForm(forms.ModelForm):
     class Meta:
@@ -22,6 +24,9 @@ class ShareContributionForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['member'].queryset = alphabetical_members(
+            MemberProfile.objects.filter(is_superuser=False)
+        )
 
         member_id = None
         if self.is_bound:
@@ -55,3 +60,9 @@ class AnnualSubscriptionForm(forms.ModelForm):
     class Meta:
         model = AnnualSubscription
         fields = ['member', 'year', 'amount', 'is_paid', 'paid_on']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['member'].queryset = alphabetical_members(
+            MemberProfile.objects.filter(is_superuser=False)
+        )

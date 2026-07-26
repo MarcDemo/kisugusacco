@@ -6,21 +6,44 @@ from tempfile import TemporaryDirectory
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.contrib.messages import get_messages
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from deposits.models import DepositSubmission
+from deposits.models import (
+    DepositFineAllocation,
+    DepositSubmission,
+    DepositWelfareAllocation,
+)
+from deposits.rules import saving_year_weeks
 from fines.models import Fine
-from groupcore.models import GroupSettings, MemberProfile, SavingsAccount
+from groupcore.models import (
+    AccountSettlement,
+    FinancialRecordRevision,
+    FinancialYearClose,
+    GroupSettings,
+    MemberProfile,
+    SavingsAccount,
+    SettlementLoanAllocation,
+)
 from groupcore.week_cycle import current_saving_week, first_friday_of_year
 from groupcore.savings_calendar import (
+    apply_year_end_fine_relief,
     build_weekly_calendar,
     clear_on_time_missed_fine,
     ensure_overdue_fines,
+    second_friday_of_december,
 )
-from loans.models import LoanRequest
+from groupcore.year_close import (
+    ensure_automatic_year_lock,
+    finalize_financial_year,
+    lock_financial_year,
+    record_payout,
+)
+from loans.models import LoanGuarantorApproval, LoanRepayment, LoanRequest
+from Assets_Expenditures.models import Asset
 
 
 class SavingWeekCycleTests(SimpleTestCase):
@@ -45,6 +68,200 @@ class SavingWeekCycleTests(SimpleTestCase):
         self.assertEqual(saving_week.week_number, 27)
         self.assertEqual(saving_week.saving_year, 2027)
 
+    def test_saving_year_ends_on_second_friday_of_december(self):
+        _active, weeks = saving_year_weeks(
+            week_one_start=date(2026, 1, 2),
+            today=date(2026, 7, 26),
+        )
+
+        self.assertEqual(weeks[-1], date(2026, 12, 11))
+        self.assertNotIn(date(2026, 12, 18), weeks)
+        self.assertNotIn(date(2026, 12, 25), weeks)
+
+    def test_active_week_stays_on_closing_friday_after_year_is_closed(self):
+        saving_week = current_saving_week(
+            week_one_start=date(2026, 1, 2),
+            today=date(2026, 12, 25),
+        )
+
+        self.assertEqual(saving_week.week_start, date(2026, 12, 11))
+
+
+class FinancialRecordAuditTests(TestCase):
+    def setUp(self):
+        self.treasurer = MemberProfile.objects.create_user(
+            username='audit-treasurer', password='pass12345', role='TREASURER'
+        )
+        self.member = MemberProfile.objects.create_user(
+            username='audit-member', password='pass12345', role='MEMBER'
+        )
+        self.asset = Asset.objects.create(
+            name='Old asset', value=Decimal('10000'),
+            date_acquired=date(2026, 1, 1), source='SAVINGS',
+        )
+
+    def test_treasurer_edit_creates_revision_and_member_cannot_inspect_unowned_record(self):
+        self.client.login(username=self.treasurer.username, password='pass12345')
+        response = self.client.post(
+            reverse('financial_record_edit', args=['asset', self.asset.id]),
+            {
+                'name': 'Corrected asset', 'value': '12000',
+                'date_acquired': '2026-01-02', 'source': 'SAVINGS',
+                'remarks': 'Corrected', 'edit_reason': 'Correcting receipt details',
+            },
+        )
+        self.assertRedirects(
+            response,
+            reverse('financial_record_history', args=['asset', self.asset.id]),
+        )
+        revision = FinancialRecordRevision.objects.get(
+            record_type='asset', object_id=self.asset.id
+        )
+        self.assertEqual(revision.edited_by, self.treasurer)
+        self.assertEqual(revision.before_data['name'], 'Old asset')
+        self.assertEqual(revision.after_data['name'], 'Corrected asset')
+        history = self.client.get(
+            reverse('financial_record_history', args=['asset', self.asset.id])
+        )
+        self.assertContains(history, 'Name')
+        self.assertContains(history, 'Old asset')
+        self.assertContains(history, 'Corrected asset')
+        self.assertContains(history, 'Before')
+        self.assertContains(history, 'After')
+        self.assertNotContains(history, "{'name':")
+
+        self.client.logout()
+        self.client.login(username=self.member.username, password='pass12345')
+        denied = self.client.get(
+            reverse('financial_record_history', args=['asset', self.asset.id])
+        )
+        self.assertRedirects(denied, reverse('member_dashboard'))
+
+    def test_approved_deposit_edit_reconciles_welfare_fine_and_loan(self):
+        member = MemberProfile.objects.create_user(
+            username='audit-depositor', password='pass12345', role='MEMBER'
+        )
+        account = SavingsAccount.objects.create(owner=member, label='A')
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        loan = LoanRequest.objects.create(
+            member=member, account=account, principal=Decimal('100000'),
+            duration_months=6, status='APPROVED', approved_on=timezone.now(),
+        )
+        fine = Fine.objects.create(
+            member=member, account=account, fine_type='MISSED_WEEKLY_SAVING',
+            reference_week=date(2026, 1, 2), reason='Missed', amount=Decimal('2000'),
+            amount_paid=Decimal('2000'), is_paid=True,
+        )
+        deposit = DepositSubmission.objects.create(
+            member=member, account=account, submitted_by=self.treasurer,
+            reviewed_by=self.treasurer, payment_week=date(2026, 1, 2),
+            welfare_amount=Decimal('1000'), fine_amount=Decimal('2000'),
+            loan_repayment_amount=Decimal('10000'), loan_repayment_loan=loan,
+            payment_date=date(2026, 7, 1), payment_time=time(10, 0), status='APPROVED',
+        )
+        DepositWelfareAllocation.objects.create(
+            deposit=deposit, account=account, welfare_week=date(2026, 1, 2),
+        )
+        DepositFineAllocation.objects.create(
+            deposit=deposit, fine=fine, amount=Decimal('2000'),
+        )
+        LoanRepayment.objects.create(
+            loan=loan, source_deposit=deposit, amount=Decimal('10000'),
+            paid_on=deposit.payment_date, recorded_by=self.treasurer,
+        )
+
+        self.client.login(username=self.treasurer.username, password='pass12345')
+        response = self.client.post(
+            reverse('financial_record_edit', args=['deposit', deposit.id]),
+            {
+                'member': member.id, 'account': account.id,
+                'payment_week': '2026-01-02', 'payment_date': '2026-07-01',
+                'payment_time': '10:00', 'saving_amount': '0',
+                'annual_subscription_amount': '0', 'membership_amount': '0',
+                'shares_amount': '0', 'loan_repayment_loan': loan.id,
+                'loan_repayment_amount': '5000', 'remarks': 'Corrected',
+                'welfare_weeks': ['2026-01-09'], 'selected_fines': [fine.id],
+                'edit_reason': 'Correcting allocated weeks and repayment',
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        deposit.refresh_from_db()
+        fine.refresh_from_db()
+        self.assertEqual(deposit.welfare_amount, Decimal('1000'))
+        self.assertEqual(
+            deposit.welfare_allocations.get().welfare_week, date(2026, 1, 9)
+        )
+        self.assertEqual(fine.amount_paid, Decimal('2000'))
+        self.assertTrue(fine.is_paid)
+        self.assertEqual(
+            deposit.generated_loan_repayments.get().amount, Decimal('5000')
+        )
+        revision = FinancialRecordRevision.objects.get(
+            record_type='deposit', object_id=deposit.id
+        )
+        self.assertEqual(revision.before_data['welfare_weeks'][0]['week'], '2026-01-02')
+        self.assertEqual(revision.after_data['welfare_weeks'][0]['week'], '2026-01-09')
+
+    def test_deposit_edit_welfare_choices_stop_at_annual_closing(self):
+        member = MemberProfile.objects.create_user(
+            username='closing-edit-member', password='pass12345', role='MEMBER'
+        )
+        account = SavingsAccount.objects.create(owner=member, label='A')
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        deposit = DepositSubmission.objects.create(
+            member=member, account=account, submitted_by=self.treasurer,
+            payment_week=date(2026, 7, 3), saving_amount=Decimal('10000'),
+            payment_date=date(2026, 7, 3), payment_time=time(10, 0),
+            status='APPROVED',
+        )
+        self.client.login(username=self.treasurer.username, password='pass12345')
+
+        response = self.client.get(
+            reverse('financial_record_edit', args=['deposit', deposit.id])
+        )
+
+        choices = dict(response.context['form'].fields['welfare_weeks'].choices)
+        self.assertIn('2026-12-11', choices)
+        self.assertNotIn('2026-12-18', choices)
+        self.assertNotIn('2026-12-25', choices)
+
+    def test_deposit_edit_hides_welfare_weeks_used_by_other_deposits(self):
+        member = MemberProfile.objects.create_user(
+            username='occupied-welfare-member', password='pass12345', role='MEMBER'
+        )
+        account = SavingsAccount.objects.create(owner=member, label='A')
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        deposit = DepositSubmission.objects.create(
+            member=member, account=account, submitted_by=self.treasurer,
+            payment_week=date(2026, 7, 3), welfare_amount=Decimal('1000'),
+            payment_date=date(2026, 7, 3), payment_time=time(10, 0),
+            status='APPROVED',
+        )
+        DepositWelfareAllocation.objects.create(
+            deposit=deposit, account=account, welfare_week=date(2026, 7, 3)
+        )
+        other = DepositSubmission.objects.create(
+            member=member, account=account, submitted_by=self.treasurer,
+            payment_week=date(2026, 7, 10), welfare_amount=Decimal('1000'),
+            payment_date=date(2026, 7, 10), payment_time=time(10, 0),
+            status='PENDING',
+        )
+        DepositWelfareAllocation.objects.create(
+            deposit=other, account=account, welfare_week=date(2026, 7, 10)
+        )
+        self.client.login(username=self.treasurer.username, password='pass12345')
+
+        response = self.client.get(
+            reverse('financial_record_edit', args=['deposit', deposit.id])
+        )
+
+        choices = dict(response.context['form'].fields['welfare_weeks'].choices)
+        self.assertIn('2026-07-03', choices)
+        self.assertIn('currently on this deposit', choices['2026-07-03'])
+        self.assertNotIn('2026-07-10', choices)
+        self.assertContains(response, 'Only available weeks are shown')
+        self.assertContains(response, 'correction-choice-grid')
+
 
 class AutomaticWeeklyFineTests(TestCase):
     def test_ten_thousand_is_paid_but_subthreshold_week_is_fined(self):
@@ -68,7 +285,37 @@ class AutomaticWeeklyFineTests(TestCase):
 
         self.assertFalse(Fine.objects.filter(member=paid_member).exists())
         fine = Fine.objects.get(member=unpaid_member, reference_week=date(2026, 1, 2))
-        self.assertEqual(fine.amount, Decimal('1000'))
+        self.assertEqual(fine.amount, Decimal('2000'))
+
+    def test_year_end_relief_only_applies_when_savings_remain_unpaid(self):
+        member = MemberProfile.objects.create_user(username='relief-member', password='pass12345')
+        paid_member = MemberProfile.objects.create_user(username='late-paid-member', password='pass12345')
+        account = SavingsAccount.objects.create(owner=member, label='A')
+        paid_account = SavingsAccount.objects.create(owner=paid_member, label='A')
+        week = date(2026, 1, 2)
+        closing = second_friday_of_december(2026)
+        unpaid_fine = Fine.objects.create(
+            member=member, account=account, fine_type='MISSED_WEEKLY_SAVING',
+            reference_week=week, reason='Missed', amount=Decimal('2000'),
+        )
+        paid_fine = Fine.objects.create(
+            member=paid_member, account=paid_account, fine_type='MISSED_WEEKLY_SAVING',
+            reference_week=week, reason='Late', amount=Decimal('2000'),
+        )
+        DepositSubmission.objects.create(
+            member=paid_member, account=paid_account, submitted_by=paid_member,
+            payment_week=week, saving_amount=Decimal('10000'),
+            payment_date=date(2026, 2, 1), payment_time=time(9, 0), status='APPROVED',
+        )
+
+        self.assertEqual(apply_year_end_fine_relief(2026, closing), 1)
+        self.assertEqual(apply_year_end_fine_relief(2026, closing), 0)
+        unpaid_fine.refresh_from_db()
+        paid_fine.refresh_from_db()
+        self.assertEqual(unpaid_fine.amount, Decimal('1000'))
+        self.assertEqual(unpaid_fine.original_amount, Decimal('2000'))
+        self.assertEqual(unpaid_fine.relief_applied_on, closing)
+        self.assertEqual(paid_fine.amount, Decimal('2000'))
 
     def test_calendar_marks_valid_late_allocation_paid_late(self):
         member = MemberProfile.objects.create_user(username='calendar-late', password='pass12345')
@@ -122,6 +369,40 @@ class AutomaticWeeklyFineTests(TestCase):
         self.assertEqual(clear_on_time_missed_fine(member, account, date(2026, 1, 2)), 1)
         self.assertFalse(Fine.objects.filter(pk=fine.pk).exists())
 
+    def test_on_time_approval_voids_referenced_fine_instead_of_raising_protected_error(self):
+        member = MemberProfile.objects.create_user(
+            username='protected-fine-member', password='pass12345'
+        )
+        account = SavingsAccount.objects.create(owner=member, label='A')
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        fine = Fine.objects.create(
+            member=member, account=account, fine_type='MISSED_WEEKLY_SAVING',
+            reference_week=date(2026, 1, 2), reason='Generated before approval',
+            amount=Decimal('2000'),
+        )
+        fine_deposit = DepositSubmission.objects.create(
+            member=member, account=account, submitted_by=member,
+            payment_week=date(2026, 1, 2), fine_amount=Decimal('2000'),
+            payment_date=date(2026, 1, 4), payment_time=time(9, 0), status='PENDING',
+        )
+        DepositFineAllocation.objects.create(
+            deposit=fine_deposit, fine=fine, amount=Decimal('2000'),
+        )
+        DepositSubmission.objects.create(
+            member=member, account=account, submitted_by=member,
+            payment_week=date(2026, 1, 2), saving_amount=Decimal('10000'),
+            payment_date=date(2026, 1, 3), payment_time=time(10, 0), status='APPROVED',
+        )
+
+        self.assertEqual(
+            clear_on_time_missed_fine(member, account, date(2026, 1, 2)),
+            1,
+        )
+        fine.refresh_from_db()
+        self.assertTrue(fine.is_voided)
+        self.assertEqual(fine.outstanding_amount, Decimal('0.00'))
+        self.assertTrue(fine.deposit_allocations.filter(deposit=fine_deposit).exists())
+
     def test_generation_is_idempotent_and_late_savings_do_not_remove_fine(self):
         member = MemberProfile.objects.create_user(username='calendar-member', password='pass12345')
         account = SavingsAccount.objects.create(owner=member, label='A')
@@ -137,6 +418,26 @@ class AutomaticWeeklyFineTests(TestCase):
             payment_date=date(2026, 1, 6), payment_time=time(10, 0), status='APPROVED',
         )
         self.assertTrue(Fine.objects.filter(pk=fine.pk, is_paid=False).exists())
+
+    def test_fine_generation_stops_at_annual_closing_week(self):
+        member = MemberProfile.objects.create_user(
+            username='closing-fine-member', password='pass12345'
+        )
+        account = SavingsAccount.objects.create(owner=member, label='A')
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+
+        ensure_overdue_fines(
+            member,
+            account,
+            timezone.make_aware(datetime(2026, 12, 28, 9, 0)),
+        )
+
+        fine_weeks = Fine.objects.filter(member=member).values_list(
+            'reference_week', flat=True
+        )
+        self.assertIn(date(2026, 12, 11), fine_weeks)
+        self.assertNotIn(date(2026, 12, 18), fine_weeks)
+        self.assertNotIn(date(2026, 12, 25), fine_weeks)
 
     def test_new_year_waits_for_the_first_friday_saving_week(self):
         saving_week = current_saving_week(
@@ -480,12 +781,267 @@ class YearEndSettlementYearFilterTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['target_year'], self.previous_year)
-        self.assertEqual(response.context['group_savings_total'], Decimal('1000'))
-        self.assertEqual(response.context['loan_interest_pool'], self.previous_loan.total_interest)
-        self.assertContains(
-            response,
-            f'Viewing the historical settlement calculation for {self.previous_year}.',
+        self.assertEqual(
+            response.context['state'].state,
+            FinancialYearClose.STATE_LOCKED,
         )
+        self.assertContains(response, 'Locked — Review')
+        self.assertContains(response, 'No finalized settlement version exists')
+
+
+class ControlledFinancialYearClosingTests(TestCase):
+    year = 2026
+
+    def setUp(self):
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        self.treasurer = MemberProfile.objects.create_user(
+            username='close-treasurer', password='pass12345', role='TREASURER'
+        )
+        self.member = MemberProfile.objects.create_user(
+            username='close-member', password='pass12345', role='MEMBER'
+        )
+        self.account = SavingsAccount.objects.create(
+            owner=self.member, label='Main'
+        )
+        self.cutoff = timezone.make_aware(datetime(2026, 12, 12, 9, 0))
+
+    def _deposit(self, member=None, account=None, status='APPROVED', **amounts):
+        return DepositSubmission.objects.create(
+            member=member or self.member,
+            account=account or self.account,
+            submitted_by=member or self.member,
+            payment_week=date(2026, 1, 2),
+            payment_date=date(2026, 1, 2),
+            payment_time=time(9, 0),
+            status=status,
+            **amounts,
+        )
+
+    def test_only_treasurer_can_lock_and_manual_lock_cannot_be_early(self):
+        with self.assertRaises(PermissionDenied):
+            lock_financial_year(self.year, self.member, cutoff_at=self.cutoff)
+        with self.assertRaises(ValidationError):
+            lock_financial_year(
+                self.year,
+                self.treasurer,
+                cutoff_at=timezone.make_aware(datetime(2026, 12, 1, 9, 0)),
+            )
+
+        state = lock_financial_year(
+            self.year, self.treasurer, cutoff_at=self.cutoff
+        )
+
+        self.assertEqual(state.state, FinancialYearClose.STATE_LOCKED)
+        self.assertEqual(state.locked_by, self.treasurer)
+        self.assertFalse(state.auto_locked)
+
+    def test_pending_queue_blocks_finalization_until_resolved(self):
+        pending = self._deposit(status='PENDING', saving_amount=Decimal('10000'))
+        state = lock_financial_year(
+            self.year, self.treasurer, cutoff_at=self.cutoff
+        )
+
+        with self.assertRaises(ValidationError):
+            finalize_financial_year(self.year, self.treasurer)
+
+        pending.status = 'REJECTED'
+        pending.save(update_fields=['status'])
+        version = finalize_financial_year(self.year, self.treasurer)
+        state.refresh_from_db()
+        self.assertEqual(state.state, FinancialYearClose.STATE_FINALIZED)
+        self.assertEqual(version.version, 1)
+
+    def test_pre_cutoff_pending_repayment_can_be_approved_after_lock(self):
+        loan = LoanRequest.objects.create(
+            member=self.member,
+            account=self.account,
+            principal=Decimal('100000'),
+            monthly_interest_rate=Decimal('2'),
+            duration_months=6,
+            status=LoanRequest.STATUS_APPROVED,
+            approved_on=timezone.make_aware(datetime(2026, 6, 1, 9, 0)),
+        )
+        deposit = self._deposit(
+            status='PENDING',
+            loan_repayment_amount=Decimal('10000'),
+            loan_repayment_loan=loan,
+        )
+        state = lock_financial_year(
+            self.year, self.treasurer, cutoff_at=self.cutoff
+        )
+        frozen_before = state.loan_snapshots.get(loan=loan).frozen_balance
+        self.client.login(
+            username=self.treasurer.username, password='pass12345'
+        )
+
+        response = self.client.post(reverse('approve_deposit', args=[deposit.id]))
+
+        self.assertEqual(response.status_code, 302)
+        deposit.refresh_from_db()
+        snapshot = state.loan_snapshots.get(loan=loan)
+        repayment = deposit.generated_loan_repayments.get()
+        self.assertEqual(deposit.status, 'APPROVED')
+        self.assertEqual(
+            snapshot.frozen_balance,
+            frozen_before - repayment.amount,
+        )
+        self.assertEqual(
+            snapshot.collected_interest,
+            repayment.interest_component,
+        )
+
+    def test_automatic_lock_uses_january_first_friday_cutoff(self):
+        state = ensure_automatic_year_lock(date(2027, 1, 1))
+
+        self.assertEqual(state.year, 2026)
+        self.assertEqual(state.state, FinancialYearClose.STATE_LOCKED)
+        self.assertTrue(state.auto_locked)
+        self.assertEqual(
+            timezone.localtime(state.cutoff_at),
+            timezone.make_aware(datetime(2027, 1, 1, 0, 0)),
+        )
+
+    def test_settlement_deducts_only_outstanding_obligations(self):
+        _active, weeks = saving_year_weeks(date(2026, 1, 2), date(2026, 12, 11))
+        deposit = self._deposit(
+            saving_amount=Decimal('100000'),
+            welfare_amount=Decimal('1000'),
+            annual_subscription_amount=Decimal('10000'),
+        )
+        DepositWelfareAllocation.objects.create(
+            deposit=deposit,
+            account=self.account,
+            welfare_week=weeks[0],
+            amount=Decimal('1000'),
+        )
+        Fine.objects.create(
+            member=self.member,
+            account=self.account,
+            fine_type='MISSED_WEEKLY_SAVING',
+            reference_week=weeks[1],
+            reason='Unpaid after relief',
+            amount=Decimal('1000'),
+        )
+        paid_fine = Fine.objects.create(
+            member=self.member,
+            account=self.account,
+            fine_type='OTHER',
+            reason='Already paid',
+            amount=Decimal('3000'),
+            amount_paid=Decimal('3000'),
+            is_paid=True,
+        )
+        self.assertEqual(paid_fine.outstanding_amount, Decimal('0'))
+        lock_financial_year(self.year, self.treasurer, cutoff_at=self.cutoff)
+
+        version = finalize_financial_year(self.year, self.treasurer)
+        row = version.account_settlements.get(account=self.account)
+
+        self.assertEqual(row.savings_total, Decimal('100000'))
+        self.assertEqual(
+            row.welfare_due,
+            Decimal('1000') * (len(weeks) - 1),
+        )
+        self.assertEqual(row.fine_due, Decimal('1000'))
+        self.assertEqual(row.annual_due, Decimal('0'))
+        self.assertEqual(
+            row.net_payout,
+            Decimal('100000') - row.welfare_due - row.fine_due,
+        )
+
+    def test_loan_offsets_borrower_then_guarantors_and_records_loss(self):
+        guarantors = [
+            MemberProfile.objects.create_user(
+                username=f'close-guarantor-{number}',
+                password='pass12345',
+            )
+            for number in (1, 2)
+        ]
+        guarantor_accounts = [
+            SavingsAccount.objects.create(owner=user, label='Main')
+            for user in guarantors
+        ]
+        self._deposit(saving_amount=Decimal('100000'))
+        for user, account in zip(guarantors, guarantor_accounts):
+            self._deposit(
+                member=user, account=account, saving_amount=Decimal('100000')
+            )
+        loan = LoanRequest.objects.create(
+            member=self.member,
+            account=self.account,
+            principal=Decimal('300000'),
+            monthly_interest_rate=Decimal('2'),
+            duration_months=12,
+            status=LoanRequest.STATUS_APPROVED,
+            approved_on=timezone.make_aware(datetime(2026, 12, 1, 9, 0)),
+        )
+        for guarantor in guarantors:
+            LoanGuarantorApproval.objects.create(
+                loan=loan,
+                guarantor=guarantor,
+                status=LoanGuarantorApproval.STATUS_APPROVED,
+            )
+        lock_financial_year(self.year, self.treasurer, cutoff_at=self.cutoff)
+
+        version = finalize_financial_year(self.year, self.treasurer)
+        loan.refresh_from_db()
+        allocations = version.loan_allocations.filter(
+            loan_snapshot__loan=loan
+        )
+
+        self.assertEqual(loan.status, LoanRequest.STATUS_SETTLED)
+        self.assertTrue(
+            allocations.filter(
+                allocation_type=SettlementLoanAllocation.TYPE_BORROWER
+            ).exists()
+        )
+        self.assertEqual(
+            allocations.filter(
+                allocation_type=SettlementLoanAllocation.TYPE_GUARANTOR
+            ).count(),
+            2,
+        )
+        self.assertGreater(version.total_group_loss, Decimal('0'))
+        self.assertEqual(loan.settlement_loss, version.total_group_loss)
+
+    def test_finalization_is_idempotent_until_an_audited_correction(self):
+        self._deposit(saving_amount=Decimal('100000'))
+        state = lock_financial_year(
+            self.year, self.treasurer, cutoff_at=self.cutoff
+        )
+        first = finalize_financial_year(self.year, self.treasurer)
+        repeated = finalize_financial_year(self.year, self.treasurer)
+        self.assertEqual(repeated.pk, first.pk)
+        self.assertEqual(state.versions.count(), 1)
+
+        state.needs_regeneration = True
+        state.save(update_fields=['needs_regeneration'])
+        corrected = finalize_financial_year(self.year, self.treasurer)
+        self.assertEqual(corrected.version, 2)
+        self.assertEqual(state.versions.count(), 2)
+
+    def test_payout_permissions_and_partial_status(self):
+        self._deposit(saving_amount=Decimal('100000'))
+        lock_financial_year(self.year, self.treasurer, cutoff_at=self.cutoff)
+        row = finalize_financial_year(
+            self.year, self.treasurer
+        ).account_settlements.get(account=self.account)
+
+        with self.assertRaises(PermissionDenied):
+            record_payout(
+                row, Decimal('1'), date(2026, 12, 20), '', '', self.member
+            )
+        payment = record_payout(
+            row,
+            row.net_payout / 2,
+            date(2026, 12, 20),
+            'BANK-001',
+            '',
+            self.treasurer,
+        )
+        row.refresh_from_db()
+        self.assertEqual(row.payout_status, AccountSettlement.STATUS_PARTIAL)
+        self.assertEqual(payment.recorded_by, self.treasurer)
 
 
 class HistoricalDataImportCommandTests(TestCase):

@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load form_tags %}
+{% load form_tags financial_audit %}
 
 {% block content %}
 <style>
@@ -228,6 +228,43 @@
     color: #b42333;
   }
 
+  .dd-date-button.is-welfare-paid {
+    border-color: #198754;
+    background: #e9f7ef;
+    color: #146c43;
+  }
+
+  .dd-date-button.is-welfare-pending {
+    border-color: #f0ad4e;
+    background: #fff8e6;
+    color: #805b00;
+  }
+
+  .dd-date-button.is-welfare-current {
+    border: 2px solid #0d6efd;
+    background: #eef5ff;
+    color: #084298;
+  }
+
+  .dd-welfare-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .5rem;
+    border: 1px solid #dce7e0;
+    border-radius: .75rem;
+    padding: .75rem .85rem;
+    background: #fff;
+  }
+
+  .dd-welfare-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .45rem;
+    margin-top: .65rem;
+  }
+
   .dd-date-button.is-paid-late {
     border-color: #d97706;
     background: #fff7ed;
@@ -421,11 +458,47 @@
   <h3 class="mb-4 text-success">
     <i class="bi bi-clipboard-check me-2"></i> Manage Deposits
   </h3>
+  {% if close_state.state == 'LOCKED_REVIEW' %}
+  <div class="alert alert-warning shadow-sm">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div><strong>{{ active_saving_year }} is locked for review.</strong> New old-year entries are blocked. You may still approve or reject the {{ close_pending_count }} eligible pending submission{{ close_pending_count|pluralize }} received before {{ close_state.cutoff_at|date:"d M Y, H:i" }}.</div>
+      <a class="btn btn-sm btn-dark" href="{% url 'year_end_settlement' %}?year={{ active_saving_year }}">Open settlement</a>
+    </div>
+  </div>
+  {% elif close_state.state == 'FINALIZED' %}
+  <div class="alert alert-primary shadow-sm">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div><strong>{{ active_saving_year }} is finalized.</strong> Old-year submissions are closed and the published settlement is immutable.</div>
+      <a class="btn btn-sm btn-primary" href="{% url 'year_end_settlement' %}?year={{ active_saving_year }}">View settlement</a>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- Deposit submissions and review history -->
   <div class="card shadow-sm mb-5" id="depositSubmissionsCard">
     <div class="card-header bg-success text-white">
       <h5 class="mb-0"><i class="bi bi-inbox me-2"></i> Deposit Submissions</h5>
+    </div>
+    <div class="card-body border-bottom">
+      <nav class="nav nav-pills flex-wrap gap-2 mb-3" aria-label="Filter deposit submissions by status">
+        <a class="nav-link {% if not status_filter %}active{% endif %}" href="{% url 'manage_deposits' %}{% if search_query %}?q={{ search_query|urlencode }}{% endif %}">
+          All <span class="badge {% if not status_filter %}text-bg-light{% else %}text-bg-secondary{% endif %} ms-1">{{ status_counts.all }}</span>
+        </a>
+        <a class="nav-link {% if status_filter == 'PENDING' %}active bg-warning text-dark{% endif %}" href="{% url 'manage_deposits' %}?status=PENDING{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}">
+          Pending <span class="badge {% if status_filter == 'PENDING' %}text-bg-dark{% else %}text-bg-warning text-dark{% endif %} ms-1">{{ status_counts.pending }}</span>
+        </a>
+        <a class="nav-link {% if status_filter == 'APPROVED' %}active{% endif %}" href="{% url 'manage_deposits' %}?status=APPROVED{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}">
+          Approved <span class="badge {% if status_filter == 'APPROVED' %}text-bg-light{% else %}text-bg-success{% endif %} ms-1">{{ status_counts.approved }}</span>
+        </a>
+        <a class="nav-link {% if status_filter == 'REJECTED' %}active bg-danger{% endif %}" href="{% url 'manage_deposits' %}?status=REJECTED{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}">
+          Rejected <span class="badge {% if status_filter == 'REJECTED' %}text-bg-light{% else %}text-bg-danger{% endif %} ms-1">{{ status_counts.rejected }}</span>
+        </a>
+      </nav>
+      <form method="get" class="input-group">
+        {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
+        <input type="search" name="q" value="{{ search_query }}" class="form-control" placeholder="Search name, username, account, email, or phone">
+        <button class="btn btn-success">Search</button>
+      </form>
     </div>
     <div class="card-body p-0">
       {% if deposit_submissions %}
@@ -518,6 +591,10 @@
               <td>{{ deposit.payment_date|date:"Y-m-d" }}</td>
               <td>{{ deposit.payment_time|date:"H:i" }}</td>
               <td class="text-nowrap">
+                {% revision_count 'deposit' deposit.id as edits %}
+                {% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %}
+                <a href="{% url 'financial_record_history' 'deposit' deposit.id %}" class="btn btn-sm btn-outline-secondary" title="Inspect"><i class="bi bi-search"></i></a>
+                <a href="{% url 'financial_record_edit' 'deposit' deposit.id %}" class="btn btn-sm btn-outline-primary" title="Edit"><i class="bi bi-pencil"></i></a>
                 {% if deposit.status == 'PENDING' %}
                 <a href="{% url 'approve_deposit' deposit.id %}" class="btn btn-sm btn-success" title="Approve">
                   <i class="bi bi-check-circle"></i>
@@ -536,7 +613,13 @@
       </div>
       {% include 'includes/pagination.html' %}
       {% else %}
-      <div class="p-4 text-muted">No deposit submissions at the moment.</div>
+      <div class="p-4 text-muted">
+        {% if status_filter or search_query %}
+        No deposit submissions match the selected filter.
+        {% else %}
+        No deposit submissions at the moment.
+        {% endif %}
+      </div>
       {% endif %}
     </div>
   </div>
@@ -677,7 +760,11 @@
               </div>
               <div class="col-md-3 col-6 dd-purpose-box" data-purpose="loan_repayment">
                 <label for="id_loan_repayment_amount" class="form-label small">Loan Repayment (UGX)</label>
+                {{ form.loan_repayment_loan|add_class:"form-select mb-2" }}
                 {{ form.loan_repayment_amount|add_class:"form-control dd-purpose-amount" }}
+                {% if form.loan_repayment_loan.errors %}
+                <div class="text-danger small mt-1">{{ form.loan_repayment_loan.errors|join:", " }}</div>
+                {% endif %}
                 {% if form.loan_repayment_amount.errors %}
                 <div class="text-danger small mt-1">{{ form.loan_repayment_amount.errors|join:", " }}</div>
                 {% endif %}
@@ -750,6 +837,22 @@
             </section>
           </div>
 
+          <div class="col-12 d-none" id="ddWelfareAllocation" aria-live="polite">
+            <section class="dd-savings-allocation">
+              <div class="d-flex justify-content-between align-items-center gap-2">
+                <div><h6 class="mb-1">Welfare weeks</h6><p class="small text-muted mb-0">Each selected week is UGX 1,000.</p></div>
+                <button type="button" class="btn btn-outline-warning dd-week-trigger" data-bs-toggle="modal" data-bs-target="#ddWelfarePickerModal">Choose welfare weeks</button>
+              </div>
+              <div class="dd-welfare-summary mt-3">
+                <span><strong id="ddWelfareSelectedCount">0</strong> week(s) selected</span>
+                <strong id="ddWelfareSelectedTotal">UGX 0</strong>
+              </div>
+              <div class="dd-welfare-chips" id="ddWelfareRows"></div>
+              {% if form.selected_welfare_weeks.errors %}<div class="text-danger small mt-2">{{ form.selected_welfare_weeks.errors|join:", " }}</div>{% endif %}
+              <div id="ddWelfareOptionStore" hidden>{% for item in form.welfare_options %}<span data-welfare-option data-week="{{ item.value }}" data-label="Welfare Week {{ item.number }} · {{ item.friday|date:'d M Y' }}" data-month="{{ item.month_name }} {{ item.year }}" data-day="{{ item.day }}" data-status="{{ item.status }}" data-selectable="{{ item.selectable|yesno:'true,false' }}" data-selected="{{ item.selected|yesno:'true,false' }}"><input type="checkbox" name="selected_welfare_weeks" value="{{ item.value }}" {% if item.selected %}checked{% endif %} {% if not item.selectable %}disabled{% endif %}></span>{% endfor %}</div>
+            </section>
+          </div>
+
           <div class="col-md-7">
             <label class="form-label">Deposit summary</label>
             <div class="dd-deposit-summary" id="ddDepositSummary" aria-live="polite">
@@ -797,6 +900,23 @@
 </div>
 
 <div class="modal fade dd-calendar-modal" id="ddFinePickerModal" tabindex="-1" aria-labelledby="ddFinePickerTitle"><div class="modal-dialog modal-dialog-centered modal-xl modal-fullscreen-sm-down"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title" id="ddFinePickerTitle">Select outstanding fine weeks</h5><p class="small text-muted mb-0">Red circles are outstanding and selectable. Teal circles are fully paid.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><div class="dd-calendar-months" id="ddFineMonths"></div></div><div class="modal-footer"><span class="small text-muted me-auto" id="ddFineTotal">No fines selected</span><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-success" id="ddApplyFines">Apply fines</button></div></div></div></div>
+<div class="modal fade dd-calendar-modal" id="ddWelfarePickerModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-xl modal-fullscreen-sm-down"><div class="modal-content">
+    <div class="modal-header"><div><h5 class="modal-title"><i class="bi bi-heart-pulse text-success me-2"></i>Select welfare weeks</h5><p class="small text-muted mb-0">Choose the exact Friday(s) covered at UGX 1,000 each.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <div class="dd-welfare-summary mb-3"><span><strong id="ddWelfareModalCount">0</strong> week(s) selected</span><strong id="ddWelfareModalTotal">UGX 0</strong></div>
+      <div class="dd-calendar-legend mb-3">
+        <span class="dd-legend-item"><span class="dd-legend-mark bg-success text-white"><i class="bi bi-check"></i></span>Paid</span>
+        <span class="dd-legend-item"><span class="dd-legend-mark bg-warning">!</span>Pending</span>
+        <span class="dd-legend-item"><span class="dd-legend-mark bg-danger text-white">×</span>Missed</span>
+        <span class="dd-legend-item"><span class="dd-legend-mark border-primary text-primary">•</span>Current</span>
+        <span class="dd-legend-item"><span class="dd-legend-mark bg-light">○</span>Future</span>
+      </div>
+      <div class="dd-calendar-months" id="ddWelfareMonths"></div>
+    </div>
+    <div class="modal-footer"><span class="me-auto small text-muted">Paid and pending weeks are locked</span><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-success" id="ddApplyWelfare"><i class="bi bi-check2 me-1"></i>Apply selection</button></div>
+  </div></div>
+</div>
 
 <div class="modal fade dd-calendar-modal" id="ddWeekPickerModal" tabindex="-1" aria-labelledby="ddWeekPickerTitle" aria-describedby="ddWeekPickerHelp" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-xl modal-fullscreen-sm-down">
@@ -1428,6 +1548,14 @@
           return [week.date, week];
         }));
         document.dispatchEvent(new CustomEvent('dd:fine-status', {detail: payload.fines || []}));
+        document.dispatchEvent(new CustomEvent('dd:welfare-status', {detail: payload.welfare || []}));
+        const loanSelect = document.getElementById('id_loan_repayment_loan');
+        if (loanSelect) {
+          const selectedLoan = loanSelect.value;
+          loanSelect.replaceChildren(new Option('-- Select loan --', ''));
+          (payload.loans || []).forEach(function (loan) { loanSelect.add(new Option(loan.label, loan.id)); });
+          loanSelect.value = selectedLoan;
+        }
         const removed = [];
 
         weekOptions.forEach(function (option) {
@@ -1612,6 +1740,65 @@
     updateSummary();
     renderCalendar();
   });
+</script>
+<script>
+(function () {
+  const store = document.getElementById('ddWelfareOptionStore');
+  const purpose = document.querySelector('input[name="selected_purposes"][value="welfare"]');
+  const panel = document.getElementById('ddWelfareAllocation');
+  const months = document.getElementById('ddWelfareMonths');
+  const rows = document.getElementById('ddWelfareRows');
+  const amount = document.getElementById('id_welfare_amount');
+  if (!store) return;
+  let options = [];
+  function replace(items) {
+    const selected = new Set(options.filter(function (x) { return x.checkbox.checked; }).map(function (x) { return x.date; }));
+    store.replaceChildren();
+    options = items.map(function (item) {
+      const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.name = 'selected_welfare_weeks'; checkbox.value = item.date; checkbox.checked = (selected.has(item.date) || item.selected) && item.selectable; checkbox.disabled = !item.selectable; store.appendChild(checkbox);
+      return {date:item.date, label:item.label, month:item.month, day:item.day, status:item.status, selectable:Boolean(item.selectable), checkbox:checkbox};
+    });
+  }
+  function render() {
+    if (months) {
+      months.replaceChildren(); const groups = new Map();
+      options.forEach(function (x) { if (!groups.has(x.month)) groups.set(x.month, []); groups.get(x.month).push(x); });
+      groups.forEach(function (items, month) {
+        const section = document.createElement('section'); section.className = 'dd-calendar-month';
+        const title = document.createElement('h6'); title.className = 'dd-calendar-month-title'; title.textContent = month; section.appendChild(title);
+        const days = document.createElement('div'); days.className = 'dd-calendar-days';
+        items.forEach(function (x) { const b = document.createElement('button'); b.type='button'; b.className='dd-date-button'; b.textContent=x.day; b.disabled=!x.selectable; b.classList.toggle('is-missed', x.status==='missed'); b.classList.toggle('is-welfare-paid', x.status==='paid'); b.classList.toggle('is-welfare-pending', x.status==='pending'); b.classList.toggle('is-welfare-current', x.status==='current'); b.classList.toggle('is-future', x.status==='future'); b.classList.toggle('is-selected', x.checkbox.checked); b.title=x.label+' — '+x.status; b.setAttribute('aria-label', b.title); if (x.selectable) b.addEventListener('click', function () { x.checkbox.checked=!x.checkbox.checked; render(); }); days.appendChild(b); });
+        section.appendChild(days); months.appendChild(section);
+      });
+    }
+    const picked = options.filter(function (x) { return x.checkbox.checked; });
+    if (rows) {
+      rows.replaceChildren();
+      if (!picked.length) {
+        const empty = document.createElement('span'); empty.className = 'text-muted small'; empty.textContent = 'No welfare weeks selected yet.'; rows.appendChild(empty);
+      } else {
+        picked.forEach(function (x) { const chip = document.createElement('span'); chip.className = 'badge text-bg-light border text-dark'; chip.textContent = x.label; rows.appendChild(chip); });
+      }
+    }
+    const count = document.getElementById('ddWelfareSelectedCount');
+    const total = document.getElementById('ddWelfareSelectedTotal');
+    const modalCount = document.getElementById('ddWelfareModalCount');
+    const modalTotal = document.getElementById('ddWelfareModalTotal');
+    const formattedTotal = 'UGX ' + (picked.length * 1000).toLocaleString('en-UG');
+    if (count) count.textContent = picked.length;
+    if (total) total.textContent = formattedTotal;
+    if (modalCount) modalCount.textContent = picked.length;
+    if (modalTotal) modalTotal.textContent = formattedTotal;
+    if (amount) { amount.readOnly = true; amount.value = picked.length ? picked.length * 1000 : ''; }
+  }
+  function refresh() { if (panel) panel.classList.toggle('d-none', !(purpose && purpose.checked)); render(); }
+  document.addEventListener('dd:welfare-status', function (event) { replace(event.detail || []); refresh(); });
+  purpose?.addEventListener('change', refresh);
+  document.getElementById('ddWelfarePickerModal')?.addEventListener('show.bs.modal', render);
+  document.getElementById('ddApplyWelfare')?.addEventListener('click', function () { refresh(); bootstrap.Modal.getOrCreateInstance(document.getElementById('ddWelfarePickerModal')).hide(); });
+  replace(Array.from(store.querySelectorAll('[data-welfare-option]')).map(function (el) { return {date:el.dataset.week,label:el.dataset.label,month:el.dataset.month,day:el.dataset.day,status:el.dataset.status,selectable:el.dataset.selectable==='true',selected:el.dataset.selected==='true'}; }));
+  refresh();
+})();
 </script>
 <script>
 (function () {

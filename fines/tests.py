@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
 
+from deposits.models import DepositFineAllocation, DepositSubmission
 from groupcore.models import MemberProfile
 from .models import Fine
 from .services import allocate_fine_payment
@@ -42,6 +43,35 @@ class FineManagementTests(TestCase):
 
         self.assertRedirects(response, reverse('member_dashboard'))
         self.assertTrue(Fine.objects.filter(id=self.fine.id).exists())
+
+    def test_referenced_fine_delete_is_blocked_without_server_error(self):
+        deposit = DepositSubmission.objects.create(
+            member=self.member,
+            submitted_by=self.treasurer,
+            payment_week=self.fine.date_issued,
+            fine_amount=Decimal('2000.00'),
+            payment_date=self.fine.date_issued,
+            payment_time='10:00',
+            status='PENDING',
+        )
+        DepositFineAllocation.objects.create(
+            deposit=deposit,
+            fine=self.fine,
+            amount=Decimal('2000.00'),
+        )
+        self.client.login(username='treasurer', password='pass12345')
+
+        response = self.client.post(
+            reverse('delete_fine', args=[self.fine.id]),
+            follow=True,
+        )
+
+        self.assertRedirects(response, reverse('manage_fines'))
+        self.assertTrue(Fine.objects.filter(id=self.fine.id).exists())
+        self.assertContains(
+            response,
+            'retained to protect the financial audit trail',
+        )
 
     def test_partial_fine_payment_leaves_independent_balance(self):
         applied, remaining = allocate_fine_payment(self.member, None, Decimal('750.00'))

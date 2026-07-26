@@ -5,6 +5,7 @@ from django.db.models import Count, Q, Sum
 from django.contrib import messages
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.db.models.deletion import ProtectedError
 from .forms import FineForm
 from groupcore.account_context import get_active_account
 from groupcore.savings_calendar import ensure_overdue_fines
@@ -18,8 +19,9 @@ def my_fines(request):
         fines = fines.filter(account=active_account)
     total_fines = fines.aggregate(Sum('amount'))['amount__sum'] or 0
     stats = fines.aggregate(
-        paid_count=Count('id', filter=Q(is_paid=True)),
-        unpaid_count=Count('id', filter=Q(is_paid=False)),
+        paid_count=Count('id', filter=Q(is_paid=True, is_voided=False)),
+        unpaid_count=Count('id', filter=Q(is_paid=False, is_voided=False)),
+        voided_count=Count('id', filter=Q(is_voided=True)),
     )
     stats['outstanding_amount'] = sum((fine.outstanding_amount for fine in fines), 0)
     return render(request, 'fines/my_fines.html', {
@@ -36,17 +38,30 @@ def manage_fines(request):
         return redirect('member_dashboard')
 
     ensure_overdue_fines()
-    fines = Fine.objects.filter(member__is_superuser=False).select_related('member', 'account').order_by('-date_issued')
+    search_query = (request.GET.get('q') or '').strip()
+    fines = Fine.objects.filter(member__is_superuser=False).select_related('member', 'account')
+    if search_query:
+        fines = fines.filter(
+            Q(member__first_name__icontains=search_query)
+            | Q(member__last_name__icontains=search_query)
+            | Q(member__username__icontains=search_query)
+            | Q(member__email__icontains=search_query)
+            | Q(member__phone_number__icontains=search_query)
+            | Q(account__label__icontains=search_query)
+        )
+    fines = fines.order_by('member__first_name', 'member__last_name', 'member__username', 'account__label', '-date_issued')
     totals = fines.aggregate(
         total_records=Count('id'),
-        paid_count=Count('id', filter=Q(is_paid=True)),
-        unpaid_count=Count('id', filter=Q(is_paid=False)),
+        paid_count=Count('id', filter=Q(is_paid=True, is_voided=False)),
+        unpaid_count=Count('id', filter=Q(is_paid=False, is_voided=False)),
+        voided_count=Count('id', filter=Q(is_voided=True)),
         total_amount=Sum('amount'),
     )
     totals['unpaid_amount'] = sum((fine.outstanding_amount for fine in fines), 0)
     return render(request, 'fines/manage_fines.html', {
         'fines': fines,
         'totals': totals,
+        'search_query': search_query,
     })
 
 
@@ -78,6 +93,9 @@ def mark_fine_paid(request, fine_id):
         return redirect('member_dashboard')
 
     fine = get_object_or_404(Fine, id=fine_id)
+    if fine.is_voided:
+        messages.error(request, "A voided fine cannot be marked as paid.")
+        return redirect('manage_fines')
     fine.amount_paid = fine.amount
     fine.is_paid = True
     fine.full_clean()
@@ -96,7 +114,22 @@ def delete_fine(request, fine_id):
 
     fine = get_object_or_404(Fine, id=fine_id)
     member_username = fine.member.username
-    fine.delete()
+    if fine.deposit_allocations.exists():
+        messages.error(
+            request,
+            "This fine cannot be deleted because a deposit references it. "
+            "It has been retained to protect the financial audit trail.",
+        )
+        return redirect('manage_fines')
+    try:
+        fine.delete()
+    except ProtectedError:
+        messages.error(
+            request,
+            "This fine cannot be deleted because a financial record began referencing it. "
+            "It has been retained to protect the audit trail.",
+        )
+        return redirect('manage_fines')
 
     messages.success(request, f"Deleted fine for {member_username}.")
     return redirect('manage_fines')

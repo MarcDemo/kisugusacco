@@ -28,6 +28,13 @@ class DepositSubmission(models.Model):
     fine_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     shares_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     loan_repayment_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    loan_repayment_loan = models.ForeignKey(
+        'loans.LoanRequest',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='deposit_repayments',
+    )
     # Total amount (auto-computed as the sum of per-purpose amounts)
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     proof = models.ImageField(upload_to='proofs/', blank=True, null=True)
@@ -141,5 +148,35 @@ class DepositFineAllocation(models.Model):
             models.CheckConstraint(
                 condition=models.Q(amount__gt=0),
                 name='deposit_fine_allocation_amount_positive',
+            ),
+        ]
+
+
+class DepositWelfareAllocation(models.Model):
+    """A fixed weekly welfare obligation selected on a deposit."""
+
+    deposit = models.ForeignKey(
+        DepositSubmission,
+        on_delete=models.CASCADE,
+        related_name='welfare_allocations',
+    )
+    account = models.ForeignKey(
+        SavingsAccount,
+        on_delete=models.PROTECT,
+        related_name='welfare_allocations',
+    )
+    welfare_week = models.DateField()
+    amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1000.00'))
+
+    class Meta:
+        ordering = ['welfare_week', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['deposit', 'welfare_week'],
+                name='unique_deposit_welfare_week',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(amount=Decimal('1000.00')),
+                name='welfare_allocation_fixed_amount',
             ),
         ]

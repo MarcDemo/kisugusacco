@@ -3,9 +3,11 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.db.models import Sum
 from django.core.paginator import Paginator
+from django.utils import timezone
 
 from deposits.models import DepositSubmission
 from groupcore.reporting import merge_year_options, parse_report_year, years_from_dates
+from groupcore.year_close import submissions_locked_for_year
 
 from .models import ShareContribution, AnnualSubscription
 from .forms import ShareContributionForm, AnnualSubscriptionForm
@@ -79,6 +81,9 @@ def add_income(request):
 
     if request.method == 'POST':
         if 'save_share' in request.POST and share_form.is_valid():
+            if submissions_locked_for_year(timezone.localdate().year):
+                messages.error(request, 'The current financial year is locked.')
+                return redirect('other_income_list')
             share = share_form.save(commit=False)
             share.recorded_by = request.user
             share.full_clean()
@@ -88,6 +93,12 @@ def add_income(request):
 
         if 'save_subscription' in request.POST and subscription_form.is_valid():
             subscription = subscription_form.save(commit=False)
+            if submissions_locked_for_year(subscription.year):
+                messages.error(
+                    request,
+                    f'The {subscription.year} financial year is locked.',
+                )
+                return redirect('other_income_list')
             subscription.recorded_by = request.user
             subscription.save()
             messages.success(request, "Annual subscription recorded successfully.")

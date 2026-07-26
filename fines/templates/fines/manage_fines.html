@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load financial_audit %}
 {% block content %}
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&display=swap');
@@ -123,6 +124,7 @@
     </div>
 
     <div class="fines-card">
+        <form method="get" class="input-group p-3 border-bottom"><input type="search" name="q" value="{{ search_query }}" class="form-control" placeholder="Search name, username, account, email, or phone"><button class="btn btn-danger">Search</button></form>
         <div class="table-responsive">
             <table class="table table-hover mb-0 fine-table">
                 <thead class="table-light">
@@ -145,7 +147,9 @@
                         <td class="reason-col" title="{{ fine.reason }}">{{ fine.reason }}</td>
                         <td>UGX {{ fine.amount|floatformat:"0" }}{% if fine.amount_paid %}<div class="small text-muted">UGX {{ fine.outstanding_amount|floatformat:"0" }} left</div>{% endif %}</td>
                         <td>
-                            {% if fine.is_paid %}
+                            {% if fine.is_voided %}
+                                <span class="badge text-bg-secondary">Voided</span>
+                            {% elif fine.is_paid %}
                                 <span class="badge text-bg-success">Paid</span>
                             {% else %}
                                 <span class="badge text-bg-danger">Unpaid</span>
@@ -155,10 +159,14 @@
                         <td>{{ fine.date_issued|date:"Y-m-d" }}</td>
                         <td>
                             <div class="d-flex gap-2 flex-wrap">
-                            {% if not fine.is_paid %}
+                            {% revision_count 'fine' fine.id as edits %}
+                            {% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %}
+                            <a class="btn btn-sm btn-outline-secondary" href="{% url 'financial_record_history' 'fine' fine.id %}">Inspect</a>
+                            <a class="btn btn-sm btn-outline-primary" href="{% url 'financial_record_edit' 'fine' fine.id %}">Edit</a>
+                            {% if not fine.is_paid and not fine.is_voided %}
                                 <a class="btn btn-sm btn-outline-success" href="{% url 'mark_fine_paid' fine.id %}">Mark Paid</a>
                             {% endif %}
-                                <form method="post" action="{% url 'delete_fine' fine.id %}" onsubmit="return confirm('Delete this fine permanently?');">
+                                <form method="post" action="{% url 'delete_fine' fine.id %}" onsubmit="return confirm('Delete this fine permanently? Referenced fines will be retained for audit.');">
                                     {% csrf_token %}
                                     <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                                 </form>
