@@ -368,6 +368,78 @@ class VariableWeeklySavingsAllocationTests(TestCase):
         self.assertContains(response, 'Rejected')
         self.assertIn(rejected, response.context['deposit_submissions'])
 
+    def test_manage_page_orders_by_latest_review_then_latest_submission(self):
+        week = self.saving_week.cycle_start
+        latest_review = DepositSubmission.objects.create(
+            member=self.member,
+            account=self.account,
+            submitted_by=self.treasurer,
+            payment_week=week,
+            saving_amount=Decimal('10000'),
+            payment_date=week,
+            payment_time=time(9, 0),
+            status='APPROVED',
+        )
+        older_review = DepositSubmission.objects.create(
+            member=self.member,
+            account=self.account,
+            submitted_by=self.treasurer,
+            payment_week=week + timedelta(weeks=1),
+            saving_amount=Decimal('10000'),
+            payment_date=week + timedelta(weeks=1),
+            payment_time=time(9, 0),
+            status='APPROVED',
+        )
+        newer_pending = DepositSubmission.objects.create(
+            member=self.member,
+            account=self.account,
+            submitted_by=self.member,
+            payment_week=week + timedelta(weeks=2),
+            saving_amount=Decimal('10000'),
+            payment_date=week + timedelta(weeks=2),
+            payment_time=time(9, 0),
+            status='PENDING',
+        )
+        older_pending = DepositSubmission.objects.create(
+            member=self.member,
+            account=self.account,
+            submitted_by=self.member,
+            payment_week=week + timedelta(weeks=3),
+            saving_amount=Decimal('10000'),
+            payment_date=week + timedelta(weeks=3),
+            payment_time=time(9, 0),
+            status='PENDING',
+        )
+        now = timezone.now()
+        DepositSubmission.objects.filter(pk=latest_review.pk).update(
+            date_reviewed=now,
+            date_submitted=now - timedelta(days=4),
+        )
+        DepositSubmission.objects.filter(pk=older_review.pk).update(
+            date_reviewed=now - timedelta(days=1),
+            date_submitted=now - timedelta(days=3),
+        )
+        DepositSubmission.objects.filter(pk=newer_pending.pk).update(
+            date_submitted=now - timedelta(hours=1),
+        )
+        DepositSubmission.objects.filter(pk=older_pending.pk).update(
+            date_submitted=now - timedelta(days=2),
+        )
+        self.client.login(username=self.treasurer.username, password='pass12345')
+
+        response = self.client.get(reverse('manage_deposits'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [deposit.pk for deposit in response.context['deposit_submissions']],
+            [
+                latest_review.pk,
+                older_review.pk,
+                newer_pending.pk,
+                older_pending.pk,
+            ],
+        )
+
     def test_manage_page_status_filters_show_counts_and_only_selected_records(self):
         week = self.saving_week.cycle_start
         records = {}

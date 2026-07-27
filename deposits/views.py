@@ -16,7 +16,7 @@ from groupcore.year_close import (
     submissions_locked_for_year,
 )
 from django.utils import timezone
-from django.db.models import Count, Sum, Q
+from django.db.models import Count, F, Sum, Q
 from django.db import transaction
 from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
@@ -892,8 +892,9 @@ def manage_deposits(request):
     if status_filter:
         deposit_submissions = deposit_submissions.filter(status=status_filter)
     deposit_submissions = deposit_submissions.order_by(
-        'member__first_name', 'member__last_name', 'member__username',
-        'account__label', '-date_submitted',
+        F('date_reviewed').desc(nulls_last=True),
+        F('date_submitted').desc(),
+        '-id',
     )
     deposit_submissions_page = Paginator(deposit_submissions, 25).get_page(request.GET.get('page'))
     form = DirectDepositForm(request.POST or None, request.FILES or None)
