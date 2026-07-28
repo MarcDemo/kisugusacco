@@ -31,8 +31,11 @@
     <!-- Paid Members -->
     <div class="col-lg-6">
       <div class="card border-success shadow-sm h-100">
-        <div class="card-header bg-success text-white">
+        <div class="card-header bg-success text-white d-flex justify-content-between align-items-center gap-2">
           <h5 class="mb-0"><i class="bi bi-check-circle-fill me-2"></i> Paid Accounts ({{ paid_entries|length }})</h5>
+          <a href="{% url 'export_current_week_status' 'pdf' %}?scope=paid{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}" class="btn btn-sm btn-light text-success">
+            <i class="bi bi-download me-1"></i> Download Paid PDF
+          </a>
         </div>
         <div class="card-body p-0">
           {% if paid_entries %}
@@ -54,8 +57,11 @@
     <!-- Unpaid Members -->
     <div class="col-lg-6">
       <div class="card border-danger shadow-sm h-100">
-        <div class="card-header bg-danger text-white">
+        <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center gap-2">
           <h5 class="mb-0"><i class="bi bi-x-circle-fill me-2"></i> Unpaid Accounts ({{ unpaid_entries|length }})</h5>
+          <a href="{% url 'export_current_week_status' 'pdf' %}?scope=unpaid{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}" class="btn btn-sm btn-light text-danger">
+            <i class="bi bi-download me-1"></i> Download Unpaid PDF
+          </a>
         </div>
         <div class="card-body p-0">
           {% if unpaid_entries %}

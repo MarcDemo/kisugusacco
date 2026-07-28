@@ -65,6 +65,9 @@
           <li class="list-group-item"><strong>Next of Kin Contact:</strong> {{ user.next_of_kin_contact }}</li>
         </ul>
         <a href="{% url 'my_profile' %}?edit=true" class="btn btn-outline-primary mt-3">Edit Profile</a>
+        <a href="{% url 'change_password' %}" class="btn btn-outline-warning mt-3">
+          <i class="bi bi-key me-1"></i> Change Password
+        </a>
       {% else %}
         <form method="POST" enctype="multipart/form-data">
           {% csrf_token %}

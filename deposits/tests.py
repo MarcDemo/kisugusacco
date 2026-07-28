@@ -3,11 +3,12 @@ from decimal import Decimal
 from io import BytesIO
 from io import StringIO
 from unittest.mock import patch
+import uuid
 
 from django.core.management import call_command
 from django.test import TestCase
 from django.db import connection
-from django.http import QueryDict
+from django.http import HttpResponse, QueryDict
 from django.urls import reverse
 from django.utils import timezone
 from django.test.utils import CaptureQueriesContext
@@ -1270,3 +1271,175 @@ class CurrentWeekStatusExportTests(TestCase):
 
         self.assertEqual(response['Content-Type'], 'application/pdf')
         self.assertTrue(response['Content-Disposition'].endswith('.pdf"'))
+
+    def test_paid_and_unpaid_pdf_exports_are_separate(self):
+        self.client.login(username='treasurer', password='pass12345')
+
+        with (
+            patch('deposits.views.timezone.localdate', return_value=self.today),
+            patch(
+                'deposits.views._export_current_week_status_pdf',
+                side_effect=lambda data: HttpResponse(data['export_scope']),
+            ) as exporter,
+        ):
+            paid_response = self.client.get(
+                reverse('export_current_week_status', args=['pdf']),
+                {'scope': 'paid'},
+            )
+            unpaid_response = self.client.get(
+                reverse('export_current_week_status', args=['pdf']),
+                {'scope': 'unpaid'},
+            )
+
+        self.assertEqual(paid_response.content, b'paid')
+        self.assertEqual(unpaid_response.content, b'unpaid')
+        self.assertEqual(
+            [call.args[0]['export_scope'] for call in exporter.call_args_list],
+            ['paid', 'unpaid'],
+        )
+
+
+class DepositBatchWorkflowTests(TestCase):
+    def setUp(self):
+        GroupSettings.objects.create(week_one_start=date(2026, 1, 2))
+        self.treasurer = MemberProfile.objects.create_user(
+            username='batch-treasurer',
+            password='pass12345',
+            role='TREASURER',
+        )
+        self.member = MemberProfile.objects.create_user(
+            username='batch-member',
+            password='pass12345',
+        )
+        self.account = SavingsAccount.objects.create(
+            owner=self.member,
+            label='Main',
+        )
+        self.batch = uuid.uuid4()
+        self.weeks = [date(2026, 7, 3), date(2026, 7, 10)]
+        for week, amount in zip(self.weeks, ('10000', '20000')):
+            DepositSubmission.objects.create(
+                submission_batch=self.batch,
+                member=self.member,
+                account=self.account,
+                submitted_by=self.member,
+                payment_week=week,
+                saving_amount=Decimal(amount),
+                payment_date=date(2026, 7, 10),
+                payment_time=time(10, 0),
+                status='PENDING',
+            )
+        self.client.login(username='batch-treasurer', password='pass12345')
+
+    def _edit_payload(self):
+        return {
+            'member': str(self.member.id),
+            'account': str(self.account.id),
+            'payment_week': self.weeks[0].isoformat(),
+            'payment_date': '2026-07-10',
+            'payment_time': '10:00',
+            'selected_purposes': ['saving'],
+            'saving_amount': '30000',
+            'selected_weeks': [week.isoformat() for week in self.weeks],
+            f'week_amount_{self.weeks[0].isoformat()}': '10000',
+            f'week_amount_{self.weeks[1].isoformat()}': '20000',
+            'remarks': 'Corrected batch note',
+            'edit_reason': 'Correcting the complete submission',
+        }
+
+    def test_manage_page_groups_records_and_editor_prefills_weeks(self):
+        page = self.client.get(reverse('manage_deposits'))
+        edit = self.client.get(
+            reverse('edit_deposit_batch', args=[self.batch])
+        )
+
+        self.assertEqual(len(page.context['deposit_submissions']), 1)
+        summary = page.context['deposit_submissions'][0]
+        self.assertEqual(summary.amount, Decimal('30000'))
+        self.assertEqual(summary.payment_weeks, self.weeks)
+        self.assertContains(edit, 'Edit Deposit Submission')
+        self.assertContains(edit, f'value="{self.weeks[0].isoformat()}" checked')
+        self.assertContains(edit, 'value="10000.00"')
+
+    def test_edit_and_approve_apply_to_complete_batch(self):
+        response = self.client.post(
+            reverse('edit_deposit_batch', args=[self.batch]),
+            self._edit_payload(),
+        )
+        self.assertRedirects(
+            response,
+            reverse('deposit_batch_history', args=[self.batch]),
+        )
+        records = DepositSubmission.objects.filter(
+            submission_batch=self.batch
+        ).order_by('payment_week')
+        self.assertEqual(records.count(), 2)
+        self.assertEqual(records.first().remarks, 'Corrected batch note')
+        self.assertEqual(
+            FinancialRecordRevision.objects.filter(
+                record_type='deposit',
+                object_id__in=records.values('id'),
+            ).count(),
+            2,
+        )
+
+        approved = self.client.post(
+            reverse('approve_deposit_batch', args=[self.batch])
+        )
+        self.assertRedirects(approved, reverse('manage_deposits'))
+        self.assertFalse(records.exclude(status='APPROVED').exists())
+
+    def test_reject_and_delete_apply_to_complete_batch(self):
+        rejected = self.client.post(
+            reverse('reject_deposit_batch', args=[self.batch])
+        )
+        self.assertRedirects(rejected, reverse('manage_deposits'))
+        self.assertFalse(
+            DepositSubmission.objects.filter(
+                submission_batch=self.batch
+            ).exclude(status='REJECTED').exists()
+        )
+
+        deleted = self.client.post(
+            reverse('delete_deposit_batch', args=[self.batch]),
+            {'deletion_reason': 'Duplicate complete submission'},
+        )
+        self.assertRedirects(deleted, reverse('manage_deposits'))
+        self.assertFalse(
+            DepositSubmission.objects.filter(
+                submission_batch=self.batch
+            ).exists()
+        )
+
+    def test_edit_status_is_context_aware(self):
+        DepositSubmission.objects.filter(
+            submission_batch=self.batch
+        ).update(
+            status='APPROVED',
+            reviewed_by=self.treasurer,
+            date_reviewed=timezone.now(),
+        )
+        approved_edit = self.client.post(
+            reverse('edit_deposit_batch', args=[self.batch]),
+            self._edit_payload(),
+        )
+        self.assertEqual(approved_edit.status_code, 302)
+        self.assertFalse(
+            DepositSubmission.objects.filter(
+                submission_batch=self.batch
+            ).exclude(status='APPROVED').exists()
+        )
+
+        DepositSubmission.objects.filter(
+            submission_batch=self.batch
+        ).update(status='REJECTED')
+        rejected_edit = self.client.post(
+            reverse('edit_deposit_batch', args=[self.batch]),
+            self._edit_payload(),
+        )
+        self.assertEqual(rejected_edit.status_code, 302)
+        self.assertFalse(
+            DepositSubmission.objects.filter(
+                submission_batch=self.batch
+            ).exclude(status='PENDING').exists()
+        )

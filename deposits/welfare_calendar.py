@@ -14,17 +14,26 @@ from groupcore.week_cycle import saving_year_closing_date
 WEEKLY_WELFARE_AMOUNT = Decimal('1000.00')
 
 
-def welfare_totals_by_week(member, account, weeks, statuses=('PENDING', 'APPROVED')):
+def welfare_totals_by_week(
+    member,
+    account,
+    weeks,
+    statuses=('PENDING', 'APPROVED'),
+    exclude_deposit_ids=None,
+):
     totals = {}
     if not member or not account or not weeks:
         return totals
-    rows = (
-        DepositWelfareAllocation.objects.filter(
+    queryset = DepositWelfareAllocation.objects.filter(
             deposit__member=member,
             account=account,
             welfare_week__in=weeks,
             deposit__status__in=statuses,
         )
+    if exclude_deposit_ids:
+        queryset = queryset.exclude(deposit_id__in=exclude_deposit_ids)
+    rows = (
+        queryset
         .values('welfare_week', 'deposit__status')
         .annotate(total=Sum('amount'))
     )
@@ -37,14 +46,19 @@ def welfare_totals_by_week(member, account, weeks, statuses=('PENDING', 'APPROVE
     return totals
 
 
-def build_welfare_calendar(member, account, today=None):
+def build_welfare_calendar(member, account, today=None, exclude_deposit_ids=None):
     settings = GroupSettings.get_active()
     if not settings or not member or not account:
         return {'cycle_open': False, 'weeks': [], 'summary': {}}
 
     today = today or timezone.localdate()
     active, weeks = saving_year_weeks(settings.week_one_start, today)
-    totals = welfare_totals_by_week(member, account, weeks)
+    totals = welfare_totals_by_week(
+        member,
+        account,
+        weeks,
+        exclude_deposit_ids=exclude_deposit_ids,
+    )
     now = timezone.now()
     cards = []
     for number, friday in enumerate(weeks, start=1):

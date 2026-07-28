@@ -2,7 +2,8 @@ import logging
 
 from django.conf import settings as django_settings
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
+from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib import messages
 from django.http import JsonResponse, Http404
 from django.core.exceptions import ValidationError
@@ -723,6 +724,20 @@ def my_profile(request):
         'nid_document': nid_document,
         'editing': editing,
     })
+
+
+@login_required
+def change_password(request):
+    if request.method == 'POST':
+        form = PasswordChangeForm(request.user, request.POST)
+        if form.is_valid():
+            user = form.save()
+            update_session_auth_hash(request, user)
+            messages.success(request, 'Your password was changed successfully.')
+            return redirect('my_profile')
+    else:
+        form = PasswordChangeForm(request.user)
+    return render(request, 'groupcore/change_password.html', {'form': form})
 
 
 @login_required

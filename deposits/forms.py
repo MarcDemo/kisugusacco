@@ -526,6 +526,11 @@ class DirectDepositForm(forms.ModelForm):
         return list(value) if isinstance(value, (list, tuple)) else [value]
 
     def __init__(self, *args, **kwargs):
+        self.exclude_deposit_ids = tuple(kwargs.pop('exclude_deposit_ids', ()) or ())
+        self.fine_credit_by_id = kwargs.pop('fine_credit_by_id', {}) or {}
+        self.loan_repayment_credit = kwargs.pop('loan_repayment_credit', Decimal('0.00')) or Decimal('0.00')
+        self.loan_credit_loan_id = kwargs.pop('loan_credit_loan_id', None)
+        self.extra_saving_weeks = tuple(kwargs.pop('extra_saving_weeks', ()) or ())
         super().__init__(*args, **kwargs)
 
         self.today = timezone.localdate()
@@ -537,6 +542,7 @@ class DirectDepositForm(forms.ModelForm):
                 self.group_settings.week_one_start,
                 self.today,
             )
+        self.saving_weeks = sorted(set(self.saving_weeks) | set(self.extra_saving_weeks))
 
         week_choices = [
             (week.isoformat(), f'Week {index} · {week:%A %d %b}')
@@ -544,7 +550,11 @@ class DirectDepositForm(forms.ModelForm):
         ]
         self.fields['selected_weeks'].choices = week_choices
 
-        self._submitted_week_values = self._data_values('selected_weeks') if self.is_bound else []
+        self._submitted_week_values = (
+            self._data_values('selected_weeks')
+            if self.is_bound
+            else list(self.initial.get('selected_weeks') or [])
+        )
         raw_purposes = set(self._data_values('selected_purposes')) if self.is_bound else set()
         if self.is_bound and 'saving' not in raw_purposes:
             # Week controls are savings-only. Ignore stale or forged calendar data
@@ -584,9 +594,18 @@ class DirectDepositForm(forms.ModelForm):
             if len(possible_accounts) == 1:
                 account = possible_accounts[0]
 
-        selected_values = set(self._data_values('selected_weeks')) if self.is_bound else set()
-        selected_fine_values = set(self._data_values('selected_fine_weeks')) if self.is_bound else set()
-        selected_welfare_values = set(self._data_values('selected_welfare_weeks')) if self.is_bound else set()
+        selected_values = set(
+            self._data_values('selected_weeks')
+            if self.is_bound else self.initial.get('selected_weeks') or []
+        )
+        selected_fine_values = set(
+            self._data_values('selected_fine_weeks')
+            if self.is_bound else self.initial.get('selected_fine_weeks') or []
+        )
+        selected_welfare_values = set(
+            self._data_values('selected_welfare_weeks')
+            if self.is_bound else self.initial.get('selected_welfare_weeks') or []
+        )
         member = (
             MemberProfile.objects.filter(pk=member_id, is_superuser=False).first()
             if member_id else None
@@ -595,14 +614,22 @@ class DirectDepositForm(forms.ModelForm):
             member,
             account,
             self.saving_weeks,
+            statuses=('PENDING', 'APPROVED'),
+            exclude_deposit_ids=self.exclude_deposit_ids,
         )
         savings_statuses = saving_week_statuses(
             member,
             account,
             self.saving_weeks,
             self.today,
+            statuses=('PENDING', 'APPROVED'),
+            exclude_deposit_ids=self.exclude_deposit_ids,
         )
-        self.fine_options_by_week = fine_week_options(member, account)
+        self.fine_options_by_week = fine_week_options(
+            member,
+            account,
+            credit_allocations=self.fine_credit_by_id,
+        )
         self.fields['selected_fine_weeks'].choices = [
             (week.isoformat(), f'Fine · {week:%A %d %b %Y}')
             for week in sorted(self.fine_options_by_week)
@@ -644,7 +671,11 @@ class DirectDepositForm(forms.ModelForm):
                 'is_available': selectable,
                 'selectable': selectable,
                 'selected': value in selected_values and selectable,
-                'amount': self.data.get(f'week_amount_{value}', '') if self.is_bound else '',
+                'amount': (
+                    self.data.get(f'week_amount_{value}', '')
+                    if self.is_bound
+                    else (self.initial.get('week_amounts') or {}).get(value, '')
+                ),
             })
 
         self.fine_options = []
@@ -668,7 +699,12 @@ class DirectDepositForm(forms.ModelForm):
                 'fine_allocations': fine_state['fine_allocations'],
             })
         self.has_outstanding_fines = any(item['selectable'] for item in self.fine_options)
-        welfare_calendar = build_welfare_calendar(member, account, self.today)
+        welfare_calendar = build_welfare_calendar(
+            member,
+            account,
+            self.today,
+            exclude_deposit_ids=self.exclude_deposit_ids,
+        )
         self.welfare_options = []
         for item in welfare_calendar.get('weeks', []):
             value = item['friday'].isoformat()
@@ -707,7 +743,9 @@ class DirectDepositForm(forms.ModelForm):
                 initial_purposes.append('shares')
             if (self.instance.loan_repayment_amount or Decimal('0.00')) > 0:
                 initial_purposes.append('loan_repayment')
-        self.fields['selected_purposes'].initial = initial_purposes
+        self.fields['selected_purposes'].initial = (
+            self.initial.get('selected_purposes') or initial_purposes
+        )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -739,7 +777,14 @@ class DirectDepositForm(forms.ModelForm):
             else:
                 repayment_amount = cleaned_data.get('loan_repayment_amount') or Decimal('0.00')
                 payment_date = cleaned_data.get('payment_date') or self.today
-                if repayment_amount > selected_loan.outstanding_balance_as_of(payment_date):
+                if repayment_amount > (
+                    selected_loan.outstanding_balance_as_of(payment_date)
+                    + (
+                        self.loan_repayment_credit
+                        if selected_loan.id == self.loan_credit_loan_id
+                        else Decimal('0.00')
+                    )
+                ):
                     self.add_error('loan_repayment_amount', 'Repayment cannot exceed the selected loan balance.')
         else:
             cleaned_data['loan_repayment_loan'] = None
@@ -811,6 +856,8 @@ class DirectDepositForm(forms.ModelForm):
                     member,
                     account,
                     self.saving_weeks,
+                    statuses=('PENDING', 'APPROVED'),
+                    exclude_deposit_ids=self.exclude_deposit_ids,
                 )
 
             for week in selected_weeks:
@@ -941,3 +988,16 @@ class DirectDepositForm(forms.ModelForm):
             raise forms.ValidationError("Please enter an amount for at least one purpose.")
         cleaned_data['amount'] = total
         return cleaned_data
+
+
+class DepositBatchEditForm(DirectDepositForm):
+    edit_reason = forms.CharField(
+        label='Reason for correction',
+        min_length=5,
+        widget=forms.Textarea(attrs={'rows': 3}),
+        help_text='This reason will be stored in the financial audit trail.',
+    )
+    clear_proof = forms.BooleanField(
+        required=False,
+        label='Remove the existing proof of payment',
+    )

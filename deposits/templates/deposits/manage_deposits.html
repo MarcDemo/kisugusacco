@@ -540,6 +540,8 @@
                 <span class="badge text-bg-success">Approved</span>
                 {% elif deposit.status == 'REJECTED' %}
                 <span class="badge text-bg-danger">Rejected</span>
+                {% elif deposit.status == 'MIXED' %}
+                <span class="badge text-bg-secondary">Mixed historical status</span>
                 {% else %}
                 <span class="badge text-bg-warning text-dark">Pending</span>
                 {% endif %}
@@ -559,7 +561,11 @@
               <td>{{ deposit.fine_amount|floatformat:"0" }}</td>
               <td>{{ deposit.shares_amount|floatformat:"0" }}</td>
               <td>{{ deposit.loan_repayment_amount|floatformat:"0" }}</td>
-              <td>{{ deposit.payment_week }}</td>
+              <td>
+                {% for week in deposit.payment_weeks %}
+                <span class="badge text-bg-light border text-dark mb-1">{{ week|date:"d M Y" }}</span>
+                {% empty %}-{% endfor %}
+              </td>
               <td>
                 {% if deposit.proof %}
                 <a data-bs-toggle="modal" data-bs-target="#proofModal{{ deposit.id }}">
@@ -594,19 +600,20 @@
               <td>{{ deposit.payment_date|date:"Y-m-d" }}</td>
               <td>{{ deposit.payment_time|date:"H:i" }}</td>
               <td class="text-nowrap">
-                {% revision_count 'deposit' deposit.id as edits %}
-                {% if edits %}<span class="badge text-bg-info">Edited</span>{% endif %}
-                <a href="{% url 'financial_record_history' 'deposit' deposit.id %}" class="btn btn-sm btn-outline-secondary" title="Open audit trail">
+                {% if deposit.edits %}<span class="badge text-bg-info">Edited</span>{% endif %}
+                <a href="{% url 'deposit_batch_history' deposit.submission_batch %}" class="btn btn-sm btn-outline-secondary" title="Open audit trail">
                   <i class="bi bi-clock-history"></i> Audit
                 </a>
-                <a href="{% url 'financial_record_edit' 'deposit' deposit.id %}" class="btn btn-sm btn-outline-primary" title="Edit"><i class="bi bi-pencil"></i></a>
+                <a href="{% url 'edit_deposit_batch' deposit.submission_batch %}" class="btn btn-sm btn-outline-primary" title="Edit"><i class="bi bi-pencil"></i></a>
                 {% if deposit.status == 'PENDING' %}
-                <a href="{% url 'approve_deposit' deposit.id %}" class="btn btn-sm btn-success" title="Approve">
-                  <i class="bi bi-check-circle"></i>
-                </a>
-                <a href="{% url 'reject_deposit' deposit.id %}" class="btn btn-sm btn-danger" title="Reject">
-                  <i class="bi bi-x-circle"></i>
-                </a>
+                <form method="post" action="{% url 'approve_deposit_batch' deposit.submission_batch %}" class="d-inline">
+                  {% csrf_token %}
+                  <button class="btn btn-sm btn-success" title="Approve complete submission"><i class="bi bi-check-circle"></i></button>
+                </form>
+                <form method="post" action="{% url 'reject_deposit_batch' deposit.submission_batch %}" class="d-inline">
+                  {% csrf_token %}
+                  <button class="btn btn-sm btn-danger" title="Reject complete submission"><i class="bi bi-x-circle"></i></button>
+                </form>
                 {% else %}
                 <span class="text-muted small">Processed</span>
                 {% endif %}
@@ -616,7 +623,8 @@
                   data-bs-toggle="modal"
                   data-bs-target="#deleteDepositModal"
                   data-delete-url="{% url 'delete_deposit' deposit.id %}"
-                  data-record-label="Deposit #{{ deposit.id }} — {{ deposit.member.get_full_name|default:deposit.member.username }}"
+                  data-batch-delete-url="{% url 'delete_deposit_batch' deposit.submission_batch %}"
+                  data-record-label="Submission {{ deposit.submission_batch }} — {{ deposit.member.get_full_name|default:deposit.member.username }}"
                   title="Delete with audit reason"
                 >
                   <i class="bi bi-trash"></i> Delete

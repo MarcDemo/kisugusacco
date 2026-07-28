@@ -1505,3 +1505,61 @@ class UsernameUpdateCommandTests(TestCase):
 
             self.assertTrue(MemberProfile.objects.filter(username='kolyangha_martin_luther').exists())
             self.assertIn('already belongs to another user', report_path.read_text(encoding='utf-8'))
+
+
+class ProfilePasswordChangeTests(TestCase):
+    def setUp(self):
+        self.user = MemberProfile.objects.create_user(
+            username='password-member',
+            password='old-pass-12345',
+        )
+        self.client.login(
+            username='password-member',
+            password='old-pass-12345',
+        )
+
+    def test_profile_links_to_change_password(self):
+        response = self.client.get(reverse('my_profile'))
+
+        self.assertContains(response, reverse('change_password'))
+        self.assertContains(response, 'Change Password')
+
+    def test_password_change_checks_current_password_and_preserves_session(self):
+        invalid = self.client.post(reverse('change_password'), {
+            'old_password': 'wrong-password',
+            'new_password1': 'New-secure-pass-54321',
+            'new_password2': 'New-secure-pass-54321',
+        })
+        self.assertEqual(invalid.status_code, 200)
+        self.assertTrue(
+            self.client.login(
+                username='password-member',
+                password='old-pass-12345',
+            )
+        )
+
+        changed = self.client.post(reverse('change_password'), {
+            'old_password': 'old-pass-12345',
+            'new_password1': 'New-secure-pass-54321',
+            'new_password2': 'New-secure-pass-54321',
+        })
+        self.assertRedirects(changed, reverse('my_profile'))
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.check_password('old-pass-12345'))
+        self.assertTrue(self.user.check_password('New-secure-pass-54321'))
+        self.assertEqual(
+            self.client.get(reverse('my_profile')).status_code,
+            200,
+        )
+
+    def test_password_change_rejects_mismatched_new_passwords(self):
+        response = self.client.post(reverse('change_password'), {
+            'old_password': 'old-pass-12345',
+            'new_password1': 'New-secure-pass-54321',
+            'new_password2': 'Different-secure-pass-54321',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('old-pass-12345'))
+        self.assertContains(response, 'The two password fields didn’t match')

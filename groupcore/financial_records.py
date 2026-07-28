@@ -1,5 +1,6 @@
 from datetime import date, datetime, time
 from decimal import Decimal
+from uuid import UUID
 
 from django import forms
 from django.core.exceptions import ValidationError
@@ -187,7 +188,7 @@ def snapshot_record(record):
                 'id': value,
                 'label': str(getattr(record, field.name, '') or ''),
             }
-        elif isinstance(value, (Decimal, date, datetime, time)):
+        elif isinstance(value, (Decimal, date, datetime, time, UUID)):
             data[key] = value.isoformat() if hasattr(value, 'isoformat') else str(value)
         elif hasattr(value, 'name'):
             data[key] = value.name

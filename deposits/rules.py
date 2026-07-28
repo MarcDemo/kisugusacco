@@ -30,6 +30,7 @@ def weekly_savings_totals_by_week(
     account,
     payment_weeks=None,
     statuses=('APPROVED',),
+    exclude_deposit_ids=None,
 ):
     """Return approved savings totals keyed by week using one aggregate query."""
     from .models import DepositSubmission
@@ -43,6 +44,8 @@ def weekly_savings_totals_by_week(
         status__in=statuses,
         saving_amount__gt=0,
     )
+    if exclude_deposit_ids:
+        queryset = queryset.exclude(pk__in=exclude_deposit_ids)
     if payment_weeks is not None:
         payment_weeks = tuple(payment_weeks)
         if not payment_weeks:
@@ -55,7 +58,14 @@ def weekly_savings_totals_by_week(
     }
 
 
-def saving_week_statuses(member, account, payment_weeks, today=None, statuses=('APPROVED',)):
+def saving_week_statuses(
+    member,
+    account,
+    payment_weeks,
+    today=None,
+    statuses=('APPROVED',),
+    exclude_deposit_ids=None,
+):
     """Return savings status and completion metadata for each configured week."""
     today = today or date.today()
     weeks = tuple(payment_weeks)
@@ -64,14 +74,17 @@ def saving_week_statuses(member, account, payment_weeks, today=None, statuses=('
 
     from .models import DepositSubmission
 
-    rows = (
-        DepositSubmission.objects.filter(
+    queryset = DepositSubmission.objects.filter(
             member=member,
             account=account,
             status__in=statuses,
             payment_week__in=weeks,
             saving_amount__gt=0,
         )
+    if exclude_deposit_ids:
+        queryset = queryset.exclude(pk__in=exclude_deposit_ids)
+    rows = (
+        queryset
         .values('payment_week', 'saving_amount', 'payment_date', 'payment_time', 'id')
         .order_by('payment_week', 'payment_date', 'payment_time', 'id')
     )
@@ -106,7 +119,7 @@ def saving_week_statuses(member, account, payment_weeks, today=None, statuses=('
     return result
 
 
-def fine_week_options(member, account, payment_weeks=None):
+def fine_week_options(member, account, payment_weeks=None, credit_allocations=None):
     """Return fine state grouped by week, including all account fallbacks."""
     from fines.models import Fine
 
@@ -132,12 +145,18 @@ def fine_week_options(member, account, payment_weeks=None):
         'outstanding': Decimal('0.00'),
         'has_fine': False,
     })
+    credit_allocations = credit_allocations or {}
     for fine in queryset.order_by('reference_week', 'id'):
         if not fine.reference_week:
             continue
         if fine.reference_week > saving_year_closing_date(fine.reference_week.year):
             continue
-        outstanding = max((fine.amount or Decimal('0.00')) - (fine.amount_paid or Decimal('0.00')), Decimal('0.00'))
+        outstanding = max(
+            (fine.amount or Decimal('0.00'))
+            - (fine.amount_paid or Decimal('0.00'))
+            + (credit_allocations.get(fine.id) or Decimal('0.00')),
+            Decimal('0.00'),
+        )
         item = grouped[fine.reference_week]
         item['has_fine'] = True
         item['fine_ids'].append(fine.id)

@@ -67,7 +67,7 @@
 
       <div class="card shadow border-0">
         <div class="card-header bg-success text-white">
-          <h4 class="mb-0"><i class="bi bi-wallet2 me-2"></i> Submit Deposit</h4>
+          <h4 class="mb-0"><i class="bi bi-wallet2 me-2"></i> {{ page_title|default:"Submit Deposit" }}</h4>
         </div>
 
         <div class="card-body">
@@ -92,6 +92,15 @@
 
           <form id="depositForm" method="post" enctype="multipart/form-data" class="row g-3">
             {% csrf_token %}
+            {% if form.member %}
+            <div class="col-md-6">
+              <label for="id_member" class="form-label">Member <span class="text-danger">*</span></label>
+              {{ form.member|add_class:"form-select" }}
+              {% if form.member.errors %}
+              <div class="text-danger small mt-1">{{ form.member.errors|join:", " }}</div>
+              {% endif %}
+            </div>
+            {% endif %}
             <!-- Payment Date -->
             <div class="col-md-6">
               <label for="id_account" class="form-label">Account <span class="text-danger">*</span></label>
@@ -251,12 +260,24 @@
             <!-- Proof Upload -->
             <div class="col-md-6">
               <label for="id_proof" class="form-label">Proof of Payment <span class="text-muted small">(optional)</span></label>
+              {% if existing_proof %}
+              <div class="small mb-2">Current proof: <a href="{{ existing_proof.url }}" target="_blank" rel="noopener">view image</a></div>
+              {% endif %}
               {{ form.proof|add_class:"form-control" }}
               <small class="text-muted">Upload an image only, for example .jpg, .jpeg, or .png. PDF files are not accepted.</small>
               {% if form.proof.errors %}
               <div class="text-danger small mt-1">{{ form.proof.errors|join:", " }}</div>
               {% endif %}
             </div>
+
+            {% if form.clear_proof %}
+            <div class="col-md-6 d-flex align-items-end">
+              <div class="form-check mb-2">
+                {{ form.clear_proof|add_class:"form-check-input" }}
+                <label class="form-check-label" for="{{ form.clear_proof.id_for_label }}">{{ form.clear_proof.label }}</label>
+              </div>
+            </div>
+            {% endif %}
 
             <!-- Remarks -->
             <div class="col-12">
@@ -267,9 +288,18 @@
               {% endif %}
             </div>
 
+            {% if form.edit_reason %}
+            <div class="col-12">
+              <label for="{{ form.edit_reason.id_for_label }}" class="form-label">{{ form.edit_reason.label }} <span class="text-danger">*</span></label>
+              {{ form.edit_reason|add_class:"form-control" }}
+              {% if form.edit_reason.help_text %}<div class="form-text">{{ form.edit_reason.help_text }}</div>{% endif %}
+              {% if form.edit_reason.errors %}<div class="text-danger small mt-1">{{ form.edit_reason.errors|join:", " }}</div>{% endif %}
+            </div>
+            {% endif %}
+
             <div class="col-12 text-end">
               <button type="submit" id="submitBtn" class="btn btn-success px-4">
-                <span class="button-text"><i class="bi bi-check-circle me-1"></i> Submit Deposit</span>
+                <span class="button-text"><i class="bi bi-check-circle me-1"></i> {{ submit_label|default:"Submit Deposit" }}</span>
                 <span class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
               </button>
             </div>
@@ -310,7 +340,7 @@
 </div>
 
 <div id="memberCalendarStore" hidden>
-  {% for week in form.week_options %}<span data-member-week data-week="{{ week.value }}" data-label="{{ week.date_label }}" data-month="{{ week.month_name }} {{ week.year }}" data-day="{{ week.day }}" data-status="{{ week.savings_status }}" data-selectable="{{ week.selectable|yesno:'true,false' }}" data-selected="{{ week.selected|yesno:'true,false' }}"><input type="checkbox" name="selected_weeks" value="{{ week.value }}" {% if week.selected %}checked{% endif %} {% if not week.selectable %}disabled{% endif %}><input type="hidden" name="week_amount_{{ week.value }}" value="{{ week.amount }}" disabled></span>{% endfor %}
+  {% for week in form.week_options %}<span data-member-week data-week="{{ week.value }}" data-label="{{ week.date_label }}" data-month="{{ week.month_name }} {{ week.year }}" data-day="{{ week.day }}" data-status="{{ week.savings_status }}" data-selectable="{{ week.selectable|yesno:'true,false' }}" data-selected="{{ week.selected|yesno:'true,false' }}"><input type="checkbox" name="selected_weeks" value="{{ week.value }}" {% if week.selected %}checked{% endif %} {% if not week.selectable %}disabled{% endif %}><input type="hidden" name="week_amount_{{ week.value }}" value="{{ week.amount }}" {% if not week.selected %}disabled{% endif %}></span>{% endfor %}
   {% for week in form.fine_options %}<span data-member-fine data-week="{{ week.value }}" data-label="{{ week.accessible_label }}" data-month="{{ week.month_name }} {{ week.year }}" data-day="{{ week.day }}" data-status="{{ week.status }}" data-outstanding="{{ week.outstanding }}" data-selectable="{{ week.selectable|yesno:'true,false' }}"><input type="checkbox" name="selected_fine_weeks" value="{{ week.value }}" {% if week.selected %}checked{% endif %} {% if not week.selectable %}disabled{% endif %}></span>{% endfor %}
   {% for week in form.welfare_options %}<span data-member-welfare data-week="{{ week.value }}" data-label="Welfare Week {{ week.number }}, {{ week.friday|date:'d F Y' }}" data-month="{{ week.month_name }} {{ week.year }}" data-day="{{ week.day }}" data-status="{{ week.status }}" data-selectable="{{ week.selectable|yesno:'true,false' }}"><input type="checkbox" name="selected_welfare_weeks" value="{{ week.value }}" {% if week.selected %}checked{% endif %} {% if not week.selectable %}disabled{% endif %}></span>{% endfor %}
 </div>
@@ -511,7 +541,7 @@ updateTotal();
     weeks.filter(function (x) { return !x.checkbox.checked; }).forEach(function (x) { x.amount.value = ''; x.amount.disabled = true; });
   }
   function renderRows() {
-    if (savingRows) { savingRows.replaceChildren(); weeks.filter(function (x) { return x.checkbox.checked; }).forEach(function (x) { const row = document.createElement('div'); row.className = 'd-flex align-items-center gap-2 mb-1'; row.innerHTML = '<span class="flex-grow-1">' + x.label + '</span>'; const input = document.createElement('input'); input.type = 'number'; input.min = '10000'; input.max = '50000'; input.step = '100'; input.className = 'form-control form-control-sm'; input.value = x.amount.value; input.addEventListener('input', function () { x.amount.value = input.value; }); row.appendChild(input); const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-sm btn-outline-danger'; remove.textContent = 'Remove'; remove.addEventListener('click', function () { x.checkbox.checked = false; x.amount.value = ''; x.amount.disabled = true; renderRows(); }); row.appendChild(remove); savingRows.appendChild(row); }); }
+    if (savingRows) { savingRows.replaceChildren(); weeks.filter(function (x) { return x.checkbox.checked; }).forEach(function (x) { x.amount.disabled = false; const row = document.createElement('div'); row.className = 'd-flex align-items-center gap-2 mb-1'; row.innerHTML = '<span class="flex-grow-1">' + x.label + '</span>'; const input = document.createElement('input'); input.min = '10000'; input.max = '50000'; input.step = '100'; input.type = 'number'; input.className = 'form-control form-control-sm'; input.value = x.amount.value; input.addEventListener('input', function () { x.amount.value = input.value; x.amount.disabled = false; }); const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-sm btn-outline-danger'; remove.textContent = 'Remove'; remove.addEventListener('click', function () { x.checkbox.checked = false; x.amount.value = ''; x.amount.disabled = true; renderRows(); }); row.appendChild(input); row.appendChild(remove); savingRows.appendChild(row); }); }
     if (fineRows) { fineRows.textContent = ''; const selected = fines.filter(function (x) { return x.checkbox.checked; }); if (selected.length) fineRows.textContent = selected.map(function (x) { return x.label + ' (' + money(x.outstanding) + ')'; }).join(' · '); }
     if (welfareRows) {
       const selected = welfare.filter(function (x) { return x.checkbox.checked; });

@@ -4,6 +4,7 @@ from django.utils import timezone
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from datetime import timedelta
+import uuid
 
 # Create your models here.
 
@@ -15,6 +16,12 @@ class DepositSubmission(models.Model):
         ('REJECTED', 'Rejected'),
     ]
 
+    submission_batch = models.UUIDField(
+        default=uuid.uuid4,
+        db_index=True,
+        editable=False,
+        help_text="Identifier shared by every weekly record created by one deposit submission.",
+    )
     member = models.ForeignKey(MemberProfile, on_delete=models.CASCADE, related_name='deposits')
     account = models.ForeignKey(SavingsAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name='deposits')
     starting_week = models.DateField(help_text="Legacy field: week this deposit starts from", null=True, blank=True)

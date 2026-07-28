@@ -19,6 +19,7 @@ urlpatterns = [
     path('secretary/dashboard/', views.secretary_dashboard, name='secretary_dashboard'),
     path('mobilizer/dashboard/', views.mobilizer_dashboard, name='mobilizer_dashboard'),
     path('my-profile/', views.my_profile, name='my_profile'),
+    path('my-profile/change-password/', views.change_password, name='change_password'),
     path('year-end-settlement/', views.year_end_settlement, name='year_end_settlement'),
     path('year-end-settlement/<int:year>/lock/', views.lock_year_end, name='lock_year_end'),
     path('year-end-settlement/<int:year>/finalize/', views.finalize_year_end, name='finalize_year_end'),

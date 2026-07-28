@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
-from .forms import DepositSubmissionForm, DirectDepositForm
+from .forms import DepositBatchEditForm, DepositSubmissionForm, DirectDepositForm
 from .models import DepositFineAllocation, DepositSubmission, DepositWelfareAllocation
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -34,6 +34,7 @@ from openpyxl.drawing.image import Image as ExcelImage
 from datetime import datetime, date, timedelta
 from xml.sax.saxutils import escape as xml_escape
 import os
+import uuid
 from django.utils.timezone import now
 from openpyxl.utils import get_column_letter
 from django.core.mail import send_mail
@@ -61,6 +62,7 @@ from deposits.rules import (
 from deposits.welfare_calendar import build_welfare_calendar
 from groupcore.member_query import alphabetical_members
 from groupcore.financial_records import delete_deposit_with_audit
+from groupcore.financial_records import record_revision, snapshot_record
 
 # Create your views here.
 
@@ -208,9 +210,11 @@ def submit_deposit(request):
                 })
 
             deposits_created = []
+            submission_batch = uuid.uuid4()
             with transaction.atomic():
                 for index, payment_week in enumerate(selected_weeks):
                     deposit = DepositSubmission(
+                        submission_batch=submission_batch,
                         member=request.user,
                         account=account,
                         submitted_by=request.user,
@@ -318,6 +322,12 @@ def approve_deposit(request, deposit_id):
         messages.error(request, "Access denied.")
         return redirect('member_dashboard')
 
+    if request.method != 'POST':
+        messages.error(request, 'Use the approval button to approve a deposit submission.')
+        return redirect('manage_deposits')
+    legacy_deposit = get_object_or_404(DepositSubmission, id=deposit_id)
+    return approve_deposit_batch(request, legacy_deposit.submission_batch)
+
     deposit = get_object_or_404(DepositSubmission, id=deposit_id, status='PENDING')
     close_state = financial_year(deposit.payment_week.year)
     if (
@@ -405,6 +415,12 @@ def reject_deposit(request, deposit_id):
         messages.error(request, "Access denied.")
         return redirect('member_dashboard')
 
+    if request.method != 'POST':
+        messages.error(request, 'Use the rejection button to reject a deposit submission.')
+        return redirect('manage_deposits')
+    legacy_deposit = get_object_or_404(DepositSubmission, id=deposit_id)
+    return reject_deposit_batch(request, legacy_deposit.submission_batch)
+
     deposit = get_object_or_404(DepositSubmission, id=deposit_id, status='PENDING')
     deposit.status = 'REJECTED'
     deposit.reviewed_by = request.user
@@ -437,6 +453,9 @@ def delete_deposit(request, deposit_id):
     if request.method != 'POST':
         messages.error(request, 'Use the delete confirmation form to delete a record.')
         return redirect('manage_deposits')
+    legacy_deposit = get_object_or_404(DepositSubmission, id=deposit_id)
+    return delete_deposit_batch(request, legacy_deposit.submission_batch)
+
     try:
         record_id = delete_deposit_with_audit(
             deposit_id,
@@ -456,6 +475,600 @@ def delete_deposit(request, deposit_id):
             f'Deposit #{record_id} was deleted from the database. Its audit history was saved.',
         )
     return redirect('manage_deposits')
+
+
+def _batch_records(batch_id, for_update=False):
+    queryset = (
+        DepositSubmission.objects
+        .filter(submission_batch=batch_id)
+        .select_related('member', 'account', 'loan_repayment_loan')
+        .prefetch_related('fine_allocations__fine', 'welfare_allocations', 'generated_loan_repayments')
+        .order_by('id')
+    )
+    if for_update:
+        queryset = queryset.select_for_update()
+    return list(queryset)
+
+
+def _send_batch_status_email(records, approved):
+    first = records[0]
+    total = sum((item.amount for item in records), Decimal('0.00'))
+    status_word = 'approved' if approved else 'rejected'
+    send_mail(
+        subject=f"Deposit {status_word.title()}",
+        message=(
+            f"Dear {first.member.get_full_name() or first.member.username},\n\n"
+            f"Your deposit submission of UGX {total:,.0f} made on "
+            f"{first.payment_date.strftime('%d %B %Y')} has been {status_word} "
+            "by the Treasury Department.\n\nRegards,\nTreasury Department"
+        ),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[first.member.email],
+        fail_silently=True,
+    )
+
+
+@login_required
+def approve_deposit_batch(request, batch_id):
+    if not request.user.is_treasurer():
+        messages.error(request, 'Only the treasurer can approve deposits.')
+        return redirect('member_dashboard')
+    if request.method != 'POST':
+        messages.error(request, 'Use the approval button to approve a deposit submission.')
+        return redirect('manage_deposits')
+
+    try:
+        with transaction.atomic():
+            records = _batch_records(batch_id, for_update=True)
+            if not records:
+                raise ValidationError('That deposit submission no longer exists.')
+            if any(item.status != 'PENDING' for item in records):
+                raise ValidationError('Only a fully pending submission can be approved.')
+
+            for deposit in records:
+                close_state = financial_year(deposit.payment_week.year)
+                if close_state.cutoff_at and deposit.date_submitted > close_state.cutoff_at:
+                    raise ValidationError(
+                        'This submission was received after the financial-year cutoff.'
+                    )
+                if deposit.saving_amount > 0:
+                    if not MIN_WEEKLY_SAVINGS <= deposit.saving_amount <= MAX_WEEKLY_SAVINGS:
+                        raise ValidationError(
+                            'Every weekly saving must be between UGX 10,000 and UGX 50,000.'
+                        )
+                    if weekly_savings_total(
+                        deposit.member,
+                        deposit.account,
+                        deposit.payment_week,
+                    ) >= MIN_WEEKLY_SAVINGS:
+                        raise ValidationError(
+                            f'The week of {deposit.payment_week:%d %b %Y} is already paid.'
+                        )
+
+            for deposit in records:
+                selected_fines = list(deposit.fine_allocations.select_related('fine'))
+                if selected_fines:
+                    apply_selected_fine_allocations(
+                        (allocation.fine, allocation.amount)
+                        for allocation in selected_fines
+                    )
+                deposit.status = 'APPROVED'
+                deposit.reviewed_by = request.user
+                deposit.date_reviewed = timezone.now()
+                deposit.save(update_fields=['status', 'reviewed_by', 'date_reviewed', 'amount'])
+                if deposit.saving_amount > 0:
+                    delete_deposit_week_missed_saving_fines(deposit)
+                if deposit.fine_amount > 0 and not selected_fines:
+                    allocate_fine_payment(
+                        deposit.member, deposit.account, deposit.fine_amount
+                    )
+                if deposit.loan_repayment_amount > 0:
+                    allocated, unallocated = _apply_loan_repayment(
+                        member=deposit.member,
+                        account=deposit.account,
+                        loan=deposit.loan_repayment_loan,
+                        repayment_amount=deposit.loan_repayment_amount,
+                        paid_on=deposit.payment_date,
+                        recorded_by=request.user,
+                        source_deposit=deposit,
+                        notes=f'Deposit approval repayment (Deposit #{deposit.id}).',
+                    )
+                    if unallocated or allocated != deposit.loan_repayment_amount:
+                        raise ValidationError(
+                            'The selected loan no longer has enough outstanding balance.'
+                        )
+                    repayment = deposit.generated_loan_repayments.order_by('-id').first()
+                    if repayment:
+                        apply_eligible_locked_repayment(repayment)
+            transaction.on_commit(lambda: _send_batch_status_email(records, True))
+    except ValidationError as exc:
+        messages.error(
+            request,
+            '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc),
+        )
+    else:
+        messages.success(request, 'The complete deposit submission was approved.')
+    return redirect('manage_deposits')
+
+
+@login_required
+def reject_deposit_batch(request, batch_id):
+    if not request.user.is_treasurer():
+        messages.error(request, 'Only the treasurer can reject deposits.')
+        return redirect('member_dashboard')
+    if request.method != 'POST':
+        messages.error(request, 'Use the rejection button to reject a deposit submission.')
+        return redirect('manage_deposits')
+
+    with transaction.atomic():
+        records = _batch_records(batch_id, for_update=True)
+        if not records:
+            messages.error(request, 'That deposit submission no longer exists.')
+            return redirect('manage_deposits')
+        if any(item.status != 'PENDING' for item in records):
+            messages.error(request, 'Only a fully pending submission can be rejected.')
+            return redirect('manage_deposits')
+        reviewed_at = timezone.now()
+        DepositSubmission.objects.filter(
+            submission_batch=batch_id
+        ).update(
+            status='REJECTED',
+            reviewed_by=request.user,
+            date_reviewed=reviewed_at,
+        )
+        for item in records:
+            item.status = 'REJECTED'
+        transaction.on_commit(lambda: _send_batch_status_email(records, False))
+    messages.success(request, 'The complete deposit submission was rejected.')
+    return redirect('manage_deposits')
+
+
+@login_required
+def delete_deposit_batch(request, batch_id):
+    if not request.user.is_treasurer():
+        messages.error(request, 'Only the treasurer can delete deposit records.')
+        return redirect('member_dashboard')
+    if request.method != 'POST':
+        messages.error(request, 'Use the delete confirmation form to delete a submission.')
+        return redirect('manage_deposits')
+    reason = request.POST.get('deletion_reason')
+    try:
+        with transaction.atomic():
+            records = _batch_records(batch_id, for_update=True)
+            if not records:
+                raise ValidationError('That deposit submission no longer exists.')
+            for deposit in records:
+                delete_deposit_with_audit(deposit.id, request.user, reason)
+    except ValidationError as exc:
+        messages.error(
+            request,
+            '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc),
+        )
+    else:
+        messages.success(
+            request,
+            f'The complete deposit submission ({len(records)} record(s)) was deleted and audited.',
+        )
+    return redirect('manage_deposits')
+
+
+def _batch_edit_context(records):
+    primary = next(
+        (
+            item for item in records
+            if item.proof
+            or item.welfare_amount
+            or item.annual_subscription_amount
+            or item.membership_amount
+            or item.fine_amount
+            or item.shares_amount
+            or item.loan_repayment_amount
+        ),
+        records[0],
+    )
+    totals = {
+        field_name: sum(
+            (getattr(item, field_name) or Decimal('0.00') for item in records),
+            Decimal('0.00'),
+        )
+        for field_name in (
+            'saving_amount',
+            'welfare_amount',
+            'annual_subscription_amount',
+            'membership_amount',
+            'fine_amount',
+            'shares_amount',
+            'loan_repayment_amount',
+        )
+    }
+    purpose_by_field = {
+        'saving_amount': 'saving',
+        'welfare_amount': 'welfare',
+        'annual_subscription_amount': 'annual_subscription',
+        'membership_amount': 'membership',
+        'fine_amount': 'fine',
+        'shares_amount': 'shares',
+        'loan_repayment_amount': 'loan_repayment',
+    }
+    selected_weeks = [
+        item.payment_week.isoformat()
+        for item in records
+        if item.saving_amount > 0
+    ]
+    fine_allocations = [
+        allocation
+        for item in records
+        for allocation in item.fine_allocations.select_related('fine')
+    ]
+    welfare_weeks = [
+        allocation.welfare_week.isoformat()
+        for item in records
+        for allocation in item.welfare_allocations.all()
+    ]
+    initial = {
+        'member': primary.member_id,
+        'account': primary.account_id,
+        'payment_week': primary.payment_week,
+        'payment_date': primary.payment_date,
+        'payment_time': primary.payment_time,
+        'loan_repayment_loan': primary.loan_repayment_loan_id,
+        'remarks': next((item.remarks for item in records if item.remarks), ''),
+        'selected_purposes': [
+            purpose_by_field[field_name]
+            for field_name, value in totals.items()
+            if value > 0
+        ],
+        'selected_weeks': selected_weeks,
+        'selected_fine_weeks': sorted({
+            allocation.fine.reference_week.isoformat()
+            for allocation in fine_allocations
+            if allocation.fine.reference_week
+        }),
+        'selected_welfare_weeks': welfare_weeks,
+        'week_amounts': {
+            item.payment_week.isoformat(): str(item.saving_amount)
+            for item in records
+            if item.saving_amount > 0
+        },
+        **totals,
+    }
+    fine_credit = {}
+    if all(item.status == 'APPROVED' for item in records):
+        for allocation in fine_allocations:
+            fine_credit[allocation.fine_id] = (
+                fine_credit.get(allocation.fine_id, Decimal('0.00'))
+                + allocation.amount
+            )
+    loan_credit = sum(
+        (
+            repayment.amount
+            for item in records
+            for repayment in item.generated_loan_repayments.all()
+        ),
+        Decimal('0.00'),
+    )
+    return primary, initial, fine_credit, loan_credit
+
+
+def _deleted_record_revision(record, before, editor, reason):
+    latest = (
+        FinancialRecordRevision.objects.select_for_update()
+        .filter(record_type='deposit', object_id=record.id)
+        .order_by('-revision_number')
+        .first()
+    )
+    after = dict(before)
+    after['record_state'] = 'Deleted during submission correction'
+    FinancialRecordRevision.objects.create(
+        record_type='deposit',
+        object_id=record.id,
+        revision_number=(latest.revision_number + 1) if latest else 1,
+        before_data=before,
+        after_data=after,
+        reason=reason,
+        edited_by=editor,
+    )
+
+
+def _save_deposit_batch_edit(batch_id, form, editor):
+    with transaction.atomic():
+        records = _batch_records(batch_id, for_update=True)
+        if not records:
+            raise ValidationError('That deposit submission no longer exists.')
+        statuses = {item.status for item in records}
+        if len(statuses) != 1:
+            raise ValidationError(
+                'This historical submission has mixed statuses and must be reviewed manually.'
+            )
+        original_status = statuses.pop()
+        reason = form.cleaned_data['edit_reason'].strip()
+        before = {item.id: snapshot_record(item) for item in records}
+
+        if original_status == 'APPROVED':
+            for item in records:
+                allocations = list(item.fine_allocations.select_related('fine'))
+                if item.fine_amount > 0 and not allocations:
+                    raise ValidationError(
+                        'This approved legacy fine payment is not linked to a specific fine.'
+                    )
+                for allocation in allocations:
+                    fine = Fine.objects.select_for_update().get(pk=allocation.fine_id)
+                    fine.amount_paid = max(
+                        fine.amount_paid - allocation.amount,
+                        Decimal('0.00'),
+                    )
+                    fine.is_paid = fine.amount_paid >= fine.amount
+                    fine.save(update_fields=['amount_paid', 'is_paid'])
+                item.generated_loan_repayments.all().delete()
+
+        for item in records:
+            item.fine_allocations.all().delete()
+            item.welfare_allocations.all().delete()
+
+        selected_weeks = list(form.cleaned_data.get('selected_week_dates') or [])
+        weekly_allocations = dict(form.cleaned_data.get('weekly_allocations') or [])
+        if not selected_weeks:
+            selected_weeks = [form.cleaned_data['payment_week']]
+
+        target_status = 'PENDING' if original_status == 'REJECTED' else original_status
+        reviewed_by = editor if target_status == 'APPROVED' else None
+        reviewed_at = timezone.now() if target_status == 'APPROVED' else None
+        primary_old = records[0]
+        existing_proof = next((item.proof for item in records if item.proof), None)
+        proof = form.cleaned_data.get('proof')
+        if not proof and not form.cleaned_data.get('clear_proof'):
+            proof = existing_proof
+
+        unused = list(records)
+        saved = []
+        created_ids = set()
+        for index, payment_week in enumerate(selected_weeks):
+            match = next(
+                (
+                    item for item in unused
+                    if item.payment_week == payment_week
+                    and (item.saving_amount > 0) == bool(weekly_allocations)
+                ),
+                None,
+            )
+            if match is None and unused:
+                match = unused[0]
+            if match is None:
+                match = DepositSubmission(
+                    submission_batch=batch_id,
+                    submitted_by=primary_old.submitted_by or editor,
+                )
+            else:
+                unused.remove(match)
+            first = index == 0
+            match.submission_batch = batch_id
+            match.member = form.cleaned_data['member']
+            match.account = form.cleaned_data.get('account')
+            match.payment_week = payment_week
+            match.starting_week = payment_week
+            match.weeks_covered = 1
+            match.saving_amount = weekly_allocations.get(
+                payment_week, Decimal('0.00')
+            )
+            match.welfare_amount = (
+                form.cleaned_data.get('welfare_amount') or Decimal('0.00')
+            ) if first else Decimal('0.00')
+            match.annual_subscription_amount = (
+                form.cleaned_data.get('annual_subscription_amount') or Decimal('0.00')
+            ) if first else Decimal('0.00')
+            match.membership_amount = (
+                form.cleaned_data.get('membership_amount') or Decimal('0.00')
+            ) if first else Decimal('0.00')
+            match.fine_amount = (
+                form.cleaned_data.get('fine_amount') or Decimal('0.00')
+            ) if first else Decimal('0.00')
+            match.shares_amount = (
+                form.cleaned_data.get('shares_amount') or Decimal('0.00')
+            ) if first else Decimal('0.00')
+            match.loan_repayment_amount = (
+                form.cleaned_data.get('loan_repayment_amount') or Decimal('0.00')
+            ) if first else Decimal('0.00')
+            match.loan_repayment_loan = (
+                form.cleaned_data.get('loan_repayment_loan') if first else None
+            )
+            match.proof = proof if first else None
+            match.remarks = form.cleaned_data.get('remarks', '') if first else ''
+            match.payment_date = form.cleaned_data['payment_date']
+            match.payment_time = form.cleaned_data['payment_time']
+            match.status = target_status
+            match.reviewed_by = reviewed_by
+            match.date_reviewed = reviewed_at
+            is_new = match.pk is None
+            match.full_clean()
+            match.save()
+            if is_new:
+                created_ids.add(match.id)
+            saved.append(match)
+
+        for removed in unused:
+            _deleted_record_revision(
+                removed, before[removed.id], editor, reason
+            )
+            removed.delete()
+
+        primary = saved[0]
+        for fine_id, amount in form.cleaned_data.get('fine_allocations') or []:
+            DepositFineAllocation.objects.create(
+                deposit=primary,
+                fine_id=fine_id,
+                amount=amount,
+            )
+        _create_welfare_allocations(
+            primary,
+            primary.account,
+            form.cleaned_data.get('welfare_week_dates') or [],
+        )
+
+        if target_status == 'APPROVED':
+            allocations = list(primary.fine_allocations.select_related('fine'))
+            if allocations:
+                apply_selected_fine_allocations(
+                    (allocation.fine, allocation.amount)
+                    for allocation in allocations
+                )
+            for item in saved:
+                if item.saving_amount > 0:
+                    delete_deposit_week_missed_saving_fines(item)
+            if primary.fine_amount > 0 and not allocations:
+                allocate_fine_payment(
+                    primary.member, primary.account, primary.fine_amount
+                )
+            if primary.loan_repayment_amount > 0:
+                allocated, unallocated = _apply_loan_repayment(
+                    member=primary.member,
+                    account=primary.account,
+                    loan=primary.loan_repayment_loan,
+                    repayment_amount=primary.loan_repayment_amount,
+                    paid_on=primary.payment_date,
+                    recorded_by=editor,
+                    source_deposit=primary,
+                    notes=f'Corrected deposit repayment (Deposit #{primary.id}).',
+                )
+                if unallocated or allocated != primary.loan_repayment_amount:
+                    raise ValidationError(
+                        'The selected loan no longer has enough outstanding balance.'
+                    )
+
+        for item in saved:
+            if item.id in created_ids:
+                created_before = {
+                    'submission_batch': str(batch_id),
+                    'record_state': 'Not yet created',
+                }
+                record_revision(item, created_before, editor, reason)
+            else:
+                record_revision(item, before[item.id], editor, reason)
+
+        from groupcore.models import FinancialYearClose
+        affected_years = {
+            item.payment_week.year
+            for item in [*records, *saved]
+            if item.payment_week
+        }
+        FinancialYearClose.objects.filter(
+            year__in=affected_years,
+            state=FinancialYearClose.STATE_FINALIZED,
+        ).update(
+            needs_regeneration=True,
+            last_correction_at=timezone.now(),
+        )
+    return saved
+
+
+@login_required
+def edit_deposit_batch(request, batch_id):
+    if not request.user.is_treasurer():
+        messages.error(request, 'Only the treasurer can edit deposit submissions.')
+        return redirect('member_dashboard')
+    records = _batch_records(batch_id)
+    if not records:
+        messages.error(request, 'That deposit submission no longer exists.')
+        return redirect('manage_deposits')
+    primary, initial, fine_credit, loan_credit = _batch_edit_context(records)
+    form_kwargs = {
+        'initial': initial,
+        'exclude_deposit_ids': [item.id for item in records],
+        'extra_saving_weeks': [item.payment_week for item in records],
+        'fine_credit_by_id': fine_credit,
+        'loan_repayment_credit': loan_credit,
+        'loan_credit_loan_id': primary.loan_repayment_loan_id,
+    }
+    if request.method == 'POST':
+        form = DepositBatchEditForm(
+            request.POST,
+            request.FILES,
+            **form_kwargs,
+        )
+        if form.is_valid():
+            try:
+                _save_deposit_batch_edit(batch_id, form, request.user)
+            except ValidationError as exc:
+                form.add_error(
+                    None,
+                    '; '.join(exc.messages)
+                    if hasattr(exc, 'messages')
+                    else str(exc),
+                )
+            else:
+                messages.success(
+                    request,
+                    'Deposit submission corrected and audit history saved.',
+                )
+                return redirect('deposit_batch_history', batch_id=batch_id)
+    else:
+        form = DepositBatchEditForm(**form_kwargs)
+
+    loan_account_ids = list(
+        LoanRequest.objects.filter(status='APPROVED')
+        .exclude(account__isnull=True)
+        .values_list('account_id', flat=True)
+        .distinct()
+    )
+    import json as _json
+    return render(request, 'deposits/submit_deposit.html', {
+        'form': form,
+        'page_title': 'Edit Deposit Submission',
+        'submit_label': 'Save Corrected Submission',
+        'existing_proof': primary.proof or next(
+            (item.proof for item in records if item.proof), None
+        ),
+        'loan_account_ids_json': _json.dumps(loan_account_ids),
+    })
+
+
+@login_required
+def deposit_batch_history(request, batch_id):
+    records = _batch_records(batch_id)
+    current_ids = {item.id for item in records}
+    revisions = list(
+        FinancialRecordRevision.objects
+        .filter(record_type='deposit')
+        .select_related('edited_by')
+        .order_by('edited_at', 'id')
+    )
+
+    def belongs_to_batch(revision):
+        if revision.object_id in current_ids:
+            return True
+        for snapshot in (revision.before_data or {}, revision.after_data or {}):
+            if str(snapshot.get('submission_batch') or '') == str(batch_id):
+                return True
+        return False
+
+    revisions = [item for item in revisions if belongs_to_batch(item)]
+    if not records and not revisions:
+        raise Http404
+    if records:
+        allowed = request.user.is_treasurer() or request.user.role in {
+            'CHAIRMAN', 'VICE_CHAIRMAN', 'SECRETARY', 'OVERSEER',
+        } or request.user.pk == records[0].member_id
+        record_display = str(DepositBatchSummary(records).member)
+    else:
+        member_data = (revisions[-1].before_data or {}).get('member') or {}
+        allowed = request.user.role in {
+            'TREASURER', 'CHAIRMAN', 'VICE_CHAIRMAN', 'SECRETARY', 'OVERSEER',
+        } or request.user.pk == member_data.get('id')
+        record_display = member_data.get('label') or 'Deleted submission'
+    if not allowed:
+        messages.error(request, 'You do not have permission to inspect this submission.')
+        return redirect('member_dashboard')
+    from groupcore.financial_records import revision_changes
+    revision_items = [
+        {'revision': revision, 'changes': revision_changes(revision)}
+        for revision in revisions
+    ]
+    return render(request, 'deposits/deposit_batch_history.html', {
+        'batch_id': batch_id,
+        'record_display': record_display,
+        'revision_items': revision_items,
+        'can_edit': request.user.is_treasurer() and bool(records),
+        'is_deleted': not records,
+    })
 
 
 @login_required
@@ -852,6 +1465,99 @@ def my_contributions(request):
     return render(request, 'deposits/my_contributions.html', context)
 
 
+class DepositBatchSummary:
+    """Display-facing aggregate for the per-week records in one submission."""
+
+    purpose_fields = (
+        ('Saving', 'saving_amount'),
+        ('Welfare', 'welfare_amount'),
+        ('Annual Subscription', 'annual_subscription_amount'),
+        ('Membership', 'membership_amount'),
+        ('Fine', 'fine_amount'),
+        ('Shares', 'shares_amount'),
+        ('Loan Repayment', 'loan_repayment_amount'),
+    )
+
+    def __init__(self, records):
+        self.records = sorted(records, key=lambda item: item.id)
+        self.record_ids = [item.id for item in self.records]
+        self.submission_batch = self.records[0].submission_batch
+        self.id = self.records[0].id
+        self.pk = self.id
+        self.member = self.records[0].member
+        self.account = self.records[0].account
+        statuses = {item.status for item in self.records}
+        self.status = statuses.pop() if len(statuses) == 1 else 'MIXED'
+        self.amount = sum((item.amount for item in self.records), Decimal('0.00'))
+        for _label, field_name in self.purpose_fields:
+            setattr(
+                self,
+                field_name,
+                sum(
+                    (getattr(item, field_name) or Decimal('0.00') for item in self.records),
+                    Decimal('0.00'),
+                ),
+            )
+        self.payment_weeks = sorted({
+            item.payment_week
+            for item in self.records
+            if item.payment_week and item.saving_amount > 0
+        }) or sorted({
+            item.payment_week for item in self.records if item.payment_week
+        })
+        self.proof = next((item.proof for item in self.records if item.proof), None)
+        self.remarks = next((item.remarks for item in self.records if item.remarks), '')
+        self.date_submitted = min(item.date_submitted for item in self.records)
+        reviewed_dates = [item.date_reviewed for item in self.records if item.date_reviewed]
+        self.date_reviewed = max(reviewed_dates) if reviewed_dates else None
+        self.payment_date = self.records[0].payment_date
+        self.payment_time = self.records[0].payment_time
+        self.edits = 0
+
+    def __eq__(self, other):
+        if isinstance(other, DepositSubmission):
+            return len(self.records) == 1 and self.id == other.id
+        if isinstance(other, DepositBatchSummary):
+            return self.submission_batch == other.submission_batch
+        return NotImplemented
+
+    def purpose_breakdown(self):
+        return {
+            label: getattr(self, field_name)
+            for label, field_name in self.purpose_fields
+            if getattr(self, field_name) > 0
+        }
+
+
+def _deposit_batch_summaries(queryset):
+    grouped = {}
+    for deposit in queryset.order_by('submission_batch', 'id'):
+        grouped.setdefault(deposit.submission_batch, []).append(deposit)
+    summaries = [DepositBatchSummary(records) for records in grouped.values()]
+    summaries.sort(
+        key=lambda item: (
+            item.date_reviewed is not None,
+            item.date_reviewed or item.date_submitted,
+            item.date_submitted,
+            item.id,
+        ),
+        reverse=True,
+    )
+    record_ids = [record_id for item in summaries for record_id in item.record_ids]
+    edit_counts = {
+        row['object_id']: row['count']
+        for row in (
+            FinancialRecordRevision.objects
+            .filter(record_type='deposit', object_id__in=record_ids)
+            .values('object_id')
+            .annotate(count=Count('id'))
+        )
+    }
+    for item in summaries:
+        item.edits = sum(edit_counts.get(record_id, 0) for record_id in item.record_ids)
+    return summaries
+
+
 
 @login_required
 def manage_deposits(request):
@@ -874,10 +1580,16 @@ def manage_deposits(request):
         .select_related('member', 'account')
     )
     status_counts = deposit_submissions_base.aggregate(
-        all=Count('id'),
-        pending=Count('id', filter=Q(status='PENDING')),
-        approved=Count('id', filter=Q(status='APPROVED')),
-        rejected=Count('id', filter=Q(status='REJECTED')),
+        all=Count('submission_batch', distinct=True),
+        pending=Count(
+            'submission_batch', filter=Q(status='PENDING'), distinct=True
+        ),
+        approved=Count(
+            'submission_batch', filter=Q(status='APPROVED'), distinct=True
+        ),
+        rejected=Count(
+            'submission_batch', filter=Q(status='REJECTED'), distinct=True
+        ),
     )
     deposit_submissions = deposit_submissions_base
     if search_query:
@@ -891,12 +1603,10 @@ def manage_deposits(request):
         )
     if status_filter:
         deposit_submissions = deposit_submissions.filter(status=status_filter)
-    deposit_submissions = deposit_submissions.order_by(
-        F('date_reviewed').desc(nulls_last=True),
-        F('date_submitted').desc(),
-        '-id',
-    )
-    deposit_submissions_page = Paginator(deposit_submissions, 25).get_page(request.GET.get('page'))
+    deposit_submissions_page = Paginator(
+        _deposit_batch_summaries(deposit_submissions),
+        25,
+    ).get_page(request.GET.get('page'))
     form = DirectDepositForm(request.POST or None, request.FILES or None)
     group_settings = GroupSettings.get_active()
     active_saving_year = (
@@ -961,11 +1671,13 @@ def manage_deposits(request):
                 })
 
             deposits_created = []
+            submission_batch = uuid.uuid4()
             with transaction.atomic():
                 allocation_by_week = dict(weekly_allocations)
                 for index, payment_week in enumerate(selected_weeks):
                     first = index == 0
                     deposit = DepositSubmission(
+                        submission_batch=submission_batch,
                         member=member, account=account, submitted_by=request.user,
                         reviewed_by=request.user, payment_week=payment_week,
                         starting_week=payment_week, weeks_covered=1,
@@ -1672,7 +2384,12 @@ def _current_week_payment_status_data(request, create_fines=False):
 
 
 def _current_week_status_filename(data, extension):
-    return f"current_week_payment_status_week_{data['current_week_number']}_{data['current_week'].strftime('%Y-%m-%d')}.{extension}"
+    scope = data.get('export_scope')
+    scope_part = f'_{scope}_accounts' if scope in {'paid', 'unpaid'} else ''
+    return (
+        f"current_week_payment_status{scope_part}_week_"
+        f"{data['current_week_number']}_{data['current_week'].strftime('%Y-%m-%d')}.{extension}"
+    )
 
 
 def _export_current_week_status_excel(data):
@@ -1717,15 +2434,32 @@ def _export_current_week_status_pdf(data):
 
     doc = SimpleDocTemplate(response, pagesize=A4, leftMargin=30, rightMargin=30, topMargin=30, bottomMargin=30)
     styles = getSampleStyleSheet()
+    scope = data.get('export_scope')
+    if scope == 'paid':
+        entries = data['paid_entries']
+        title = f"Paid Accounts for Week {data['current_week_number']}"
+    elif scope == 'unpaid':
+        entries = data['unpaid_entries']
+        title = f"Unpaid Accounts for Week {data['current_week_number']}"
+    else:
+        entries = data['all_entries']
+        title = f"Payment Status for Week {data['current_week_number']}"
     elements = [
-        Paragraph(f"Payment Status for Week {data['current_week_number']}", styles['Title']),
+        Paragraph(title, styles['Title']),
         Paragraph(f"Week Closing: {data['current_week'].strftime('%A, %d %b %Y')}", styles['Normal']),
-        Paragraph(f"Paid: {len(data['paid_entries'])} | Unpaid: {len(data['unpaid_entries'])}", styles['Normal']),
+        Paragraph(
+            (
+                f"Accounts: {len(entries)}"
+                if scope in {'paid', 'unpaid'}
+                else f"Paid: {len(data['paid_entries'])} | Unpaid: {len(data['unpaid_entries'])}"
+            ),
+            styles['Normal'],
+        ),
         Spacer(1, 12),
     ]
 
     table_rows = [['#', 'Member', 'Account', 'Status']]
-    for index, entry in enumerate(data['all_entries'], start=1):
+    for index, entry in enumerate(entries, start=1):
         table_rows.append([index, entry['member_name'], entry['account_label'], entry['status_label']])
     if len(table_rows) == 1:
         table_rows.append(['-', 'No members found', '-', '-'])
@@ -1755,6 +2489,12 @@ def export_current_week_payment_status(request, format):
         return redirect_response
 
     data = _current_week_payment_status_data(request, create_fines=False)
+    scope = (request.GET.get('scope') or '').strip().lower()
+    if scope:
+        if scope not in {'paid', 'unpaid'}:
+            return HttpResponse('Invalid payment status scope', status=400)
+        if format == 'pdf':
+            data['export_scope'] = scope
     if format == 'excel':
         return _export_current_week_status_excel(data)
     if format == 'pdf':
