@@ -561,10 +561,17 @@
               <td>{{ deposit.fine_amount|floatformat:"0" }}</td>
               <td>{{ deposit.shares_amount|floatformat:"0" }}</td>
               <td>{{ deposit.loan_repayment_amount|floatformat:"0" }}</td>
-              <td>
-                {% for week in deposit.payment_weeks %}
-                <span class="badge text-bg-light border text-dark mb-1">{{ week|date:"d M Y" }}</span>
-                {% empty %}-{% endfor %}
+              <td class="text-nowrap">
+                {% with first_week=deposit.payment_weeks|first last_week=deposit.payment_weeks|last %}
+                  {% if first_week %}
+                  <strong>{{ deposit.payment_weeks|length }} week{{ deposit.payment_weeks|length|pluralize }}</strong>
+                  <span class="text-muted ms-1">
+                    · {{ first_week|date:"j M Y" }}{% if last_week != first_week %} – {{ last_week|date:"j M Y" }}{% endif %}
+                  </span>
+                  {% else %}
+                  <span class="text-muted">-</span>
+                  {% endif %}
+                {% endwith %}
               </td>
               <td>
                 {% if deposit.proof %}

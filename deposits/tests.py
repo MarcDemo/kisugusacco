@@ -1357,6 +1357,9 @@ class DepositBatchWorkflowTests(TestCase):
         summary = page.context['deposit_submissions'][0]
         self.assertEqual(summary.amount, Decimal('30000'))
         self.assertEqual(summary.payment_weeks, self.weeks)
+        self.assertContains(page, '2 weeks')
+        self.assertContains(page, '3 Jul 2026')
+        self.assertContains(page, '10 Jul 2026')
         self.assertContains(edit, 'Edit Deposit Submission')
         self.assertContains(edit, f'value="{self.weeks[0].isoformat()}" checked')
         self.assertContains(edit, 'value="10000.00"')
