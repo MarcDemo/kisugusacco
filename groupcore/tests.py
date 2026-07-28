@@ -1,14 +1,16 @@
 import csv
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from django.core import mail
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.contrib.messages import get_messages
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -1563,3 +1565,139 @@ class ProfilePasswordChangeTests(TestCase):
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password('old-pass-12345'))
         self.assertContains(response, 'The two password fields didn’t match')
+
+
+@override_settings(
+    EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+    DEFAULT_FROM_EMAIL='info@kisugusacco.org',
+)
+class WelcomeCredentialsCommandTests(TestCase):
+    def setUp(self):
+        self.member = MemberProfile.objects.create_user(
+            username='turinawe.g',
+            first_name='Turinawe',
+            last_name='Generous',
+            email='turinawe@example.com',
+            password='existing-pass-12345',
+        )
+
+    def _paths(self, directory, names=None):
+        names_path = Path(directory) / 'welcome-targets.txt'
+        report_path = Path(directory) / 'welcome-report.csv'
+        names_path.write_text(
+            '\n'.join(names or ['- Turinawe Generous']),
+            encoding='utf-8',
+        )
+        return names_path, report_path
+
+    def test_dry_run_matches_member_without_changing_password_or_sending(self):
+        with TemporaryDirectory() as directory:
+            names_path, report_path = self._paths(directory)
+            old_password_hash = self.member.password
+
+            call_command(
+                'send_welcome_credentials',
+                file=str(names_path),
+                report=str(report_path),
+                stdout=StringIO(),
+            )
+
+            self.member.refresh_from_db()
+            report = report_path.read_text(encoding='utf-8')
+        self.assertEqual(self.member.password, old_password_hash)
+        self.assertIsNone(self.member.welcome_email_sent_at)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertIn('READY', report)
+        self.assertNotIn('temporary_password', report)
+
+    def test_send_emails_credentials_and_activates_matching_password(self):
+        with TemporaryDirectory() as directory:
+            names_path, report_path = self._paths(directory)
+
+            call_command(
+                'send_welcome_credentials',
+                file=str(names_path),
+                report=str(report_path),
+                login_url='https://kisugusacco.org/login/',
+                send=True,
+                stdout=StringIO(),
+            )
+
+            self.member.refresh_from_db()
+            report = report_path.read_text(encoding='utf-8')
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, ['turinawe@example.com'])
+        self.assertIn('https://kisugusacco.org/login/', email.body)
+        self.assertIn('Username: turinawe.g', email.body)
+        temporary_password = next(
+            line.split(': ', 1)[1]
+            for line in email.body.splitlines()
+            if line.startswith('Temporary password: ')
+        )
+        self.assertGreaterEqual(len(temporary_password), 8)
+        self.assertTrue(self.member.check_password(temporary_password))
+        self.assertIsNotNone(self.member.welcome_email_sent_at)
+        self.assertIn('SENT', report)
+        self.assertNotIn(temporary_password, report)
+
+    def test_preflight_error_blocks_every_password_change_and_email(self):
+        with TemporaryDirectory() as directory:
+            names_path, report_path = self._paths(
+                directory,
+                ['Turinawe Generous', 'Missing Member'],
+            )
+            old_password_hash = self.member.password
+
+            with self.assertRaises(CommandError):
+                call_command(
+                    'send_welcome_credentials',
+                    file=str(names_path),
+                    report=str(report_path),
+                    send=True,
+                    stdout=StringIO(),
+                )
+
+            report = report_path.read_text(encoding='utf-8')
+        self.member.refresh_from_db()
+        self.assertEqual(self.member.password, old_password_hash)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertIn('NO_MATCH', report)
+
+    def test_six_character_temporary_passwords_are_rejected(self):
+        with TemporaryDirectory() as directory:
+            names_path, report_path = self._paths(directory)
+            with self.assertRaisesMessage(
+                CommandError,
+                'at least 8 characters',
+            ):
+                call_command(
+                    'send_welcome_credentials',
+                    file=str(names_path),
+                    report=str(report_path),
+                    password_length=6,
+                    send=True,
+                    stdout=StringIO(),
+                )
+
+    def test_invalid_email_blocks_password_change_and_delivery(self):
+        self.member.email = 'not-an-email-address'
+        self.member.save(update_fields=['email'])
+        old_password_hash = self.member.password
+
+        with TemporaryDirectory() as directory:
+            names_path, report_path = self._paths(directory)
+            with self.assertRaises(CommandError):
+                call_command(
+                    'send_welcome_credentials',
+                    file=str(names_path),
+                    report=str(report_path),
+                    send=True,
+                    stdout=StringIO(),
+                )
+            report = report_path.read_text(encoding='utf-8')
+
+        self.member.refresh_from_db()
+        self.assertEqual(self.member.password, old_password_hash)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertIn('INVALID_EMAIL', report)

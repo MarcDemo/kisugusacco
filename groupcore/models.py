@@ -26,6 +26,11 @@ class MemberProfile(AbstractUser):
     next_of_kin_name = models.CharField(max_length=100, blank=True, null=True)
     next_of_kin_contact = models.CharField(max_length=20, blank=True, null=True)
     profile_picture = models.ImageField(upload_to='profile_pics/', blank=True, null=True)
+    welcome_email_sent_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text='When initial login credentials were successfully emailed to this member.',
+    )
     
 
     def is_member(self):
