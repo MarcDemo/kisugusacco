@@ -3,6 +3,7 @@ import re
 from django import forms
 
 from groupcore.models import MemberProfile, SavingsAccount
+from groupcore.member_query import alphabetical_members
 
 
 ACCOUNT_LABEL_RE = re.compile(r'^[A-Za-z0-9 _.-]+$')
@@ -231,3 +232,58 @@ class MakeAccountIndependentForm(forms.Form):
         user.set_password(self.cleaned_data['password'])
         user.save()
         return user
+
+
+class MemberTransferChoiceField(forms.ModelChoiceField):
+    def label_from_instance(self, member):
+        name = member.get_full_name().strip() or member.username
+        return f'{name} ({member.username})'
+
+
+class MakeAccountDependentForm(forms.Form):
+    target_member = MemberTransferChoiceField(
+        queryset=MemberProfile.objects.none(),
+        label='Transfer under member',
+        help_text='The selected member will own this savings account and its account-linked history.',
+    )
+    reason = forms.CharField(
+        min_length=5,
+        label='Reason for transfer',
+        widget=forms.Textarea(attrs={'rows': 3}),
+        help_text='Required for the permanent ownership audit.',
+    )
+    confirm_transfer = forms.BooleanField(
+        label='I confirm that this account and its financial history should move to the selected member.',
+    )
+
+    def __init__(self, *args, account=None, **kwargs):
+        self.account = account
+        super().__init__(*args, **kwargs)
+        queryset = MemberProfile.objects.filter(
+            is_active=True,
+            is_superuser=False,
+        )
+        if account and account.owner_id:
+            queryset = queryset.exclude(pk=account.owner_id)
+        self.fields['target_member'].queryset = alphabetical_members(queryset)
+
+    def clean_target_member(self):
+        target = self.cleaned_data['target_member']
+        if not target.is_active or target.is_superuser:
+            raise forms.ValidationError('Select an active member account.')
+        if self.account and target.pk == self.account.owner_id:
+            raise forms.ValidationError('The account is already owned by this member.')
+        if self.account and SavingsAccount.objects.filter(
+            owner=target,
+            label__iexact=self.account.label,
+        ).exists():
+            raise forms.ValidationError(
+                f'{target} already has a savings account named "{self.account.label}".'
+            )
+        return target
+
+    def clean_reason(self):
+        reason = ' '.join((self.cleaned_data.get('reason') or '').split())
+        if len(reason) < 5:
+            raise forms.ValidationError('Give a clear transfer reason of at least 5 characters.')
+        return reason

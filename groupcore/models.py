@@ -104,6 +104,42 @@ class SavingsAccount(models.Model):
         return f"{owner_name} — {self.label}"
 
 
+class SavingsAccountOwnershipTransfer(models.Model):
+    account = models.ForeignKey(
+        SavingsAccount,
+        on_delete=models.PROTECT,
+        related_name='ownership_transfers',
+    )
+    old_owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='transferred_savings_accounts',
+    )
+    new_owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='received_savings_accounts',
+    )
+    transferred_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='performed_savings_account_transfers',
+    )
+    account_label = models.CharField(max_length=100)
+    reason = models.TextField()
+    source_profile_deactivated = models.BooleanField(default=False)
+    transferred_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-transferred_at', '-id']
+
+    def __str__(self):
+        return (
+            f'Account {self.account_label}: '
+            f'{self.old_owner} → {self.new_owner}'
+        )
+
+
 class FinancialRecordRevision(models.Model):
     record_type = models.CharField(max_length=60)
     object_id = models.PositiveBigIntegerField()

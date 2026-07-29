@@ -13,7 +13,13 @@ from loans.models import LoanRequest
 from django.conf import settings
 from datetime import date, datetime
 from Assets_Expenditures.models import Asset, Expenditure
-from .forms import AddUserForm, EditUserForm, MakeAccountIndependentForm
+from .forms import (
+    AddUserForm,
+    EditUserForm,
+    MakeAccountDependentForm,
+    MakeAccountIndependentForm,
+)
+from .services import make_account_dependent as transfer_account_to_member
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.timezone import now
@@ -23,6 +29,7 @@ import re
 import calendar
 from calendar import month_name
 from django.http import HttpResponse
+from django.core.exceptions import ValidationError
 from groupcore.member_query import alphabetical_members
 from xml.sax.saxutils import escape as xml_escape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
@@ -152,9 +159,11 @@ def user_detail(request, user_id):
         pk=user_id,
         is_superuser=False,
     )
+    linked_account_count = user.savings_accounts.count()
     return render(request, 'chairman/user_detail.html', {
         'managed_user': user,
-        'linked_account_count': user.savings_accounts.count(),
+        'linked_account_count': linked_account_count,
+        'can_make_dependent': not user.is_superuser and linked_account_count >= 1,
     })
 
 
@@ -192,6 +201,7 @@ def edit_user(request, user_id):
         'managed_user': user,
         'accounts': accounts,
         'linked_account_count': len(accounts),
+        'can_make_dependent': not user.is_superuser and len(accounts) >= 1,
     })
 
 
@@ -248,6 +258,70 @@ def make_account_independent(request, account_id):
         'account': account,
         'linked_owner': account.owner,
         'linked_account_count': linked_account_count,
+    })
+
+
+@login_required
+def make_account_dependent(request, account_id):
+    if not can_manage_users(request.user):
+        messages.error(
+            request,
+            "Access denied. Only the Chairman, Secretary, or Treasurer can make accounts dependent.",
+        )
+        return redirect(user_management_redirect(request.user))
+
+    account = get_object_or_404(
+        SavingsAccount.objects.select_related('owner'),
+        pk=account_id,
+    )
+    source_owner = account.owner
+    if (
+        source_owner.is_superuser
+        or source_owner.savings_accounts.count() < 1
+    ):
+        messages.error(
+            request,
+            "A superuser savings account cannot use Make Dependent.",
+        )
+        return redirect('user_detail', user_id=source_owner.id)
+    source_account_count = source_owner.savings_accounts.count()
+
+    if request.method == 'POST':
+        form = MakeAccountDependentForm(request.POST, account=account)
+        if form.is_valid():
+            try:
+                transferred_account, transfer_audit = transfer_account_to_member(
+                    account_id=account.pk,
+                    target_member_id=form.cleaned_data['target_member'].pk,
+                    transferred_by=request.user,
+                    reason=form.cleaned_data['reason'],
+                )
+            except ValidationError as exc:
+                form.add_error(None, exc)
+            else:
+                target_member = transferred_account.owner
+                messages.success(
+                    request,
+                    (
+                        f'Savings account "{transferred_account.label}" is now dependent '
+                        f'under {target_member}.'
+                        + (
+                            ' The former member login was deactivated because this was '
+                            'their last savings account.'
+                            if transfer_audit.source_profile_deactivated
+                            else ' The former member login remains active.'
+                        )
+                    ),
+                )
+                return redirect('user_detail', user_id=target_member.pk)
+    else:
+        form = MakeAccountDependentForm(account=account)
+
+    return render(request, 'chairman/make_account_dependent.html', {
+        'form': form,
+        'account': account,
+        'source_owner': source_owner,
+        'source_account_count': source_account_count,
     })
 
 
