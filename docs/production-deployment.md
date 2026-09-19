@@ -53,6 +53,60 @@ bash scripts/deploy_cpanel.sh
 
 The deploy script installs `requirements-production.txt`, runs migrations, collects static files, and restarts the app by touching `tmp/restart.txt`. If your cPanel app needs a different restart command, set `DJANGO_RESTART_COMMAND` in `.env`.
 
+## Send initial welcome credentials
+
+Deploy the updated code through the existing Git deployment process. In cPanel
+Terminal, activate the production Python app environment and change to the app's
+project directory. Use the production MySQL database and existing SMTP settings.
+Do not substitute the local SQLite database.
+
+Apply the migration if the deployment has not already done so, then preview:
+
+```bash
+python manage.py migrate --noinput
+python manage.py send_welcome_credentials --all-eligible --report logs/welcome-preview.csv
+```
+
+The preview sends nothing and changes no credentials or delivery timestamps.
+Review the CSV recipient list, counts, and exclusion reasons. Eligible users must
+be enabled, not superusers, and have no usable password, prior login, recorded
+welcome email, or reserved welcome attempt. Their email must be valid and not
+shared with any other user account, including deactivated accounts and superusers.
+An account with an existing password is excluded even if it has never logged in.
+
+Send and then verify with a fresh preview:
+
+```bash
+python manage.py send_welcome_credentials --all-eligible --send --report logs/welcome-results.csv
+python manage.py send_welcome_credentials --all-eligible --report logs/welcome-after.csv
+```
+
+The send command checks current eligibility again; the preview is not a frozen
+recipient list. Each email contains the existing username, a new temporary
+password, `https://kisugusacco.org/login/`, and instructions to change the password.
+`SENT` means the mail backend accepted the email, not that inbox delivery was
+confirmed. Reports contain recipient information but never passwords or hashes;
+keep them private in the ignored `logs/` directory.
+
+The password hash and `welcome_email_attempted_at` are committed before SMTP is
+contacted. `welcome_email_sent_at` is recorded only after confirmed acceptance.
+An interruption, timeout, or failed success-record update can leave a reserved
+attempt without confirmed delivery. `ALREADY_ATTEMPTED`, `ATTEMPTED`, and
+`SEND_ERROR` need investigation using the member ID, attempt timestamp, and mail
+provider delivery records. Do not clear timestamps or passwords merely to rerun
+the command; investigate first and use the existing password-recovery process
+when necessary. Rerunning automatically skips reserved attempts and sent emails.
+If an error happened before reservation, no attempt is stored and the member can
+still qualify. The command exits with an error if any delivery failed or is
+uncertain, while continuing with other eligible members.
+
+`--file path/to/names.txt` remains available instead of `--all-eligible` and uses
+the same protections. Unmatched or ambiguous names block a named batch; other
+ineligible accounts are reported and skipped. `--resend` is disabled. Sending
+requires SMTP; the in-memory backend is allowed for tests, while console, file,
+and dummy backends are rejected. Do not invoke sending inside an enclosing
+database transaction because the attempt must be committed before email delivery.
+
 ## Weekly Backups
 
 Create a cPanel cron job for the MySQL backup:

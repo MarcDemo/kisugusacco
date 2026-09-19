@@ -10,7 +10,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.contrib.messages import get_messages
-from django.test import SimpleTestCase, TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -1571,14 +1571,14 @@ class ProfilePasswordChangeTests(TestCase):
     EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
     DEFAULT_FROM_EMAIL='info@kisugusacco.org',
 )
-class WelcomeCredentialsCommandTests(TestCase):
+class WelcomeCredentialsCommandTests(TransactionTestCase):
     def setUp(self):
         self.member = MemberProfile.objects.create_user(
             username='turinawe.g',
             first_name='Turinawe',
             last_name='Generous',
             email='turinawe@example.com',
-            password='existing-pass-12345',
+            password=None,
         )
 
     def _paths(self, directory, names=None):
@@ -1687,14 +1687,13 @@ class WelcomeCredentialsCommandTests(TestCase):
 
         with TemporaryDirectory() as directory:
             names_path, report_path = self._paths(directory)
-            with self.assertRaises(CommandError):
-                call_command(
-                    'send_welcome_credentials',
-                    file=str(names_path),
-                    report=str(report_path),
-                    send=True,
-                    stdout=StringIO(),
-                )
+            call_command(
+                'send_welcome_credentials',
+                file=str(names_path),
+                report=str(report_path),
+                send=True,
+                stdout=StringIO(),
+            )
             report = report_path.read_text(encoding='utf-8')
 
         self.member.refresh_from_db()

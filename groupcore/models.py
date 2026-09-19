@@ -31,6 +31,11 @@ class MemberProfile(AbstractUser):
         null=True,
         help_text='When initial login credentials were successfully emailed to this member.',
     )
+    welcome_email_attempted_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text='When a welcome delivery was reserved; prevents retries after uncertain delivery.',
+    )
     
 
     def is_member(self):
