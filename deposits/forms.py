@@ -41,6 +41,11 @@ PURPOSE_AMOUNT_FIELDS = {
     'loan_repayment': 'loan_repayment_amount',
 }
 
+OPTIONAL_PROOF_INVALID_IMAGE_MESSAGE = (
+    'Proof of payment is optional. Remove the selected file to continue without proof, '
+    'or choose a valid JPG, JPEG, PNG, or another supported image file.'
+)
+
 
 class LoanChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, loan):
@@ -68,7 +73,7 @@ class DepositSubmissionForm(forms.ModelForm):
         required=False,
         widget=forms.ClearableFileInput(attrs={'accept': 'image/*'}),
         error_messages={
-            'invalid_image': 'Upload proof of payment as an image. PDF files are not accepted; use JPG, JPEG, PNG, or another image file.',
+            'invalid_image': OPTIONAL_PROOF_INVALID_IMAGE_MESSAGE,
         },
     )
     selected_purposes = forms.MultipleChoiceField(
@@ -454,7 +459,7 @@ class DirectDepositForm(forms.ModelForm):
         required=False,
         widget=forms.ClearableFileInput(attrs={'accept': 'image/*'}),
         error_messages={
-            'invalid_image': 'Upload proof of payment as an image. PDF files are not accepted; use JPG, JPEG, PNG, or another image file.',
+            'invalid_image': OPTIONAL_PROOF_INVALID_IMAGE_MESSAGE,
         },
     )
     selected_purposes = forms.MultipleChoiceField(

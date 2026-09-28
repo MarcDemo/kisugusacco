@@ -182,6 +182,36 @@ class VariableWeeklySavingsAllocationTests(TestCase):
                 self.assertTrue(form.is_valid(), form.errors)
                 self.assertEqual(form.cleaned_data['weekly_allocations'], [(week, Decimal(amount))])
 
+    def test_proof_is_optional_for_member_and_treasurer_submissions(self):
+        week = self.saving_week.week_start
+
+        member_data = QueryDict('', mutable=True)
+        member_data.update({
+            'account': str(self.account.id),
+            'payment_date': timezone.localdate().isoformat(),
+            'payment_time': '10:00',
+            'saving_amount': '10000',
+        })
+        member_data.setlist('selected_purposes', ['saving'])
+        member_data.setlist('selected_weeks', [week.isoformat()])
+        member_data[f'week_amount_{week.isoformat()}'] = '10000'
+
+        member_form = DepositSubmissionForm(
+            member_data,
+            files=None,
+            user=self.member,
+            payment_week=week,
+        )
+        self.assertTrue(member_form.is_valid(), member_form.errors)
+        self.assertIsNone(member_form.cleaned_data['proof'])
+
+        treasurer_form = DirectDepositForm(
+            self.direct_data([week], [10000], 10000),
+            files=None,
+        )
+        self.assertTrue(treasurer_form.is_valid(), treasurer_form.errors)
+        self.assertIsNone(treasurer_form.cleaned_data['proof'])
+
     def test_below_minimum_and_above_maximum_are_rejected(self):
         week = self.saving_week.cycle_start
         for amount in (9999, 50001):
