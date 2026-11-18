@@ -47,7 +47,7 @@ EDIT_FIELDS = {
     ],
     'repayment': ['loan', 'amount', 'paid_on', 'notes'],
     'share': ['member', 'account', 'amount', 'remarks'],
-    'subscription': ['member', 'year', 'amount', 'is_paid', 'paid_on'],
+    'subscription': ['member', 'account', 'year', 'amount', 'is_paid', 'paid_on'],
     'income': ['source', 'fine', 'amount', 'description'],
     'asset': ['name', 'value', 'date_acquired', 'source', 'remarks'],
     'expenditure': ['description', 'amount', 'date_spent', 'source', 'remarks'],
@@ -253,9 +253,10 @@ class FinancialRecordEditForm(forms.ModelForm):
                 self.data.get('member') if self.is_bound
                 else getattr(self.instance, 'member_id', None)
             )
-            self.fields['account'].queryset = SavingsAccount.objects.filter(
-                owner_id=member_id, is_active=True
-            ).order_by('label')
+            account_queryset = SavingsAccount.objects.filter(owner_id=member_id)
+            if record_type != 'subscription':
+                account_queryset = account_queryset.filter(is_active=True)
+            self.fields['account'].queryset = account_queryset.order_by('label')
         if record_type == 'deposit':
             deposit_member_id = self.data.get('member') if self.is_bound else getattr(self.instance, 'member_id', None)
             deposit_account_id = self.data.get('account') if self.is_bound else getattr(self.instance, 'account_id', None)
@@ -335,6 +336,8 @@ class FinancialRecordEditForm(forms.ModelForm):
         account = cleaned.get('account')
         if member and account and account.owner_id != member.id:
             self.add_error('account', 'Selected account does not belong to this member.')
+        if self.record_type == 'subscription' and member and not account:
+            self.add_error('account', 'Assign this annual subscription to a savings account.')
 
         if self.record_type == 'deposit':
             if instance.pk and instance.status == 'APPROVED':

@@ -32,7 +32,7 @@ from groupcore.models import (
 from groupcore.reporting import merge_year_options, parse_report_year, years_from_dates
 from groupcore.week_cycle import current_saving_week, first_friday_of_year
 from datetime import date, timedelta
-from loans.models import LoanRequest
+from loans.models import LoanGuarantorApproval, LoanRequest
 from decimal import Decimal
 import random
 from django.core.mail import send_mail
@@ -568,7 +568,15 @@ def _member_dashboard_context(member, active_account=None):
     welfare_calendar = build_welfare_calendar(member, active_account)
     welfare_due = welfare_calendar.get('summary', {}).get('outstanding', Decimal('0.00'))
     annual_subscription_due = 10000
-    annual_subscription_paid = AnnualSubscription.objects.filter(member=member, year=current_year, is_paid=True).exists()
+    annual_subscription_paid = (
+        AnnualSubscription.objects.filter(
+            member=member,
+            account=active_account,
+            year=current_year,
+            is_paid=True,
+        ).exists()
+        if active_account else False
+    )
     share_total = approved_member_qs.aggregate(total=Sum('shares_amount'))['total'] or 0
     subscription_total = approved_member_qs.aggregate(total=Sum('annual_subscription_amount'))['total'] or 0
     approved_loans_qs = LoanRequest.objects.filter(member=member, status='APPROVED')
@@ -957,6 +965,24 @@ def year_end_settlement(request):
         allocations = version.loan_allocations.select_related(
             'loan_snapshot__loan', 'member', 'account'
         )
+    unassigned_subscriptions = AnnualSubscription.objects.none()
+    unassigned_guarantees = LoanGuarantorApproval.objects.none()
+    if request.user.is_treasurer():
+        unassigned_subscriptions = AnnualSubscription.objects.filter(
+            year=target_year,
+            is_paid=True,
+            account__isnull=True,
+        ).select_related('member')
+        unassigned_guarantees = (
+            LoanGuarantorApproval.objects.filter(
+                loan__year_end_snapshots__financial_year=state,
+                status=LoanGuarantorApproval.STATUS_APPROVED,
+                account__isnull=True,
+            )
+            .select_related('loan', 'guarantor')
+            .prefetch_related('guarantor__savings_accounts')
+            .distinct()
+        )
     return render(request, 'groupcore/year_end_settlement.html', {
         'rows': rows,
         'state': state,
@@ -971,6 +997,8 @@ def year_end_settlement(request):
         'can_regenerate': can_regenerate,
         'can_manage': request.user.is_treasurer(),
         'allocations': allocations,
+        'unassigned_subscriptions': unassigned_subscriptions,
+        'unassigned_guarantees': unassigned_guarantees,
     })
 
 

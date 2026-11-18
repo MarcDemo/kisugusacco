@@ -1,16 +1,15 @@
 from django import forms
 
-from groupcore.models import MemberProfile, SavingsAccount
+from groupcore.models import SavingsAccount
 from .models import LoanGuarantorApproval, LoanRepayment, LoanRequest
-from groupcore.member_query import alphabetical_members
 
 
 class LoanRequestForm(forms.ModelForm):
-    guarantors = forms.ModelMultipleChoiceField(
-        queryset=MemberProfile.objects.none(),
+    guarantor_accounts = forms.ModelMultipleChoiceField(
+        queryset=SavingsAccount.objects.none(),
         widget=forms.CheckboxSelectMultiple,
-        label='Select three guarantors',
-        help_text='Choose exactly three active members. You cannot select yourself.',
+        label='Select three guarantor savings accounts',
+        help_text='Choose exactly three active savings accounts. Multiple accounts may belong to the same member.',
     )
 
     class Meta:
@@ -32,35 +31,44 @@ class LoanRequestForm(forms.ModelForm):
         self.fields['duration_months'].required = True
         if user:
             self.fields['account'].queryset = SavingsAccount.objects.filter(owner=user, is_active=True)
-            self.fields['guarantors'].queryset = alphabetical_members(
-                MemberProfile.objects
-                .filter(is_active=True, is_superuser=False, role='MEMBER')
-                .exclude(id=user.id)
+            self.fields['guarantor_accounts'].queryset = (
+                SavingsAccount.objects.filter(
+                    is_active=True,
+                    owner__is_active=True,
+                    owner__is_superuser=False,
+                    owner__role='MEMBER',
+                )
+                .exclude(owner=user)
+                .select_related('owner')
+                .order_by('owner__first_name', 'owner__last_name', 'owner__username', 'label')
             )
 
-    def clean_guarantors(self):
-        guarantors = list(self.cleaned_data.get('guarantors') or [])
+    def clean_guarantor_accounts(self):
+        accounts = list(self.cleaned_data.get('guarantor_accounts') or [])
         raw_values = []
 
         if self.data:
             raw_values = [
-                value for value in self.data.getlist(self.add_prefix('guarantors'))
+                value for value in self.data.getlist(self.add_prefix('guarantor_accounts'))
                 if value
             ]
 
         if len(raw_values) != len(set(raw_values)):
             raise forms.ValidationError('Select each guarantor only once.')
 
-        if len(guarantors) != 3:
-            raise forms.ValidationError('Exactly three guarantors are required.')
+        if len(accounts) != 3:
+            raise forms.ValidationError('Exactly three guarantor savings accounts are required.')
 
-        if self.user and any(guarantor.id == self.user.id for guarantor in guarantors):
-            raise forms.ValidationError('You cannot select yourself as a guarantor.')
+        if self.user and any(account.owner_id == self.user.id for account in accounts):
+            raise forms.ValidationError('You cannot select one of your own accounts as a guarantor.')
 
-        if any(guarantor.role != 'MEMBER' for guarantor in guarantors):
-            raise forms.ValidationError('Leadership and management users cannot act as guarantors.')
+        if any(account.owner.role != 'MEMBER' for account in accounts):
+            raise forms.ValidationError('Leadership and management accounts cannot act as guarantors.')
 
-        return guarantors
+        if any(not account.is_active or not account.owner.is_active for account in accounts):
+            raise forms.ValidationError('Every guarantor savings account and its owner must be active.')
+
+        return accounts
 
 
 class TreasurerRateForm(forms.ModelForm):

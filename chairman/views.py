@@ -482,7 +482,11 @@ def chairman_income_report(request):
         return redirect('chairman_dashboard')
 
     shares = ShareContribution.objects.filter(member__is_superuser=False).order_by('-contribution_date')
-    subscriptions = AnnualSubscription.objects.filter(member__is_superuser=False).order_by('-year', 'member__username')
+    subscriptions = (
+        AnnualSubscription.objects.filter(member__is_superuser=False)
+        .select_related('member', 'account')
+        .order_by('-year', 'member__username', 'account__label')
+    )
     shares_page = Paginator(shares, 25).get_page(request.GET.get('shares_page'))
     subscriptions_page = Paginator(subscriptions, 25).get_page(request.GET.get('subscriptions_page'))
     return render(request, 'chairman/income_report.html', {

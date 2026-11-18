@@ -23,6 +23,10 @@
               <div class="fw-semibold">UGX {{ loan.principal|floatformat:'0' }}</div>
             </div>
             <div class="col-md-4">
+              <div class="text-muted small">Your pledged account</div>
+              <div class="fw-semibold">{% if approval.account %}{{ approval.account.label }}{% else %}<span class="text-warning">Needs Treasurer assignment</span>{% endif %}</div>
+            </div>
+            <div class="col-md-4">
               <div class="text-muted small">Monthly Interest</div>
               <div class="fw-semibold">{{ loan.monthly_interest_rate }}%</div>
             </div>

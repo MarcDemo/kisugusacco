@@ -23,7 +23,7 @@ from incomes.models import (
     ShareContribution,
     WelfareLedger,
 )
-from loans.models import LoanRequest
+from loans.models import LoanGuarantorApproval, LoanRequest
 
 from .services import make_account_dependent
 
@@ -454,6 +454,37 @@ class MakeAccountDependentTests(TestCase):
         self.account.refresh_from_db()
         self.assertEqual(self.account.owner, self.source)
 
+    def test_transfer_moves_pledged_guarantee_to_new_account_owner(self):
+        borrower = MemberProfile.objects.create_user(
+            username='guarantee-borrower',
+            password='pass12345',
+            role='MEMBER',
+        )
+        borrower_account = SavingsAccount.objects.create(
+            owner=borrower,
+            label='Borrower Account',
+        )
+        loan = LoanRequest.objects.create(
+            member=borrower,
+            account=borrower_account,
+            principal=Decimal('100000.00'),
+            status=LoanRequest.STATUS_PENDING_GUARANTOR,
+        )
+        approval = LoanGuarantorApproval.objects.create(
+            loan=loan,
+            guarantor=self.source,
+            account=self.account,
+            status=LoanGuarantorApproval.STATUS_APPROVED,
+        )
+        self.client.login(username=self.chairman.username, password='pass12345')
+
+        response = self._post_transfer()
+
+        self.assertEqual(response.status_code, 302)
+        approval.refresh_from_db()
+        self.assertEqual(approval.account, self.account)
+        self.assertEqual(approval.guarantor, self.target)
+
     def test_transfer_moves_account_history_settlements_and_deactivates_source(self):
         self.account.is_active = False
         self.account.save(update_fields=['is_active'])
@@ -493,6 +524,7 @@ class MakeAccountDependentTests(TestCase):
         )
         subscription = AnnualSubscription.objects.create(
             member=self.source,
+            account=self.account,
             year=2025,
             is_paid=True,
         )
@@ -553,7 +585,7 @@ class MakeAccountDependentTests(TestCase):
         self.assertEqual(self.account.owner, self.target)
         self.assertFalse(self.account.is_active)
         self.assertFalse(self.source.is_active)
-        self.assertEqual(subscription.member, self.source)
+        self.assertEqual(subscription.member, self.target)
         self.assertEqual(welfare.member, self.source)
         self.assertEqual(deposit.submitted_by, self.chairman)
         self.assertEqual(deposit.reviewed_by, self.secretary)

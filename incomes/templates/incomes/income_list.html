@@ -379,6 +379,7 @@
           <thead class="table-light">
             <tr>
               <th>Member</th>
+              <th>Account</th>
               <th>Year</th>
               <th class="amount-cell">Amount</th>
               <th>Status</th>
@@ -391,6 +392,7 @@
             {% for subscription in subscriptions %}
               <tr>
                 <td>{{ subscription.member.get_full_name|default:subscription.member.username }}</td>
+                <td>{% if subscription.account %}{{ subscription.account.label }}{% else %}<span class="badge text-bg-warning">Needs assignment</span>{% endif %}</td>
                 <td>{{ subscription.year }}</td>
                 <td class="amount-cell">UGX {{ subscription.amount|floatformat:"0"|intcomma }}</td>
                 <td>
@@ -412,7 +414,7 @@
               </tr>
             {% empty %}
               <tr>
-                <td colspan="7" class="text-center text-muted">No manual subscription records{% if selected_member %} for {{ selected_member.get_full_name|default:selected_member.username }}{% endif %} in {{ selected_year }}.</td>
+                <td colspan="8" class="text-center text-muted">No manual subscription records{% if selected_member %} for {{ selected_member.get_full_name|default:selected_member.username }}{% endif %} in {{ selected_year }}.</td>
               </tr>
             {% endfor %}
           </tbody>

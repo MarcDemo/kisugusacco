@@ -14,6 +14,7 @@
         <tr>
           <th>Applicant</th>
           <th>Amount</th>
+          <th>Your pledged account</th>
           <th>Duration</th>
           <th>Status</th>
           <th>Requested</th>
@@ -25,6 +26,7 @@
         <tr>
           <td>{{ approval.loan.member.get_full_name|default:approval.loan.member.username }}</td>
           <td>UGX {{ approval.loan.principal|floatformat:'0' }}</td>
+          <td>{% if approval.account %}{{ approval.account.label }}{% else %}<span class="badge text-bg-warning">Needs assignment</span>{% endif %}</td>
           <td>{% if approval.loan.duration_months %}{{ approval.loan.duration_months }} months{% else %}<span class="text-muted">—</span>{% endif %}</td>
           <td>
             {% if approval.status == 'APPROVED' %}
@@ -44,7 +46,7 @@
         </tr>
         {% empty %}
         <tr>
-          <td colspan="6" class="text-center text-muted py-4">No guarantor requests found.</td>
+          <td colspan="7" class="text-center text-muted py-4">No guarantor requests found.</td>
         </tr>
         {% endfor %}
       </tbody>

@@ -30,6 +30,10 @@ class LoanGuarantorWorkflowTests(TestCase):
             )
             for i in range(1, 4)
         ]
+        self.guarantor_accounts = [
+            SavingsAccount.objects.create(owner=guarantor, label='Main')
+            for guarantor in self.guarantors
+        ]
         self.treasurer = MemberProfile.objects.create_user(
             username='treasurer',
             password='pass12345',
@@ -53,7 +57,7 @@ class LoanGuarantorWorkflowTests(TestCase):
             'principal': '100000',
             'duration_months': '6',
             'purpose': 'School fees',
-            'guarantors': [str(guarantor.id) for guarantor in self.guarantors],
+            'guarantor_accounts': [str(account.id) for account in self.guarantor_accounts],
         }, follow=True)
         self.assertEqual(response.status_code, 200)
         return LoanRequest.objects.get(member=self.applicant)
@@ -65,8 +69,37 @@ class LoanGuarantorWorkflowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'id="guarantor-search"')
-        self.assertContains(response, 'placeholder="Search members"')
+        self.assertContains(response, 'placeholder="Search savings accounts"')
         self.assertContains(response, 'data-guarantor-option')
+
+    def test_three_accounts_from_one_owner_can_guarantee_a_loan(self):
+        shared_owner = self.guarantors[0]
+        shared_accounts = [self.guarantor_accounts[0]] + [
+            SavingsAccount.objects.create(owner=shared_owner, label=label)
+            for label in ('Second', 'Third')
+        ]
+        self.client.login(username='applicant', password='pass12345')
+
+        response = self.client.post(reverse('request_loan'), {
+            'account': str(self.account.id),
+            'principal': '100000',
+            'duration_months': '6',
+            'purpose': 'School fees',
+            'guarantor_accounts': [str(account.id) for account in shared_accounts],
+        })
+
+        self.assertRedirects(response, reverse('my_loans'))
+        loan = LoanRequest.objects.get(member=self.applicant)
+        approvals = loan.guarantor_approvals.order_by('account__label')
+        self.assertEqual(approvals.count(), 3)
+        self.assertEqual(
+            set(approvals.values_list('guarantor_id', flat=True)),
+            {shared_owner.id},
+        )
+        self.assertEqual(
+            set(approvals.values_list('account_id', flat=True)),
+            {account.id for account in shared_accounts},
+        )
 
     def decide_as_guarantor(self, guarantor, loan, decision, comments=''):
         self.client.logout()
@@ -299,7 +332,12 @@ class TreasurerLoanOverrideTests(TestCase):
         self.guarantors = [MemberProfile.objects.create_user(username=f'override-g{i}', password='pass12345', role='MEMBER') for i in range(3)]
         self.loan = LoanRequest.objects.create(member=self.member, account=self.account, principal=100000, duration_months=3, status=LoanRequest.STATUS_PENDING_GUARANTOR)
         for guarantor in self.guarantors:
-            LoanGuarantorApproval.objects.create(loan=self.loan, guarantor=guarantor)
+            guarantor_account = SavingsAccount.objects.create(owner=guarantor, label='Main')
+            LoanGuarantorApproval.objects.create(
+                loan=self.loan,
+                guarantor=guarantor,
+                account=guarantor_account,
+            )
         self.client.login(username=self.treasurer.username, password='pass12345')
 
     def test_treasurer_override_records_actual_and_original_approvers(self):

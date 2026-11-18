@@ -74,6 +74,45 @@ def _loan_interest_total(queryset):
     return total
 
 
+def _deposit_report_totals(deposits):
+    totals = deposits.aggregate(
+        total_amount=Sum('amount'),
+        total_saving=Sum('saving_amount'),
+        total_welfare=Sum('welfare_amount'),
+        total_annual=Sum('annual_subscription_amount'),
+        total_membership=Sum('membership_amount'),
+        total_fine=Sum('fine_amount'),
+        total_shares=Sum('shares_amount'),
+    )
+    return {key: value or Decimal('0.00') for key, value in totals.items()}
+
+
+def _member_report_accounts(member, approved_deposits, approved_loans):
+    """Return active accounts plus historical accounts used by this report."""
+    deposit_account_ids = approved_deposits.exclude(account__isnull=True).values_list(
+        'account_id', flat=True
+    )
+    loan_account_ids = approved_loans.exclude(account__isnull=True).values_list(
+        'account_id', flat=True
+    )
+    accounts = list(
+        member.savings_accounts.filter(
+            Q(is_active=True)
+            | Q(pk__in=deposit_account_ids)
+            | Q(pk__in=loan_account_ids)
+        )
+        .distinct()
+        .order_by('label', 'id')
+    )
+    has_unassigned_records = (
+        approved_deposits.filter(account__isnull=True).exists()
+        or approved_loans.filter(account__isnull=True).exists()
+    )
+    if has_unassigned_records or not accounts:
+        accounts.append(None)
+    return accounts
+
+
 def _apply_loan_repayment(
     member, account, loan, repayment_amount, paid_on, recorded_by,
     source_deposit=None, notes='',
@@ -1781,43 +1820,23 @@ def treasurer_reports(request):
             status='APPROVED',
             payment_week__year=selected_year,
         ).select_related('account')
-        total_amount = approved_deposits.aggregate(Sum('amount'))['amount__sum'] or 0
-        total_saving = approved_deposits.aggregate(Sum('saving_amount'))['saving_amount__sum'] or 0
-        total_welfare = approved_deposits.aggregate(Sum('welfare_amount'))['welfare_amount__sum'] or 0
-        total_annual = approved_deposits.aggregate(Sum('annual_subscription_amount'))['annual_subscription_amount__sum'] or 0
-        total_membership = approved_deposits.aggregate(Sum('membership_amount'))['membership_amount__sum'] or 0
-        total_fine = approved_deposits.aggregate(Sum('fine_amount'))['fine_amount__sum'] or 0
-        total_shares = approved_deposits.aggregate(Sum('shares_amount'))['shares_amount__sum'] or 0
-        total_interest = _loan_interest_total(
-            member.loan_requests.filter(status='APPROVED', approved_on__year=selected_year)
+        approved_loans = member.loan_requests.filter(
+            status='APPROVED',
+            approved_on__year=selected_year,
         )
-        total_weeks = approved_deposits.count()
-        account_labels = list(
-            approved_deposits.exclude(account__isnull=True)
-            .order_by('account__label')
-            .values_list('account__label', flat=True)
-            .distinct()
-        )
-        if not account_labels:
-            account_labels = list(
-                member.savings_accounts.filter(is_active=True)
-                .order_by('label')
-                .values_list('label', flat=True)
-            )
-
-        report_data.append({
-            'member': member,
-            'savings_account': ', '.join(account_labels) if account_labels else '-',
-            'total_amount': total_amount,
-            'total_weeks': total_weeks,
-            'total_saving': total_saving,
-            'total_welfare': total_welfare,
-            'total_annual': total_annual,
-            'total_membership': total_membership,
-            'total_fine': total_fine,
-            'total_shares': total_shares,
-            'total_interest': total_interest,
-        })
+        for account in _member_report_accounts(member, approved_deposits, approved_loans):
+            account_deposits = approved_deposits.filter(account=account)
+            totals = _deposit_report_totals(account_deposits)
+            account_loans = approved_loans.filter(account=account)
+            report_data.append({
+                'member': member,
+                'account': account,
+                'savings_account': account.label if account else 'Unassigned',
+                'download_account': account.id if account else 'unassigned',
+                'total_weeks': account_deposits.count(),
+                'total_interest': _loan_interest_total(account_loans),
+                **totals,
+            })
 
     return render(request, 'deposits/treasurer_reports.html', {
         'report_data': report_data,
@@ -1934,14 +1953,23 @@ def treasurer_week_options(request):
 def download_member_report(request, member_id, format):
     selected_year = parse_report_year(request.GET.get('year'))
     member = get_object_or_404(MemberProfile, id=member_id)
+    account_param = request.GET.get('account')
+    account = None
+    if account_param and account_param != 'unassigned':
+        account = get_object_or_404(SavingsAccount, id=account_param, owner=member)
     deposits = member.deposits.filter(
         status='APPROVED',
         payment_week__year=selected_year,
     ).select_related('account').order_by('payment_week')
+    if account_param:
+        deposits = deposits.filter(account=account)
+
+    account_label = account.label if account else ('Unassigned' if account_param else 'All Accounts')
+    account_filename = f'_{_safe_filename_part(account_label)}' if account_param else ''
 
     if format == 'pdf':
         response = HttpResponse(content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="{member.username}_report_{selected_year}.pdf"'
+        response['Content-Disposition'] = f'attachment; filename="{member.username}{account_filename}_report_{selected_year}.pdf"'
 
         doc = SimpleDocTemplate(
             response,
@@ -1964,7 +1992,10 @@ def download_member_report(request, member_id, format):
 
         # Title
         full_name = member.get_full_name() or member.username
-        title = Paragraph(f"<b>Contribution Report for {full_name} - {selected_year}</b>", styles['Title'])
+        title = Paragraph(
+            f"<b>Contribution Report for {full_name} — {account_label} - {selected_year}</b>",
+            styles['Title'],
+        )
         elements.append(title)
         elements.append(Spacer(1, 12))
 
@@ -2023,7 +2054,7 @@ def download_member_report(request, member_id, format):
 
         full_name = member.get_full_name() or member.username
         ws.merge_cells('A1:N1')
-        ws['A1'] = f"Contribution Report for {full_name} - {selected_year}"
+        ws['A1'] = f"Contribution Report for {full_name} — {account_label} - {selected_year}"
         ws['A1'].font = Font(size=14, bold=True)
         ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
 
@@ -2086,7 +2117,7 @@ def download_member_report(request, member_id, format):
         total_label_cell.font = Font(bold=True)
         total_label_cell.alignment = Alignment(horizontal='right')
 
-        ws.cell(row=last_data_row + 1, column=3, value=total_amount).font = Font(bold=True)
+        ws.cell(row=last_data_row + 1, column=4, value=total_amount).font = Font(bold=True)
 
         # Footer with generated timestamp
         ws.merge_cells(start_row=last_data_row + 3, start_column=1, end_row=last_data_row + 3, end_column=14)
@@ -2110,7 +2141,7 @@ def download_member_report(request, member_id, format):
 
         # Download response
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        response['Content-Disposition'] = f'attachment; filename="{member.username}_report_{selected_year}.xlsx"'
+        response['Content-Disposition'] = f'attachment; filename="{member.username}{account_filename}_report_{selected_year}.xlsx"'
         wb.save(response)
         return response
 

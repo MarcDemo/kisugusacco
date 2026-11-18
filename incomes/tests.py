@@ -111,6 +111,48 @@ class FinancialRecordsViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response['Location'], reverse('member_dashboard'))
 
+    def test_manual_annual_subscription_is_saved_for_selected_account(self):
+        self.client.login(username='treasurer', password='pass12345')
+
+        response = self.client.post(reverse('add_income'), {
+            'save_subscription': '1',
+            'subscription-member': str(self.member.id),
+            'subscription-account': str(self.account.id),
+            'subscription-year': str(self.current_year),
+            'subscription-amount': '10000',
+            'subscription-is_paid': 'on',
+            'subscription-paid_on': date(self.current_year, 1, 2).isoformat(),
+        })
+
+        self.assertRedirects(response, reverse('other_income_list'))
+        subscription = AnnualSubscription.objects.get(
+            account=self.account,
+            year=self.current_year,
+        )
+        self.assertEqual(subscription.member, self.member)
+        self.assertTrue(subscription.is_paid)
+
+    def test_manual_annual_subscription_rejects_another_members_account(self):
+        self.client.login(username='treasurer', password='pass12345')
+
+        response = self.client.post(reverse('add_income'), {
+            'save_subscription': '1',
+            'subscription-member': str(self.member.id),
+            'subscription-account': str(self.other_account.id),
+            'subscription-year': str(self.current_year),
+            'subscription-amount': '10000',
+            'subscription-is_paid': 'on',
+            'subscription-paid_on': date(self.current_year, 1, 2).isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(AnnualSubscription.objects.exists())
+        self.assertFormError(
+            response.context['subscription_form'],
+            'account',
+            'Select a valid choice. That choice is not one of the available choices.',
+        )
+
     def test_financial_records_are_paginated_ten_per_page(self):
         for day in range(3, 14):
             self._deposit(
@@ -156,6 +198,7 @@ class FinancialRecordsViewTests(TestCase):
         )
         selected_subscription = AnnualSubscription.objects.create(
             member=self.member,
+            account=self.account,
             year=self.current_year,
             amount=Decimal('10000'),
             is_paid=True,
@@ -163,6 +206,7 @@ class FinancialRecordsViewTests(TestCase):
         )
         AnnualSubscription.objects.create(
             member=self.other_member,
+            account=self.other_account,
             year=self.current_year,
             amount=Decimal('10000'),
             is_paid=True,

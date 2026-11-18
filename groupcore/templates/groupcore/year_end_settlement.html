@@ -38,6 +38,36 @@
   </div></div>
   {% endif %}
 
+  {% if can_manage and unassigned_subscriptions %}
+  <div class="alert alert-warning">
+    <strong>Annual subscriptions need account assignment.</strong>
+    {% for subscription in unassigned_subscriptions %}
+      <div class="mt-2">
+        {{ subscription.member.get_full_name|default:subscription.member.username }} · UGX {{ subscription.amount|floatformat:"0" }}
+        <a class="btn btn-sm btn-outline-dark ms-2" href="{% url 'financial_record_edit' 'subscription' subscription.id %}">Assign account</a>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if can_manage and unassigned_guarantees %}
+  <div class="alert alert-warning">
+    <strong>Legacy guarantor pledges need account assignment.</strong>
+    {% for approval in unassigned_guarantees %}
+      <form method="post" action="{% url 'assign_guarantor_account' approval.id %}" class="d-flex flex-wrap align-items-end gap-2 mt-2">
+        {% csrf_token %}
+        <input type="hidden" name="return_to" value="settlement">
+        <span>Loan #{{ approval.loan_id }} · {{ approval.guarantor.get_full_name|default:approval.guarantor.username }}</span>
+        <select name="account" class="form-select form-select-sm" style="max-width:18rem" required>
+          <option value="">Select pledged account</option>
+          {% for account in approval.guarantor.savings_accounts.all %}<option value="{{ account.id }}">{{ account.label }}</option>{% endfor %}
+        </select>
+        <button class="btn btn-sm btn-outline-dark">Assign</button>
+      </form>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if versions %}
   <div class="d-flex align-items-end gap-2 mb-3">
     <form method="get" class="d-flex align-items-end gap-2">

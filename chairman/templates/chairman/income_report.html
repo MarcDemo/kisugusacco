@@ -39,6 +39,7 @@
         <tr>
           <th>#</th>
           <th>Member</th>
+          <th>Account</th>
           <th>Year</th>
           <th>Amount</th>
           <th>Status</th>
@@ -49,6 +50,7 @@
         <tr>
           <td>{{ forloop.counter }}</td>
           <td>{{ subscription.member.get_full_name|default:subscription.member.username }}</td>
+          <td>{% if subscription.account %}{{ subscription.account.label }}{% else %}<span class="badge text-bg-warning">Needs assignment</span>{% endif %}</td>
           <td>{{ subscription.year }}</td>
           <td>UGX {{ subscription.amount|floatformat:'0' }}</td>
           <td>
@@ -60,7 +62,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="text-center">No subscriptions recorded.</td></tr>
+        <tr><td colspan="6" class="text-center">No subscriptions recorded.</td></tr>
         {% endfor %}
       </tbody>
     </table>

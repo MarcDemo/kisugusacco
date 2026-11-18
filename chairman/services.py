@@ -10,8 +10,8 @@ from groupcore.models import (
     SavingsAccountOwnershipTransfer,
     SettlementLoanAllocation,
 )
-from incomes.models import ShareContribution
-from loans.models import LoanRequest
+from incomes.models import AnnualSubscription, ShareContribution
+from loans.models import LoanGuarantorApproval, LoanRequest
 
 
 @transaction.atomic
@@ -60,7 +60,9 @@ def make_account_dependent(*, account_id, target_member_id, transferred_by, reas
     DepositSubmission.objects.filter(account=account).update(member=new_owner)
     Fine.objects.filter(account=account).update(member=new_owner)
     ShareContribution.objects.filter(account=account).update(member=new_owner)
+    AnnualSubscription.objects.filter(account=account).update(member=new_owner)
     LoanRequest.objects.filter(account=account).update(member=new_owner)
+    LoanGuarantorApproval.objects.filter(account=account).update(guarantor=new_owner)
     AccountSettlement.objects.filter(account=account).update(member=new_owner)
     SettlementLoanAllocation.objects.filter(account=account).update(member=new_owner)
 

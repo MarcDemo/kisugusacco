@@ -298,7 +298,10 @@ class LoanRequest(models.Model):
     def guarantor_approval_count(self):
         if not self.pk:
             return 0
-        return self.guarantor_approvals.filter(status=LoanGuarantorApproval.STATUS_APPROVED).count()
+        return self.guarantor_approvals.filter(
+            status=LoanGuarantorApproval.STATUS_APPROVED,
+            account__isnull=False,
+        ).count()
 
     @property
     def guarantor_pending_count(self):
@@ -320,6 +323,7 @@ class LoanRequest(models.Model):
         approvals = list(self.guarantor_approvals.all())
         return len(approvals) == 3 and all(
             approval.status == LoanGuarantorApproval.STATUS_APPROVED
+            and approval.account_id is not None
             for approval in approvals
         )
 
@@ -352,14 +356,32 @@ class LoanGuarantorApproval(models.Model):
 
     loan = models.ForeignKey(LoanRequest, on_delete=models.CASCADE, related_name='guarantor_approvals')
     guarantor = models.ForeignKey(MemberProfile, on_delete=models.CASCADE, related_name='loan_guarantee_requests')
+    account = models.ForeignKey(
+        SavingsAccount,
+        on_delete=models.PROTECT,
+        related_name='loan_guarantee_approvals',
+        null=True,
+        blank=True,
+        help_text='Savings account pledged for this guarantee.',
+    )
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
     comments = models.TextField(blank=True)
     decided_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('loan', 'guarantor')
         ordering = ['created_at', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['loan', 'account'],
+                name='unique_guarantor_account_per_loan',
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.account_id and self.guarantor_id and self.account.owner_id != self.guarantor_id:
+            raise ValidationError({'account': 'The pledged account must belong to the guarantor.'})
 
     def approve(self, comments=''):
         self.status = self.STATUS_APPROVED
@@ -372,7 +394,8 @@ class LoanGuarantorApproval(models.Model):
         self.decided_at = timezone.now()
 
     def __str__(self):
-        return f"Loan {self.loan_id} guarantor {self.guarantor_id} - {self.status}"
+        account_label = self.account.label if self.account_id else 'Unassigned'
+        return f"Loan {self.loan_id} guarantor {self.guarantor_id} ({account_label}) - {self.status}"
 
 
 class LoanApprovalAudit(models.Model):

@@ -186,19 +186,15 @@ def _eligible_deposits(state):
     )
 
 
-def _deduct_from_accounts(
+def _deduct_from_account(
     settlements, amount, allocation_field, version, snapshot, allocation_type,
-    member, note, preferred_account_id=None,
+    member, account, note,
 ):
     remaining = amount
-    candidates = [item for item in settlements if item.member_id == member.id]
-    candidates.sort(
-        key=lambda item: (
-            0 if preferred_account_id and item.account_id == preferred_account_id else 1,
-            -item.net_payout,
-            item.account_id,
-        )
-    )
+    candidates = [
+        item for item in settlements
+        if item.member_id == member.id and item.account_id == getattr(account, 'id', None)
+    ]
     for item in candidates:
         available = max(item.net_payout, ZERO)
         used = min(available, remaining)
@@ -230,6 +226,27 @@ def finalize_financial_year(year, user):
         raise ValidationError('Lock the financial year before finalizing it.')
     if pending_at_cutoff(state).exists():
         raise ValidationError('Approve or reject every eligible pending deposit first.')
+    if AnnualSubscription.objects.filter(
+        year=year,
+        is_paid=True,
+        account__isnull=True,
+    ).exists():
+        raise ValidationError(
+            'Assign every paid legacy annual subscription to a savings account before finalizing.'
+        )
+    snapshots = state.loan_snapshots.select_related('loan')
+    if snapshots.filter(loan__account__isnull=True).exists():
+        raise ValidationError(
+            'Assign every unsettled loan to a borrower savings account before finalizing.'
+        )
+    if LoanGuarantorApproval.objects.filter(
+        loan__year_end_snapshots__financial_year=state,
+        status=LoanGuarantorApproval.STATUS_APPROVED,
+        account__isnull=True,
+    ).exists():
+        raise ValidationError(
+            'Assign every approved legacy guarantor to a pledged savings account before finalizing.'
+        )
     if (
         state.state == FinancialYearClose.STATE_FINALIZED
         and not state.needs_regeneration
@@ -259,6 +276,18 @@ def finalize_financial_year(year, user):
         for row in deposits.filter(account__isnull=False)
         .values('account_id').annotate(total=Sum('saving_amount'))
     }
+    annual_paid_rows = {
+        row['account_id']: row['total'] or ZERO
+        for row in deposits.filter(account__isnull=False)
+        .values('account_id').annotate(total=Sum('annual_subscription_amount'))
+    }
+    manually_paid_annual_accounts = set(
+        AnnualSubscription.objects.filter(
+            year=year,
+            is_paid=True,
+            account__isnull=False,
+        ).values_list('account_id', flat=True)
+    )
     total_savings = sum(savings_rows.values(), ZERO)
     interest_pool = (
         state.loan_snapshots.aggregate(total=Sum('collected_interest'))['total']
@@ -300,8 +329,14 @@ def finalize_financial_year(year, user):
             ),
             ZERO,
         )
+        annual_paid = (
+            ANNUAL_SUBSCRIPTION
+            if account.id in manually_paid_annual_accounts
+            else annual_paid_rows.get(account.id, ZERO)
+        )
+        annual_due = max(ANNUAL_SUBSCRIPTION - annual_paid, ZERO)
         gross = savings + interest_share
-        net = max(gross - welfare_due - fine_due, ZERO)
+        net = max(gross - welfare_due - fine_due - annual_due, ZERO)
         settlements.append(AccountSettlement.objects.create(
             settlement_version=version,
             account=account,
@@ -310,6 +345,7 @@ def finalize_financial_year(year, user):
             interest_share=interest_share,
             welfare_due=welfare_due,
             fine_due=fine_due,
+            annual_due=annual_due,
             gross_payout=gross,
             net_payout=net,
             amount_paid=prior_paid.get(account.id, ZERO),
@@ -343,68 +379,48 @@ def finalize_financial_year(year, user):
             if unassigned_fine_due <= 0:
                 break
 
-    # Member-level annual subscriptions are charged to the largest payout first.
-    members = {item.member_id: item.member for item in settlements}
-    annual_paid_rows = {
-        row['member_id']: row['total'] or ZERO
-        for row in deposits.values('member_id').annotate(
-            total=Sum('annual_subscription_amount')
-        )
-    }
-    for member_id, member in members.items():
-        subscription = AnnualSubscription.objects.filter(
-            member_id=member_id, year=year, is_paid=True
-        ).first()
-        annual_paid = ANNUAL_SUBSCRIPTION if subscription else annual_paid_rows.get(member_id, ZERO)
-        due = max(ANNUAL_SUBSCRIPTION - annual_paid, ZERO)
-        for item in sorted(
-            [row for row in settlements if row.member_id == member_id],
-            key=lambda row: (-row.net_payout, row.account_id),
-        ):
-            used = min(item.net_payout, due)
-            item.net_payout -= used
-            item.annual_due += used
-            due -= used
-            if due <= 0:
-                break
-
     group_loss = ZERO
     snapshots = state.loan_snapshots.select_related(
         'loan', 'loan__member', 'loan__account'
-    ).prefetch_related('loan__guarantor_approvals__guarantor').order_by(
+    ).prefetch_related(
+        'loan__guarantor_approvals__guarantor',
+        'loan__guarantor_approvals__account',
+    ).order_by(
         'loan__approved_on', 'loan_id'
     )
     for snapshot in snapshots:
         loan = snapshot.loan
-        remaining = _deduct_from_accounts(
+        remaining = _deduct_from_account(
             settlements, snapshot.frozen_balance, 'borrower_loan_offset',
             version, snapshot, SettlementLoanAllocation.TYPE_BORROWER,
-            loan.member, 'Borrower year-end loan offset.', loan.account_id,
+            loan.member, loan.account, 'Borrower year-end loan offset.',
         )
-        guarantors = [
-            approval.guarantor
+        guarantor_approvals = [
+            approval
             for approval in loan.guarantor_approvals.all()
             if approval.status == LoanGuarantorApproval.STATUS_APPROVED
         ]
-        if remaining > 0 and guarantors:
-            base_share = (remaining / len(guarantors)).quantize(
+        if remaining > 0 and guarantor_approvals:
+            base_share = (remaining / len(guarantor_approvals)).quantize(
                 Decimal('0.01'), rounding=ROUND_DOWN
             )
             assigned = ZERO
-            for index, guarantor in enumerate(guarantors):
-                share = remaining - assigned if index == len(guarantors) - 1 else base_share
+            for index, approval in enumerate(guarantor_approvals):
+                share = remaining - assigned if index == len(guarantor_approvals) - 1 else base_share
                 assigned += share
-                shortfall = _deduct_from_accounts(
+                shortfall = _deduct_from_account(
                     settlements, share, 'guarantor_offset',
                     version, snapshot, SettlementLoanAllocation.TYPE_GUARANTOR,
-                    guarantor, f'Equal guarantor share for Loan #{loan.id}.',
+                    approval.guarantor, approval.account,
+                    f'Equal guarantor account share for Loan #{loan.id}.',
                 )
                 if shortfall > 0:
                     SettlementLoanAllocation.objects.create(
                         settlement_version=version,
                         loan_snapshot=snapshot,
                         allocation_type=SettlementLoanAllocation.TYPE_GROUP_LOSS,
-                        member=guarantor,
+                        member=approval.guarantor,
+                        account=approval.account,
                         amount=shortfall,
                         note='Uncovered guarantor share absorbed by the group.',
                     )

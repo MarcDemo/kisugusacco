@@ -21,6 +21,7 @@ from deposits.models import (
 )
 from deposits.rules import saving_year_weeks
 from fines.models import Fine
+from incomes.models import AnnualSubscription
 from groupcore.models import (
     AccountSettlement,
     FinancialRecordRevision,
@@ -1011,6 +1012,46 @@ class ControlledFinancialYearClosingTests(TestCase):
             Decimal('100000') - row.welfare_due - row.fine_due,
         )
 
+    def test_annual_subscription_is_calculated_per_savings_account(self):
+        second_account = SavingsAccount.objects.create(
+            owner=self.member,
+            label='Second',
+        )
+        self._deposit(account=self.account, saving_amount=Decimal('100000'))
+        self._deposit(account=second_account, saving_amount=Decimal('100000'))
+        AnnualSubscription.objects.create(
+            member=self.member,
+            account=self.account,
+            year=self.year,
+            amount=Decimal('10000'),
+            is_paid=True,
+        )
+        lock_financial_year(self.year, self.treasurer, cutoff_at=self.cutoff)
+
+        version = finalize_financial_year(self.year, self.treasurer)
+        main_row = version.account_settlements.get(account=self.account)
+        second_row = version.account_settlements.get(account=second_account)
+
+        self.assertEqual(main_row.annual_due, Decimal('0'))
+        self.assertEqual(second_row.annual_due, Decimal('10000'))
+        self.assertEqual(main_row.savings_total, Decimal('100000'))
+        self.assertEqual(second_row.savings_total, Decimal('100000'))
+
+    def test_unassigned_paid_annual_subscription_blocks_finalization(self):
+        AnnualSubscription.objects.create(
+            member=self.member,
+            year=self.year,
+            amount=Decimal('10000'),
+            is_paid=True,
+        )
+        lock_financial_year(self.year, self.treasurer, cutoff_at=self.cutoff)
+
+        with self.assertRaisesMessage(
+            ValidationError,
+            'Assign every paid legacy annual subscription',
+        ):
+            finalize_financial_year(self.year, self.treasurer)
+
     def test_loan_offsets_borrower_then_guarantors_and_records_loss(self):
         guarantors = [
             MemberProfile.objects.create_user(
@@ -1037,10 +1078,11 @@ class ControlledFinancialYearClosingTests(TestCase):
             status=LoanRequest.STATUS_APPROVED,
             approved_on=timezone.make_aware(datetime(2026, 12, 1, 9, 0)),
         )
-        for guarantor in guarantors:
+        for guarantor, guarantor_account in zip(guarantors, guarantor_accounts):
             LoanGuarantorApproval.objects.create(
                 loan=loan,
                 guarantor=guarantor,
+                account=guarantor_account,
                 status=LoanGuarantorApproval.STATUS_APPROVED,
             )
         lock_financial_year(self.year, self.treasurer, cutoff_at=self.cutoff)
@@ -1065,6 +1107,94 @@ class ControlledFinancialYearClosingTests(TestCase):
         )
         self.assertGreater(version.total_group_loss, Decimal('0'))
         self.assertEqual(loan.settlement_loss, version.total_group_loss)
+
+    def test_loan_recovery_never_spills_to_sibling_accounts(self):
+        sibling_account = SavingsAccount.objects.create(
+            owner=self.member,
+            label='Sibling',
+        )
+        guarantor = MemberProfile.objects.create_user(
+            username='multi-account-guarantor',
+            password='pass12345',
+        )
+        guarantor_accounts = [
+            SavingsAccount.objects.create(owner=guarantor, label=f'G{number}')
+            for number in (1, 2, 3)
+        ]
+        self._deposit(account=self.account, saving_amount=Decimal('100000'))
+        self._deposit(account=sibling_account, saving_amount=Decimal('300000'))
+        for account in guarantor_accounts:
+            self._deposit(
+                member=guarantor,
+                account=account,
+                saving_amount=Decimal('100000'),
+            )
+        loan = LoanRequest.objects.create(
+            member=self.member,
+            account=self.account,
+            principal=Decimal('400000'),
+            monthly_interest_rate=Decimal('2'),
+            duration_months=12,
+            status=LoanRequest.STATUS_APPROVED,
+            approved_on=timezone.make_aware(datetime(2026, 12, 1, 9, 0)),
+        )
+        for account in guarantor_accounts:
+            LoanGuarantorApproval.objects.create(
+                loan=loan,
+                guarantor=guarantor,
+                account=account,
+                status=LoanGuarantorApproval.STATUS_APPROVED,
+            )
+        lock_financial_year(self.year, self.treasurer, cutoff_at=self.cutoff)
+
+        version = finalize_financial_year(self.year, self.treasurer)
+        sibling_row = version.account_settlements.get(account=sibling_account)
+        allocations = version.loan_allocations.filter(loan_snapshot__loan=loan)
+
+        self.assertEqual(sibling_row.borrower_loan_offset, Decimal('0'))
+        self.assertFalse(
+            allocations.filter(
+                allocation_type=SettlementLoanAllocation.TYPE_BORROWER,
+                account=sibling_account,
+            ).exists()
+        )
+        self.assertEqual(
+            set(
+                allocations.filter(
+                    allocation_type=SettlementLoanAllocation.TYPE_GUARANTOR,
+                ).values_list('account_id', flat=True)
+            ),
+            {account.id for account in guarantor_accounts},
+        )
+
+    def test_unassigned_approved_guarantor_blocks_finalization(self):
+        guarantor = MemberProfile.objects.create_user(
+            username='legacy-guarantor',
+            password='pass12345',
+        )
+        SavingsAccount.objects.create(owner=guarantor, label='G1')
+        SavingsAccount.objects.create(owner=guarantor, label='G2')
+        loan = LoanRequest.objects.create(
+            member=self.member,
+            account=self.account,
+            principal=Decimal('100000'),
+            monthly_interest_rate=Decimal('2'),
+            duration_months=6,
+            status=LoanRequest.STATUS_APPROVED,
+            approved_on=timezone.make_aware(datetime(2026, 6, 1, 9, 0)),
+        )
+        LoanGuarantorApproval.objects.create(
+            loan=loan,
+            guarantor=guarantor,
+            status=LoanGuarantorApproval.STATUS_APPROVED,
+        )
+        lock_financial_year(self.year, self.treasurer, cutoff_at=self.cutoff)
+
+        with self.assertRaisesMessage(
+            ValidationError,
+            'Assign every approved legacy guarantor',
+        ):
+            finalize_financial_year(self.year, self.treasurer)
 
     def test_finalization_is_idempotent_until_an_audited_correction(self):
         self._deposit(saving_amount=Decimal('100000'))

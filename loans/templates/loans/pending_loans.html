@@ -73,6 +73,22 @@
             {% endif %}
 
             {% if is_treasurer %}
+              {% for approval in loan.guarantor_approvals.all %}
+                {% if not approval.account %}
+                <form method="post" action="{% url 'assign_guarantor_account' approval.id %}" class="border rounded p-2 mt-2 bg-warning-subtle">
+                  {% csrf_token %}
+                  <div class="small fw-semibold mb-1">Assign pledge for {{ approval.guarantor.username }}</div>
+                  <select name="account" class="form-select form-select-sm mb-2" required>
+                    <option value="">Select savings account</option>
+                    {% for account in approval.guarantor.savings_accounts.all %}<option value="{{ account.id }}">{{ account.label }}</option>{% endfor %}
+                  </select>
+                  <button class="btn btn-sm btn-outline-dark">Assign account</button>
+                </form>
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+
+            {% if is_treasurer %}
             <details class="mt-2">
               <summary class="small text-primary" style="cursor:pointer">Override an approval</summary>
               <form method="post" action="{% url 'override_loan_approval' loan.id %}" class="border rounded p-2 mt-2 bg-light">

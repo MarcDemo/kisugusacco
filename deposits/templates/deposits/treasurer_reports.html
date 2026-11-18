@@ -72,10 +72,10 @@
               <td>UGX {{ row.total_interest|default:0|floatformat:"0" }}</td>
               <td>{{ row.total_weeks|default:0 }}</td>
               <td class="text-nowrap">
-                  <a href="{% url 'download_member_report' row.member.id 'pdf' %}?year={{ selected_year }}" class="btn btn-sm btn-danger">
+                  <a href="{% url 'download_member_report' row.member.id 'pdf' %}?year={{ selected_year }}&amp;account={{ row.download_account }}" class="btn btn-sm btn-danger">
                   <i class="bi bi-file-earmark-pdf"></i> PDF
                   </a>
-                  <a href="{% url 'download_member_report' row.member.id 'excel' %}?year={{ selected_year }}" class="btn btn-sm btn-success">
+                  <a href="{% url 'download_member_report' row.member.id 'excel' %}?year={{ selected_year }}&amp;account={{ row.download_account }}" class="btn btn-sm btn-success">
                   <i class="bi bi-file-earmark-excel"></i> Excel
                   </a>
               </td>

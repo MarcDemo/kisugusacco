@@ -39,6 +39,14 @@ class WelfareLedger(models.Model):
 
 class AnnualSubscription(models.Model):
     member = models.ForeignKey(MemberProfile, on_delete=models.CASCADE, related_name='annual_subscriptions')
+    account = models.ForeignKey(
+        SavingsAccount,
+        on_delete=models.PROTECT,
+        related_name='annual_subscriptions',
+        null=True,
+        blank=True,
+        help_text='Legacy records may remain unassigned until reviewed by the Treasurer.',
+    )
     year = models.PositiveIntegerField()
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=10000)
     is_paid = models.BooleanField(default=False)
@@ -46,10 +54,21 @@ class AnnualSubscription(models.Model):
     recorded_by = models.ForeignKey(MemberProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name='recorded_subscriptions')
 
     class Meta:
-        unique_together = ('member', 'year')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['account', 'year'],
+                name='unique_annual_subscription_per_account_year',
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.account_id and self.member_id and self.account.owner_id != self.member_id:
+            raise ValidationError({'account': 'Selected account does not belong to this member.'})
 
     def __str__(self):
-        return f"{self.member.username} annual subscription {self.year}"
+        account_label = self.account.label if self.account_id else 'Unassigned'
+        return f"{self.member.username} — {account_label} annual subscription {self.year}"
 
 
 class ShareContribution(models.Model):

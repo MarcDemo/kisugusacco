@@ -82,9 +82,9 @@ def income_list(request):
     )
     subscriptions = (
         AnnualSubscription.objects
-        .select_related('member', 'recorded_by')
+        .select_related('member', 'account', 'recorded_by')
         .filter(year=selected_year)
-        .order_by('-year', 'member__username')
+        .order_by('-year', 'member__username', 'account__label')
     )
     if selected_member:
         shares = shares.filter(member=selected_member)

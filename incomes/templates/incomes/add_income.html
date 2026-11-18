@@ -77,6 +77,11 @@
             {{ subscription_form.member|add_class:"form-select" }}
           </div>
           <div class="col-md-6">
+            <label class="form-label">Account</label>
+            {{ subscription_form.account|add_class:"form-select" }}
+            {% for error in subscription_form.account.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+          </div>
+          <div class="col-md-6">
             <label class="form-label">Year</label>
             {{ subscription_form.year|add_class:"form-control" }}
           </div>
@@ -109,45 +114,38 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-  const memberSelect = document.getElementById('{{ share_form.member.id_for_label }}');
-  const accountSelect = document.getElementById('{{ share_form.account.id_for_label }}');
   const endpointTemplate = "{% url 'member_accounts_api' 0 %}";
 
-  if (!memberSelect || !accountSelect) {
-    return;
-  }
+  function connectAccountSelector(memberElementId, accountElementId) {
+    const memberSelect = document.getElementById(memberElementId);
+    const accountSelect = document.getElementById(accountElementId);
+    if (!memberSelect || !accountSelect) return;
 
-  async function loadAccounts(memberId) {
-    if (!memberId) {
-      accountSelect.innerHTML = '<option value="">-- Select member first --</option>';
-      return;
+    async function loadAccounts(memberId) {
+      if (!memberId) {
+        accountSelect.innerHTML = '<option value="">-- Select member first --</option>';
+        return;
+      }
+      const currentValue = accountSelect.value;
+      const url = endpointTemplate.replace('/0/', '/' + memberId + '/');
+      const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      const payload = await response.json();
+      accountSelect.innerHTML = '<option value="">-- Select Account --</option>';
+      (payload.accounts || []).forEach(function (account) {
+        const option = document.createElement('option');
+        option.value = account.id;
+        option.textContent = account.label;
+        option.selected = String(account.id) === String(currentValue);
+        accountSelect.appendChild(option);
+      });
     }
 
-    const currentValue = accountSelect.value;
-    const url = endpointTemplate.replace('/0/', '/' + memberId + '/');
-    const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-    const payload = await response.json();
-    const accounts = payload.accounts || [];
-
-    accountSelect.innerHTML = '<option value="">-- Select Account --</option>';
-    accounts.forEach(function (account) {
-      const option = document.createElement('option');
-      option.value = account.id;
-      option.textContent = account.label;
-      if (String(account.id) === String(currentValue)) {
-        option.selected = true;
-      }
-      accountSelect.appendChild(option);
-    });
+    memberSelect.addEventListener('change', function () { loadAccounts(memberSelect.value); });
+    if (memberSelect.value) loadAccounts(memberSelect.value);
   }
 
-  memberSelect.addEventListener('change', function () {
-    loadAccounts(memberSelect.value);
-  });
-
-  if (memberSelect.value) {
-    loadAccounts(memberSelect.value);
-  }
+  connectAccountSelector('{{ share_form.member.id_for_label }}', '{{ share_form.account.id_for_label }}');
+  connectAccountSelector('{{ subscription_form.member.id_for_label }}', '{{ subscription_form.account.id_for_label }}');
 });
 </script>
 {% endblock %}

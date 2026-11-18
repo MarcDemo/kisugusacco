@@ -3,13 +3,14 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .forms import GuarantorDecisionForm, LoanRepaymentForm, LoanRequestForm, TreasurerRateForm
 from .models import LoanApprovalAudit, LoanGuarantorApproval, LoanRequest
 from groupcore.account_context import get_active_account, get_user_active_accounts
-from groupcore.models import MemberProfile
+from groupcore.models import FinancialYearClose, MemberProfile, SavingsAccount
 from groupcore.year_close import loan_activity_frozen
 from messaging.services import send_notification
 
@@ -33,9 +34,10 @@ def _loan_label(loan):
     return f"Loan #{loan.id} for {_format_member_name(loan.member)}"
 
 
-def _notify_loan_submitted(loan, guarantors):
+def _notify_loan_submitted(loan, guarantor_accounts):
     applicant_name = _format_member_name(loan.member)
     loan_name = _loan_label(loan)
+    guarantors = list({account.owner_id: account.owner for account in guarantor_accounts}.values())
 
     send_notification(
         subject=f"Guarantor approval needed: {loan_name}",
@@ -102,7 +104,7 @@ def request_loan(request):
     if request.method == 'POST':
         form = LoanRequestForm(request.POST, user=request.user)
         if form.is_valid():
-            guarantors = list(form.cleaned_data['guarantors'])
+            guarantor_accounts = list(form.cleaned_data['guarantor_accounts'])
             with transaction.atomic():
                 loan = form.save(commit=False)
                 loan.member = request.user
@@ -113,10 +115,14 @@ def request_loan(request):
                 loan.save()
 
                 LoanGuarantorApproval.objects.bulk_create([
-                    LoanGuarantorApproval(loan=loan, guarantor=guarantor)
-                    for guarantor in guarantors
+                    LoanGuarantorApproval(
+                        loan=loan,
+                        guarantor=account.owner,
+                        account=account,
+                    )
+                    for account in guarantor_accounts
                 ])
-                _notify_loan_submitted(loan, guarantors)
+                _notify_loan_submitted(loan, guarantor_accounts)
 
             messages.success(request, 'Loan request submitted successfully and sent to guarantors.')
             return redirect('my_loans')
@@ -186,6 +192,12 @@ def override_loan_approval(request, loan_id):
             if not pending:
                 messages.info(request, 'There are no pending guarantor approvals to override.')
                 return redirect('pending_loans')
+            if any(approval.account_id is None for approval in pending):
+                messages.error(
+                    request,
+                    'Assign a pledged savings account to every legacy guarantor before overriding approval.',
+                )
+                return redirect('pending_loans')
             for approval in pending:
                 approval.status = LoanGuarantorApproval.STATUS_APPROVED
                 approval.comments = f'Approved by Treasurer on behalf of Guarantor. Reason: {reason}'
@@ -253,7 +265,7 @@ def pending_loans(request):
         LoanRequest.objects
         .filter(status__in=[LoanRequest.STATUS_PENDING_GUARANTOR, LoanRequest.STATUS_PENDING], member__is_superuser=False)
         .select_related('member', 'account')
-        .prefetch_related('guarantor_approvals__guarantor')
+        .prefetch_related('guarantor_approvals__guarantor', 'guarantor_approvals__account', 'guarantor_approvals__guarantor__savings_accounts')
         .prefetch_related('approval_audits__actual_approver', 'approval_audits__on_behalf_of')
         .order_by('-requested_on')
     )
@@ -334,7 +346,7 @@ def guarantor_requests(request):
     approvals = (
         LoanGuarantorApproval.objects
         .filter(guarantor=request.user)
-        .select_related('loan', 'loan__member', 'loan__account')
+        .select_related('loan', 'loan__member', 'loan__account', 'account')
         .order_by('-created_at')
     )
     return render(request, 'loans/guarantor_requests.html', {'approvals': approvals})
@@ -343,7 +355,9 @@ def guarantor_requests(request):
 @login_required
 def guarantor_request_detail(request, approval_id):
     approval = get_object_or_404(
-        LoanGuarantorApproval.objects.select_related('loan', 'loan__member', 'loan__account', 'guarantor'),
+        LoanGuarantorApproval.objects.select_related(
+            'loan', 'loan__member', 'loan__account', 'guarantor', 'account'
+        ),
         id=approval_id,
         guarantor=request.user,
     )
@@ -378,6 +392,12 @@ def guarantor_request_detail(request, approval_id):
                     return redirect('guarantor_requests')
 
                 if decision == 'approve':
+                    if approval.account_id is None:
+                        messages.error(
+                            request,
+                            'A Treasurer must assign the pledged savings account before this request can be approved.',
+                        )
+                        return redirect('guarantor_request_detail', approval_id=approval.id)
                     approval.approve(comments=comments)
                     approval.save(update_fields=['status', 'comments', 'decided_at'])
                     send_notification(
@@ -419,6 +439,51 @@ def guarantor_request_detail(request, approval_id):
         'loan': loan,
         'form': form,
     })
+
+
+@login_required
+@require_POST
+def assign_guarantor_account(request, approval_id):
+    if not request.user.is_treasurer():
+        messages.error(request, 'Only the Treasurer can assign legacy guarantor accounts.')
+        return redirect('member_dashboard')
+    with transaction.atomic():
+        approval = get_object_or_404(
+            LoanGuarantorApproval.objects.select_for_update().select_related('loan', 'guarantor'),
+            pk=approval_id,
+        )
+        account = get_object_or_404(
+            SavingsAccount,
+            pk=request.POST.get('account'),
+            owner=approval.guarantor,
+        )
+        if approval.loan.guarantor_approvals.exclude(pk=approval.pk).filter(account=account).exists():
+            messages.error(request, 'That savings account is already pledged to this loan.')
+            if request.POST.get('return_to') == 'settlement':
+                year = approval.loan.approved_on.year if approval.loan.approved_on else approval.loan.requested_on.year
+                return redirect(f"{reverse('year_end_settlement')}?year={year}")
+            return redirect('pending_loans')
+        approval.account = account
+        approval.full_clean()
+        approval.save(update_fields=['account'])
+        approval.loan.mark_pending_if_guarantors_complete()
+
+        settlement_year = (
+            approval.loan.approved_on.year
+            if approval.loan.approved_on
+            else approval.loan.requested_on.year
+        )
+        FinancialYearClose.objects.filter(
+            year=settlement_year,
+            state=FinancialYearClose.STATE_FINALIZED,
+        ).update(
+            needs_regeneration=True,
+            last_correction_at=timezone.now(),
+        )
+    messages.success(request, f'Pledged account {account.label} assigned successfully.')
+    if request.POST.get('return_to') == 'settlement':
+        return redirect(f"{reverse('year_end_settlement')}?year={settlement_year}")
+    return redirect('pending_loans')
 
 
 @login_required

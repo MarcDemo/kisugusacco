@@ -6,6 +6,7 @@ urlpatterns = [
     path('request/', views.request_loan, name='request_loan'),
     path('guarantor-requests/', views.guarantor_requests, name='guarantor_requests'),
     path('guarantor-requests/<int:approval_id>/', views.guarantor_request_detail, name='guarantor_request_detail'),
+    path('guarantor-approvals/<int:approval_id>/assign-account/', views.assign_guarantor_account, name='assign_guarantor_account'),
     path('statuses/', views.loan_statuses, name='loan_statuses'),
     path('repayment/<int:loan_id>/record/', views.record_loan_repayment, name='record_loan_repayment'),
     path('pending/', views.pending_loans, name='pending_loans'),

@@ -916,6 +916,62 @@ class TreasurerReportYearFilterTests(TestCase):
         self.assertContains(response, 'Savings Account')
         self.assertEqual(self._member_row(response)['savings_account'], 'A2')
 
+    def test_treasurer_report_has_a_separate_row_per_savings_account(self):
+        account_a = SavingsAccount.objects.create(owner=self.member, label='A1')
+        account_b = SavingsAccount.objects.create(owner=self.member, label='A2')
+        self.previous_deposit.account = account_a
+        self.previous_deposit.save(update_fields=['account'])
+        account_b_deposit = self._deposit(
+            payment_week=date(self.previous_year, 12, 22),
+            payment_date=date(self.previous_year, 12, 22),
+            saving_amount=Decimal('25000.00'),
+        )
+        account_b_deposit.account = account_b
+        account_b_deposit.save(update_fields=['account'])
+        self.client.login(username='treasurer', password='pass12345')
+
+        response = self.client.get(reverse('treasurer_reports'), {'year': self.previous_year})
+
+        rows = [
+            row for row in response.context['report_data']
+            if row['member'].id == self.member.id
+        ]
+        self.assertEqual([row['savings_account'] for row in rows], ['A1', 'A2'])
+        self.assertEqual(rows[0]['total_saving'], Decimal('10000'))
+        self.assertEqual(rows[1]['total_saving'], Decimal('25000'))
+
+    def test_member_excel_export_can_be_scoped_to_one_savings_account(self):
+        account_a = SavingsAccount.objects.create(owner=self.member, label='A1')
+        account_b = SavingsAccount.objects.create(owner=self.member, label='A2')
+        self.previous_deposit.account = account_a
+        self.previous_deposit.save(update_fields=['account'])
+        account_b_deposit = self._deposit(
+            payment_week=date(self.previous_year, 12, 22),
+            payment_date=date(self.previous_year, 12, 22),
+            saving_amount=Decimal('25000.00'),
+        )
+        account_b_deposit.account = account_b
+        account_b_deposit.save(update_fields=['account'])
+
+        response = self.client.get(
+            reverse('download_member_report', args=[self.member.id, 'excel']),
+            {'year': self.previous_year, 'account': account_b.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            f'{self.member.username}_A2_report_{self.previous_year}.xlsx',
+            response['Content-Disposition'],
+        )
+        workbook = load_workbook(BytesIO(response.content), read_only=True)
+        values = [
+            value
+            for row in workbook.active.iter_rows(values_only=True)
+            for value in row
+        ]
+        self.assertIn(25000, values)
+        self.assertNotIn(10000, values)
+
     def test_treasurer_report_defaults_to_current_year(self):
         self.client.login(username='treasurer', password='pass12345')
 
