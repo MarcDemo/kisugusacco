@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     'documents',
     'chairman',
     'loans',
+    'withdrawals',
     'django.contrib.humanize',
     'widget_tweaks',
     'crispy_forms',

@@ -49,6 +49,7 @@ from fines.services import (
 from groupcore.account_context import get_active_account, get_user_active_accounts
 from groupcore.savings_calendar import LATE_FINE_AMOUNT, completion_for_week, week_deadline
 from loans.models import LoanRepayment, LoanRequest
+from withdrawals.models import Withdrawal
 from decimal import Decimal
 from deposits.rules import (
     MAX_WEEKLY_SAVINGS,
@@ -1799,6 +1800,7 @@ def treasurer_reports(request):
     years = merge_year_options(
         years_from_dates(approved_deposits_base, 'payment_week'),
         years_from_dates(LoanRequest.objects.filter(status='APPROVED'), 'approved_on'),
+        years_from_dates(Withdrawal.objects.filter(is_voided=False), 'withdrawn_on'),
         selected_year=selected_year,
     )
     members = MemberProfile.objects.exclude(is_superuser=True)
@@ -1828,6 +1830,13 @@ def treasurer_reports(request):
             account_deposits = approved_deposits.filter(account=account)
             totals = _deposit_report_totals(account_deposits)
             account_loans = approved_loans.filter(account=account)
+            withdrawn = (
+                Withdrawal.objects.filter(
+                    account=account,
+                    is_voided=False,
+                    withdrawn_on__year=selected_year,
+                ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            ) if account else Decimal('0.00')
             report_data.append({
                 'member': member,
                 'account': account,
@@ -1835,6 +1844,8 @@ def treasurer_reports(request):
                 'download_account': account.id if account else 'unassigned',
                 'total_weeks': account_deposits.count(),
                 'total_interest': _loan_interest_total(account_loans),
+                'total_withdrawn': withdrawn,
+                'net_saving': max(totals['total_saving'] - withdrawn, Decimal('0.00')),
                 **totals,
             })
 
@@ -1963,6 +1974,13 @@ def download_member_report(request, member_id, format):
     ).select_related('account').order_by('payment_week')
     if account_param:
         deposits = deposits.filter(account=account)
+    withdrawals = Withdrawal.objects.filter(
+        member=member,
+        is_voided=False,
+        withdrawn_on__year=selected_year,
+    ).select_related('account').order_by('withdrawn_on', 'id')
+    if account_param:
+        withdrawals = withdrawals.filter(account=account)
 
     account_label = account.label if account else ('Unassigned' if account_param else 'All Accounts')
     account_filename = f'_{_safe_filename_part(account_label)}' if account_param else ''
@@ -2042,6 +2060,27 @@ def download_member_report(request, member_id, format):
         ]))
 
         elements.append(table)
+        elements.append(Spacer(1, 14))
+        withdrawal_data = [['Withdrawal Date', 'Savings Account', 'Amount', 'Reference', 'Reason']]
+        for item in withdrawals:
+            withdrawal_data.append([
+                item.withdrawn_on.strftime('%Y-%m-%d'),
+                item.account.label,
+                f"{item.amount:,.0f}",
+                item.reference or '-',
+                item.reason,
+            ])
+        if len(withdrawal_data) == 1:
+            withdrawal_data.append(['-', '-', '0', '-', 'No withdrawals'])
+        withdrawal_table = Table(withdrawal_data, repeatRows=1, colWidths=[75, 90, 70, 90, 280])
+        withdrawal_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#C98A00')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        elements.append(Paragraph('<b>Savings Withdrawals</b>', styles['Heading3']))
+        elements.append(withdrawal_table)
         doc.build(elements)
         return response
 
@@ -2109,6 +2148,20 @@ def download_member_report(request, member_id, format):
             ]
             ws.append(row)
             total_amount += float(deposit.amount)
+
+        withdrawal_ws = wb.create_sheet('Savings Withdrawals')
+        withdrawal_ws.append(['Date', 'Savings Account', 'Amount (UGX)', 'Reference', 'Reason'])
+        for item in withdrawals:
+            withdrawal_ws.append([
+                item.withdrawn_on.strftime('%Y-%m-%d'),
+                item.account.label,
+                float(item.amount),
+                item.reference or '-',
+                item.reason,
+            ])
+        for cell in withdrawal_ws[1]:
+            cell.font = Font(bold=True, color='FFFFFF')
+            cell.fill = PatternFill(start_color='C98A00', end_color='C98A00', fill_type='solid')
 
         last_data_row = 2 + len(deposits)
 

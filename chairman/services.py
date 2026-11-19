@@ -12,6 +12,7 @@ from groupcore.models import (
 )
 from incomes.models import AnnualSubscription, ShareContribution
 from loans.models import LoanGuarantorApproval, LoanRequest
+from withdrawals.models import Withdrawal
 
 
 @transaction.atomic
@@ -65,6 +66,7 @@ def make_account_dependent(*, account_id, target_member_id, transferred_by, reas
     LoanGuarantorApproval.objects.filter(account=account).update(guarantor=new_owner)
     AccountSettlement.objects.filter(account=account).update(member=new_owner)
     SettlementLoanAllocation.objects.filter(account=account).update(member=new_owner)
+    Withdrawal.objects.filter(account=account).update(member=new_owner)
 
     if source_profile_deactivated:
         old_owner.is_active = False

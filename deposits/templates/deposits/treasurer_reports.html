@@ -47,6 +47,8 @@
           <th>Savings Account</th>
           <th>Total</th>
           <th>Saving</th>
+          <th>Withdrawn</th>
+          <th>Net Saving</th>
           <th>Welfare</th>
           <th>Annual</th>
           <th>Membership</th>
@@ -64,6 +66,8 @@
               <td>{{ row.savings_account|default:"-" }}</td>
               <td>UGX {{ row.total_amount|default:0|floatformat:"0" }}</td>
               <td>UGX {{ row.total_saving|default:0|floatformat:"0" }}</td>
+              <td>UGX {{ row.total_withdrawn|default:0|floatformat:"0" }}</td>
+              <td class="fw-bold">UGX {{ row.net_saving|default:0|floatformat:"0" }}</td>
               <td>UGX {{ row.total_welfare|default:0|floatformat:"0" }}</td>
               <td>UGX {{ row.total_annual|default:0|floatformat:"0" }}</td>
               <td>UGX {{ row.total_membership|default:0|floatformat:"0" }}</td>
@@ -82,7 +86,7 @@
               </tr>
           {% empty %}
               <tr>
-            <td colspan="12" class="text-center text-muted">No members found.</td>
+            <td colspan="14" class="text-center text-muted">No members found.</td>
               </tr>
           {% endfor %}
           </tbody>

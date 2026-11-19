@@ -33,6 +33,8 @@ from groupcore.reporting import merge_year_options, parse_report_year, years_fro
 from groupcore.week_cycle import current_saving_week, first_friday_of_year
 from datetime import date, timedelta
 from loans.models import LoanGuarantorApproval, LoanRequest
+from withdrawals.models import Withdrawal
+from withdrawals.services import account_balance
 from decimal import Decimal
 import random
 from django.core.mail import send_mail
@@ -143,6 +145,11 @@ def _fund_source_balances(queryset):
         source: collected[source] - expenditures[source] - assets[source]
         for source in FUND_SOURCE_TO_TOTAL_KEY
     }
+    withdrawn_savings = (
+        Withdrawal.objects.filter(is_voided=False).aggregate(total=Sum('amount'))['total']
+        or Decimal('0.00')
+    )
+    available['SAVINGS'] -= withdrawn_savings
 
     return {
         'collected': collected,
@@ -538,9 +545,25 @@ def _member_dashboard_context(member, active_account=None):
     if active_account:
         approved_member_qs = approved_member_qs.filter(account=active_account)
 
-    group_total_savings = approved_group_qs.aggregate(total=Sum('saving_amount'))['total'] or 0
-
-    user_savings_total = approved_member_qs.aggregate(total=Sum('saving_amount'))['total'] or 0
+    group_gross_savings = approved_group_qs.aggregate(total=Sum('saving_amount'))['total'] or 0
+    group_withdrawals = (
+        Withdrawal.objects.filter(
+            is_voided=False, withdrawn_on__year=saving_year
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    )
+    group_total_savings = max(group_gross_savings - group_withdrawals, Decimal('0.00'))
+    if active_account:
+        savings_balance = account_balance(active_account, year=saving_year)
+    else:
+        gross = approved_member_qs.aggregate(total=Sum('saving_amount'))['total'] or Decimal('0.00')
+        savings_balance = {
+            'gross': gross,
+            'withdrawn': Decimal('0.00'),
+            'net': gross,
+            'protected': Decimal('0.00'),
+            'withdrawable': gross,
+        }
+    user_savings_total = savings_balance['net']
     week_progress = _member_week_progress(member, active_account)
     savings_calendar = build_weekly_calendar(member, active_account)
     weeks_paid = (
@@ -561,6 +584,10 @@ def _member_dashboard_context(member, active_account=None):
     if active_account:
         recent_deposits = recent_deposits.filter(account=active_account)
     recent_deposits = recent_deposits.order_by('-date_submitted')[:5]
+    recent_withdrawals = Withdrawal.objects.filter(member=member)
+    if active_account:
+        recent_withdrawals = recent_withdrawals.filter(account=active_account)
+    recent_withdrawals = recent_withdrawals.select_related('account').order_by('-withdrawn_on', '-id')[:5]
     member_purpose_totals = _deposit_purpose_totals(approved_member_qs)
     group_purpose_totals = _deposit_purpose_totals(approved_group_qs)
 
@@ -594,6 +621,8 @@ def _member_dashboard_context(member, active_account=None):
         'weeks_paid': weeks_paid,
         'outstanding_fines': outstanding_fines,
         'recent_deposits': recent_deposits,
+        'recent_withdrawals': recent_withdrawals,
+        'savings_balance': savings_balance,
         'unpaid_fines': unpaid_fines,
         'welfare_due': welfare_due,
         'annual_subscription_due': 0 if annual_subscription_paid else annual_subscription_due,

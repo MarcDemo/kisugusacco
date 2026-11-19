@@ -146,6 +146,7 @@
           <div class="text-muted small">@{{ preview_member.username }} · {{ preview_member.get_role_display }}</div>
         </div>
         <div class="d-flex gap-2 flex-wrap">
+          {% if active_account %}<a href="{% url 'withdrawal_create' %}?account={{ active_account.id }}" class="btn btn-warning btn-sm"><i class="bi bi-cash-coin me-1"></i> Withdraw Funds</a>{% endif %}
           <a href="{% url 'treasurer_member_preview_index' %}" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i> Choose another member</a>
           <a href="{% url 'treasurer_dashboard' %}" class="btn btn-outline-secondary btn-sm">Exit preview</a>
         </div>
@@ -185,6 +186,9 @@
   <div class="row g-3 mb-4">
     <div class="col-md-3"><div class="kpi-chip cc-green"><div class="d-flex justify-content-between align-items-start"><div><h6>Total Group Savings</h6><div class="val">UGX {{ group_total_savings|floatformat:"0" }}</div></div><i class="bi bi-cash-stack cc-icon"></i></div></div></div>
     <div class="col-md-3"><div class="kpi-chip cc-blue"><div class="d-flex justify-content-between align-items-start"><div><h6>My Savings</h6><div class="val">UGX {{ user_savings_total|floatformat:"0" }}</div></div><i class="bi bi-piggy-bank cc-icon"></i></div></div></div>
+    <div class="col-md-3"><div class="kpi-chip cc-amber"><div class="d-flex justify-content-between align-items-start"><div><h6>Withdrawn</h6><div class="val">UGX {{ savings_balance.withdrawn|floatformat:"0" }}</div></div><i class="bi bi-box-arrow-up-right cc-icon"></i></div></div></div>
+    <div class="col-md-3"><div class="kpi-chip cc-rose"><div class="d-flex justify-content-between align-items-start"><div><h6>Loan Protected</h6><div class="val">UGX {{ savings_balance.protected|floatformat:"0" }}</div></div><i class="bi bi-shield-lock cc-icon"></i></div></div></div>
+    <div class="col-md-3"><div class="kpi-chip cc-green"><div class="d-flex justify-content-between align-items-start"><div><h6>Withdrawable</h6><div class="val">UGX {{ savings_balance.withdrawable|floatformat:"0" }}</div></div><i class="bi bi-wallet2 cc-icon"></i></div></div></div>
     <div class="col-md-3"><div class="kpi-chip cc-teal"><div class="d-flex justify-content-between align-items-start"><div><h6>Total Covered Weeks</h6><div class="val">{{ weeks_paid }}</div></div><i class="bi bi-calendar-check cc-icon"></i></div></div></div>
     <div class="col-md-3"><div class="kpi-chip cc-rose"><div class="d-flex justify-content-between align-items-start"><div><h6>Outstanding Fines</h6><div class="val">UGX {{ outstanding_fines|floatformat:"0" }}</div></div><i class="bi bi-exclamation-triangle cc-icon"></i></div></div></div>
     <div class="col-md-3"><div class="kpi-chip cc-purple"><div class="d-flex justify-content-between align-items-start"><div><h6>My Shares</h6><div class="val">UGX {{ share_total|floatformat:"0" }}</div></div><i class="bi bi-bar-chart-steps cc-icon"></i></div></div></div>
@@ -288,6 +292,14 @@
         </tbody>
       </table>
     </div>
+  </div>
+
+  <div class="modern-card mb-4">
+    <div class="p-3 border-bottom"><h5 class="mb-0"><i class="bi bi-cash-coin me-2"></i>Recent Withdrawals</h5></div>
+    <div class="table-responsive"><table class="table table-hover mb-0 align-middle"><thead class="table-light"><tr><th>Date</th><th>Account</th><th>Amount</th><th>Reference</th><th>Status</th></tr></thead><tbody>
+      {% for item in recent_withdrawals %}<tr><td>{{ item.withdrawn_on|date:"d M Y" }}</td><td>{{ item.account.label }}</td><td>UGX {{ item.amount|floatformat:"0" }}</td><td>{{ item.reference|default:"—" }}</td><td>{% if item.is_voided %}<span class="badge text-bg-secondary">Voided</span>{% else %}<span class="badge text-bg-success">Completed</span>{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="5" class="text-center text-muted py-3">No withdrawals recorded for this account.</td></tr>{% endfor %}
+    </tbody></table></div>
   </div>
 
   <div class="modern-card p-3">

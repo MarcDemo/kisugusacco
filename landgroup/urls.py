@@ -30,6 +30,7 @@ urlpatterns = [
     path('documents/', include('documents.urls')),
     path('chairman/', include('chairman.urls')),
     path('loans/', include('loans.urls')),
+    path('withdrawals/', include('withdrawals.urls')),
 
 
 ]

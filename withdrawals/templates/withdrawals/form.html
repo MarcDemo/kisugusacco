@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4" style="max-width:900px">
+  <div class="d-flex justify-content-between align-items-center mb-3"><div><div class="small text-uppercase text-success fw-bold">Treasurer tool</div><h2 class="mb-0">{{ title }}</h2></div><a href="{% if withdrawal %}{% url 'withdrawal_detail' withdrawal.id %}{% else %}{% url 'withdrawal_list' %}{% endif %}" class="btn btn-outline-secondary">Cancel</a></div>
+  {% if withdrawal %}<div class="alert alert-warning"><i class="bi bi-shield-check me-2"></i>Every correction is permanently recorded with its previous values and your correction reason.</div>{% endif %}
+  <form method="post" class="card border-0 shadow-sm"><div class="card-body p-4">{% csrf_token %}
+    {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="row g-3">
+      {% for field in form %}<div class="{% if field.name == 'reason' or field.name == 'notes' or field.name == 'correction_reason' %}col-12{% else %}col-md-6{% endif %}"><label class="form-label fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>{{ field }}{% for error in field.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}</div>{% endfor %}
+    </div>
+    <div id="balancePanel" class="alert alert-info mt-4 mb-0 d-none" aria-live="polite"></div>
+  </div><div class="card-footer bg-white p-3 text-end"><button class="btn btn-success px-4" type="submit">{% if withdrawal %}Save audited correction{% else %}Confirm withdrawal{% endif %}</button></div></form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const member = document.getElementById('id_member');
+  const account = document.getElementById('id_account');
+  const panel = document.getElementById('balancePanel');
+  const selectedAccount = account.value;
+  const money = value => new Intl.NumberFormat('en-UG', {maximumFractionDigits: 0}).format(Number(value || 0));
+  async function loadAccounts(keepSelection) {
+    if (!member.value) { account.innerHTML = '<option value="">---------</option>'; return; }
+    const response = await fetch(`/member-accounts/${member.value}/`);
+    const data = await response.json();
+    account.innerHTML = '<option value="">---------</option>' + data.accounts.map(item => `<option value="${item.id}">${item.label}</option>`).join('');
+    if (keepSelection) account.value = keepSelection;
+    loadBalance();
+  }
+  async function loadBalance() {
+    if (!account.value) { panel.classList.add('d-none'); return; }
+    const response = await fetch(`{% url 'withdrawal_balance' %}?account=${account.value}`);
+    if (!response.ok) return;
+    const b = await response.json();
+    panel.innerHTML = `<strong>Account position:</strong> Gross UGX ${money(b.gross)} · Withdrawn UGX ${money(b.withdrawn)} · Loan/guarantee protection UGX ${money(b.protected)} · <strong>Withdrawable UGX ${money(b.withdrawable)}</strong>`;
+    panel.classList.remove('d-none');
+  }
+  member.addEventListener('change', () => loadAccounts(''));
+  account.addEventListener('change', loadBalance);
+  if (member.value) loadAccounts(selectedAccount);
+});
+</script>
+{% endblock %}
+

@@ -23,6 +23,7 @@ from groupcore.savings_calendar import apply_year_end_fine_relief
 from groupcore.week_cycle import first_friday_of_year, saving_year_closing_date
 from incomes.models import AnnualSubscription
 from loans.models import LoanGuarantorApproval, LoanRequest
+from withdrawals.models import Withdrawal
 
 
 ZERO = Decimal('0.00')
@@ -275,6 +276,18 @@ def finalize_financial_year(year, user):
         row['account_id']: row['total'] or ZERO
         for row in deposits.filter(account__isnull=False)
         .values('account_id').annotate(total=Sum('saving_amount'))
+    }
+    withdrawal_rows = {
+        row['account_id']: row['total'] or ZERO
+        for row in Withdrawal.objects.filter(
+            is_voided=False,
+            withdrawn_on__year=year,
+            withdrawn_on__lte=state.scheduled_closing_date,
+        ).values('account_id').annotate(total=Sum('amount'))
+    }
+    savings_rows = {
+        account_id: max(total - withdrawal_rows.get(account_id, ZERO), ZERO)
+        for account_id, total in savings_rows.items()
     }
     annual_paid_rows = {
         row['account_id']: row['total'] or ZERO

@@ -890,6 +890,11 @@
             </a>
           </li>
           <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'withdrawal_list' or request.resolver_match.url_name == 'withdrawal_create' or request.resolver_match.url_name == 'withdrawal_detail' or request.resolver_match.url_name == 'withdrawal_edit' %}active{% endif %}" href="{% url 'withdrawal_list' %}">
+              <i class="bi bi-cash-coin me-2"></i> Withdraw Funds
+            </a>
+          </li>
+          <li class="nav-item">
             <a class="nav-link {% if request.resolver_match.url_name == 'manage_fines' %}active{% endif %}" href="{% url 'manage_fines' %}">
               <i class="bi bi-currency-exchange me-2"></i> Manage Fines
             </a>

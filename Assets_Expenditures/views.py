@@ -7,6 +7,7 @@ from django.db.models import Sum
 from deposits.models import DepositSubmission
 from incomes.models import OtherIncome 
 from decimal import Decimal
+from withdrawals.models import Withdrawal
 
 # Create your views here.
 
@@ -32,6 +33,10 @@ def get_current_balances():
             'collected': collected,
             'available': collected - expenditures - assets,
         }
+
+    balances['SAVINGS']['available'] -= Decimal(
+        Withdrawal.objects.filter(is_voided=False).aggregate(total=Sum('amount'))['total'] or 0
+    )
 
     return balances
 # 📦 View Assets
